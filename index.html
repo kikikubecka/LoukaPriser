@@ -1360,6 +1360,8 @@ function spawnMini(g: Game, typeIdx = -1): void {
 
 // 🌱 META PROGRES - semínka za runy → nekonečné trvalé upgrady (localStorage)
 const META_KEY = "louka_meta_v1";
+// 🏆 jeden zápis v žebříčku nejlepších runů
+type ScoreEntry = { name: string; score: number; level: number; kills: number; time: number; cls: string; diff: number; date: string; combo: number };
 type Meta = {
   pts: number;
   lvl: Record<string, number>;
@@ -1370,6 +1372,9 @@ type Meta = {
   vol?: number;
   lang?: string;
   daily?: { key: string; best: number };
+  // 🥇 žebříček top 10 + naposledy použité jméno hráče
+  board?: ScoreEntry[];
+  lastName?: string;
 };
 
 function loadMeta(): Meta {
@@ -1390,13 +1395,15 @@ function loadMeta(): Meta {
           vol: p.vol,
           lang: p.lang,
           daily: p.daily || { key: "", best: 0 },
+          board: p.board || [],
+          lastName: p.lastName || "",
         };
       }
     }
   } catch {
     // localStorage nedostupný - hrajeme bez uložení
   }
-  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true }, daily: { key: "", best: 0 } };
+  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true }, daily: { key: "", best: 0 }, board: [], lastName: "" };
 }
 
 function saveMeta(m: Meta): void {
@@ -1405,6 +1412,19 @@ function saveMeta(m: Meta): void {
   } catch {
     // bez uložení
   }
+}
+
+// 🥇 ŽEBŘÍČEK - arcade styl: top 10 runů uložených v prohlížeči
+const BOARD_MAX = 10;
+// dostane se skóre mezi top 10? (sandbox se nezapočítává)
+function boardQualifies(m: Meta, score: number): boolean {
+  const b = m.board || [];
+  return score > 0 && (b.length < BOARD_MAX || score > b[b.length - 1].score);
+}
+// zápis do žebříčku - setřídí sestupně a uřízne na top 10; jméno si zapamatuje
+function pushBoard(m: Meta, e: ScoreEntry): Meta {
+  const b = [...(m.board || []), e].sort((x, y) => y.score - x.score).slice(0, BOARD_MAX);
+  return { ...m, board: b, lastName: e.name };
 }
 
 type MetaUp = {
@@ -1459,7 +1479,17 @@ function trk(k: string): string {
 const LANG: Record<string, Record<string, string>> = {
   cs: {
     title: "Louka tisíce příšer",
-    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka",
+    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček",
+    board_title: "Žebříček nejlepších runů",
+    board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 🥇",
+    ask_name: "Top 10! Zapiš se do žebříčku:",
+    name_ph: "Jméno hrdiny…",
+    save_score: "Uložit",
+    saved_board: "Zapsáno do žebříčku! 🥇",
+    player_default: "Hráč",
+    board_note: "Žebříček top 10 se ukládá v tomto prohlížeči.",
+    board_clear: "🧹 Smazat žebříček",
+    board_confirm: "Opravdu smazat? Klikni znovu!",
     start: "Spustit run",
     sbx_badge: "🧪 Sandbox je zapnutý",
     lv: "Lv", level: "Level", night: "🌙 NOC ×1.5", day: "☀️ DEN",
@@ -1530,7 +1560,17 @@ const LANG: Record<string, Record<string, string>> = {
   },
   en: {
     title: "Meadow of a Thousand Monsters",
-    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds",
+    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard",
+    board_title: "Best runs leaderboard",
+    board_empty: "Nothing here yet. Start a run, sign in and win 🥇",
+    ask_name: "Top 10! Sign the leaderboard:",
+    name_ph: "Hero name…",
+    save_score: "Save",
+    saved_board: "Saved to the leaderboard! 🥇",
+    player_default: "Player",
+    board_note: "Top 10 board is saved in this browser.",
+    board_clear: "🧹 Clear board",
+    board_confirm: "Really clear it? Click again!",
     start: "Start run",
     sbx_badge: "🧪 Sandbox is on",
     lv: "Lv", level: "Level", night: "🌙 NIGHT ×1.5", day: "☀️ DAY",
@@ -1601,7 +1641,17 @@ const LANG: Record<string, Record<string, string>> = {
   },
   pl: {
     title: "Łąka tysiąca potworów",
-    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona",
+    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica",
+    board_title: "Tablica najlepszych runów",
+    board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 🥇",
+    ask_name: "Top 10! Zapisz się na tablicę:",
+    name_ph: "Imię bohatera…",
+    save_score: "Zapisz",
+    saved_board: "Zapisano na tablicy! 🥇",
+    player_default: "Gracz",
+    board_note: "Tablica top 10 zapisuje się w tej przeglądarce.",
+    board_clear: "🧹 Wyczyść tablicę",
+    board_confirm: "Na pewno? Kliknij ponownie!",
     start: "Start runu",
     sbx_badge: "🧪 Sandbox jest włączony",
     lv: "Lv", level: "Poziom", night: "🌙 NOC ×1.5", day: "☀️ DZIEŃ",
@@ -8257,7 +8307,12 @@ export default function LoukaTisicePriser() {
   const [isTouch, setIsTouch] = useState(false);
   const [clsSel, setClsSel] = useState("archer");
   const [sandboxSel, setSandboxSel] = useState(false);
-  const [menuTab, setMenuTab] = useState<"cls" | "trophy" | "sbx" | "meta">("cls");
+  const [menuTab, setMenuTab] = useState<"cls" | "trophy" | "board" | "sbx" | "meta">("cls");
+  // 🏆 zápis do žebříčku: modal se jménem, uložená hodnota a příznak „už zapsáno"
+  const [askName, setAskName] = useState(false);
+  const [nameVal, setNameVal] = useState("");
+  const [nameSaved, setNameSaved] = useState(false);
+  const [boardClearConfirm, setBoardClearConfirm] = useState(false);
   const [sbx, setSbx] = useState<Upgrade[] | null>(null);
   const [sbxMsg, setSbxMsg] = useState("");
   const [meta, setMeta] = useState<Meta>(() => loadMeta());
@@ -8449,6 +8504,47 @@ export default function LoukaTisicePriser() {
     setShop(false);
     setConfirmQuit(false);
     setStarted(false);
+    setAskName(false);
+    setNameSaved(false);
+  };
+
+  // 💾 uloží skóre do žebříčku pod zvoleným jménem
+  const saveScore = () => {
+    const g = gameRef.current;
+    if (!over) return;
+    const entry: ScoreEntry = {
+      name: (nameVal.trim() || trk("player_default")).slice(0, 12),
+      score: over.earned,
+      level: over.level,
+      kills: over.kills,
+      time: over.time,
+      cls: g.cls,
+      diff: g.diff,
+      date: new Date().toISOString().slice(0, 10),
+      combo: g.comboBest,
+    };
+    setMeta((m) => {
+      const nm = pushBoard(m, entry);
+      saveMeta(nm);
+      return nm;
+    });
+    playSfx(g, "buy");
+    setNameSaved(true);
+    setAskName(false);
+  };
+
+  // 🧹 smazání celého žebříčku (potvrzení na druhé kliknutí)
+  const clearBoard = () => {
+    if (!boardClearConfirm) {
+      setBoardClearConfirm(true);
+      return;
+    }
+    setBoardClearConfirm(false);
+    setMeta((m) => {
+      const nm = { ...m, board: [] };
+      saveMeta(nm);
+      return nm;
+    });
   };
 
   const startRun = () => {
@@ -8592,6 +8688,15 @@ export default function LoukaTisicePriser() {
         const earned = Math.floor((Math.floor(g.time) + g.kills * 15 + g.level * 40) * (g.sandbox ? 0 : seedMul));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
+        // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
+        // (čteme čerstvou metu z localStorage - žádná zaprášená closure)
+        if (!g.sandbox && boardQualifies(loadMeta(), earned)) {
+          setNameVal(loadMeta().lastName || "");
+          setNameSaved(false);
+          setAskName(true);
+        } else {
+          setAskName(false);
+        }
         setMeta((m) => {
           // 🏆 rekord za classu + 📅 denní výzva (rekord se resetuje s každým novým dnem)
           const dk = new Date().toISOString().slice(0, 10);
@@ -9028,6 +9133,7 @@ export default function LoukaTisicePriser() {
                 [
                   { id: "cls", emoji: "🎭", label: "Classa" },
                   { id: "trophy", emoji: "🏆", label: "Trofeje" },
+                  { id: "board", emoji: "🥇", label: "Žebříček" },
                   { id: "sbx", emoji: "🧪", label: "Sandbox" },
                   { id: "meta", emoji: "🌱", label: "Semínka" },
                 ] as const
@@ -9196,6 +9302,61 @@ export default function LoukaTisicePriser() {
                       📅 {trk("daily_best").replace("📅 ", "")} 🌱{meta.daily.best}
                     </div>
                   ) : null}
+                </div>
+              )}
+
+              {/* 🥇 žebříček nejlepších runů - arcade tabule se zlatými medailemi */}
+              {menuTab === "board" && (
+                <div className="ltp-glass flex w-full max-w-2xl flex-col gap-2 rounded-2xl p-3">
+                  <h3 className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 bg-clip-text text-sm font-black text-transparent sm:text-base">
+                    🥇 {trk("board_title")}
+                  </h3>
+                  {(meta.board || []).length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/55 sm:text-sm">
+                      {trk("board_empty")}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {(meta.board || []).map((en, i) => {
+                        const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+                        const c = CLASSES.find((x) => x.id === en.cls);
+                        return (
+                          <div
+                            key={i}
+                            className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] sm:text-xs ${
+                              i === 0
+                                ? "border-amber-300/60 bg-gradient-to-r from-amber-400/20 via-amber-300/10 to-transparent shadow-[0_0_16px_rgba(251,191,36,.25)]"
+                                : i < 3
+                                  ? "border-amber-300/30 bg-amber-400/10"
+                                  : "border-white/10 bg-white/5"
+                            }`}
+                          >
+                            <span className="w-8 shrink-0 text-left font-black text-amber-200">{medal}</span>
+                            <span className="flex-1 truncate text-left font-bold text-white/90">{en.name}</span>
+                            <span title={trk("cls_" + en.cls)}>{c ? c.emoji : "❔"}</span>
+                            <span className="shrink-0 font-bold text-lime-200">🌱{en.score}</span>
+                            <span className="hidden shrink-0 text-white/55 sm:inline">Lv {en.level}</span>
+                            <span className="hidden shrink-0 text-white/55 sm:inline">☠️{en.kills}</span>
+                            <span className="hidden shrink-0 text-white/55 md:inline">
+                              {Math.floor(en.time / 60)}:{Math.floor(en.time % 60).toString().padStart(2, "0")}
+                            </span>
+                            <span className="hidden shrink-0 text-white/40 lg:inline">{en.date}</span>
+                          </div>
+                        );
+                      })}
+                      <button
+                        onClick={clearBoard}
+                        className={`mt-1 self-center rounded-xl border-2 px-4 py-1.5 text-[11px] font-bold transition active:scale-95 sm:text-xs ${
+                          boardClearConfirm
+                            ? "border-red-400/70 bg-red-500/30 text-red-100"
+                            : "border-white/15 bg-white/5 text-white/50 hover:bg-white/10"
+                        }`}
+                      >
+                        {boardClearConfirm ? `😱 ${trk("board_confirm")}` : trk("board_clear")}
+                      </button>
+                    </div>
+                  )}
+                  <p className="text-center text-[10px] text-white/40">{trk("board_note")}</p>
                 </div>
               )}
               {menuTab === "sbx" && (
@@ -9594,6 +9755,41 @@ export default function LoukaTisicePriser() {
                 </span>
               )}
             </div>
+            {/* 🏆 zápis do žebříčku - skóre se trefilo do top 10, vyber si jméno */}
+            {over.earned > 0 && askName && !nameSaved && (
+              <div className="ltp-glass flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border-2 border-amber-300/50 bg-amber-400/10 p-3">
+                <div className="text-sm font-bold text-amber-200 sm:text-base">
+                  🏆 {trk("ask_name")} <span className="text-lime-200">🌱{over.earned}</span>
+                </div>
+                <div className="flex w-full flex-col items-center gap-2 sm:flex-row">
+                  <input
+                    value={nameVal}
+                    onChange={(e) => setNameVal(e.target.value.slice(0, 12))}
+                    onKeyDown={(e) => {
+                      e.stopPropagation();
+                      if (e.key === "Enter") saveScore();
+                    }}
+                    placeholder={trk("name_ph")}
+                    maxLength={12}
+                    autoCapitalize="off"
+                    autoCorrect="off"
+                    className="w-full rounded-xl border-2 border-white/20 bg-black/40 px-3 py-2 text-center text-sm font-bold text-amber-100 outline-none placeholder:text-white/30 focus:border-amber-300/70 sm:text-base"
+                  />
+                  <button
+                    onClick={saveScore}
+                    className="ltp-sheen w-full shrink-0 rounded-xl bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 px-5 py-2 text-sm font-extrabold text-amber-950 transition hover:brightness-110 active:scale-95 sm:w-auto"
+                  >
+                    💾 {trk("save_score")}
+                  </button>
+                </div>
+                <div className="text-[10px] text-white/45">{trk("board_note")}</div>
+              </div>
+            )}
+            {nameSaved && (
+              <span className="animate-pulse rounded-lg border border-amber-300/50 bg-amber-400/20 px-3 py-1 text-xs font-bold text-amber-100">
+                ✅ {trk("saved_board")}
+              </span>
+            )}
             {/* 🏆 nově odemčené trofeje z tohoto runu */}
             {newAch.length > 0 && (
               <div className="flex max-w-[90%] flex-wrap items-center justify-center gap-1.5">

@@ -459,6 +459,8 @@ type Game = {
   shake: number;
   // 🆕 nové systémy: hit-stop, combo, rerolly, ultimáta, počasí, rázové vlny, hudba, obtížnost
   hitStop: number;
+  // 🏆 zlatý záblesk obrazovky po položení bosse (1 → 0)
+  goldFlash: number;
   combo: number;
   comboT: number;
   comboBest: number;
@@ -529,7 +531,7 @@ function getOrbSprite(hue: number): HTMLCanvasElement {
   return c;
 }
 
-let fxCache: { ctx?: CanvasRenderingContext2D; n1?: CanvasGradient; n2?: CanvasGradient; vg?: CanvasGradient; lg?: CanvasGradient; w?: number; h?: number } = {};
+let fxCache: { ctx?: CanvasRenderingContext2D; n1?: CanvasGradient; n2?: CanvasGradient; vg?: CanvasGradient; lg?: CanvasGradient; gl?: CanvasGradient; w?: number; h?: number } = {};
 
 function dist2(ax: number, ay: number, bx: number, by: number): number {
   const dx = ax - bx;
@@ -706,6 +708,10 @@ function playSfx(g: Game, name: string): void {
       case "click": tone("square", 700, 500, 0.04, 0, 0.05); break;
       case "reroll": noise(0.18, 0.07, 1600); tone("sine", 500, 900, 0.12, 0, 0.05); break;
       case "buy": tone("sine", 784, 784, 0.08, 0, 0.08); tone("sine", 1175, 1175, 0.14, 0.07, 0.08); break;
+      // 🚀 riser - nájezd před tím, než vypadne boss track (sweep nahoru + šum)
+      case "riser": noise(0.75, 0.1, 3200); tone("sawtooth", 90, 720, 0.75, 0, 0.09); tone("sine", 55, 110, 0.75, 0, 0.07); break;
+      // 🔥 fever fanfára - combo 15+ rozjíždí hype režim
+      case "fever": tone("sine", 523, 523, 0.09, 0, 0.1); tone("sine", 659, 659, 0.09, 0.07, 0.1); tone("sine", 784, 784, 0.09, 0.14, 0.11); tone("sine", 1046, 1046, 0.32, 0.21, 0.13); break;
       // ⚡ každá classa má k ultimátu vlastní dabing
       case "ult_archer": tone("sine", 1200, 300, 0.18, 0.02, 0.06); break;
       case "ult_soldier": tone("sine", 90, 30, 0.4, 0, 0.14); break;
@@ -721,17 +727,124 @@ function playSfx(g: Game, name: string): void {
   }
 }
 
-// 🎵 HUDBA NA POZADÍ - procedurální smyčka: klidná pastoralní téma na louce,
-// při bossi přesmykne na rychlou mollovou verzi s bubny
+// 🎵 HUDBA NA POZADÍ - jukebox se šesti skladbami: podle dění na louce se přepíná track
+// (klid → polka → funk → rave), u bosse zahraje tvrdé boss témata, při kombu 15+ se
+// přidá fever arpeggio vrstva a hi-haty v šestnáctinách - čím větší peklo, tím větší banger
 let musNext = 0;
 let musStep = 0;
-let musBoss = false;
+let musSong: Song | null = null;
+// 📣 toast s názvem skladby + ⏱ čas posledního kopáku (kvůli beat pulsu ve vizuálu)
+let musToast = "";
+let musToastAt = -1e9;
+let musKickAt = -1e9;
+let musFever = false;
 
-// C dur pentatonika (klid) vs. C moll rif (boss)
-const MUS_CALM_BASS = [130.81, 0, 0, 196.0, 220.0, 0, 0, 164.81, 174.61, 0, 0, 130.81, 196.0, 0, 0, 246.94];
-const MUS_CALM_LEAD = [0, 523.25, 659.25, 0, 783.99, 0, 659.25, 0, 523.25, 0, 440.0, 0, 587.33, 0, 659.25, 0];
-const MUS_BOSS_BASS = [130.81, 130.81, 0, 130.81, 155.56, 0, 130.81, 0, 103.83, 103.83, 0, 103.83, 116.54, 0, 130.81, 0];
-const MUS_BOSS_LEAD = [523.25, 0, 622.25, 0, 523.25, 622.25, 0, 466.16, 523.25, 0, 622.25, 0, 698.46, 622.25, 0, 523.25];
+// jedna skladba jukeboxu - vše je šestnáctikrokový pattern (0 = pauza)
+interface Song {
+  name: string;
+  step: number;
+  bassWave: OscillatorType;
+  leadWave: OscillatorType;
+  bass: number[];
+  lead: number[];
+  arp: number[]; // 🎸 arpeggio vrstva - u rave vždy, jinde při fever kombu
+  chords: number[]; // 🎹 pomalé polštářkové kvinty, střídají se po osmi krocích
+  kick: number[]; // 🥁 kroky s kopákem
+  snare: number[]; // kroky se snárou
+  hat: number[]; // kroky s hi-hatem
+  arpAlways: boolean;
+}
+
+// 🌅 „Jitro na louce" - klidné pastoralní téma na začátek (C dur pentatonika)
+const SONG_CALM: Song = {
+  name: "Jitro na louce",
+  step: 0.33,
+  bassWave: "triangle",
+  leadWave: "sine",
+  bass: [130.81, 0, 0, 196.0, 220.0, 0, 0, 164.81, 174.61, 0, 0, 130.81, 196.0, 0, 0, 246.94],
+  lead: [0, 523.25, 659.25, 0, 783.99, 0, 659.25, 0, 523.25, 0, 440.0, 0, 587.33, 0, 659.25, 0],
+  arp: [],
+  chords: [261.63, 220.0],
+  kick: [0, 8],
+  snare: [],
+  hat: [],
+  arpAlways: false,
+};
+// 🌼 „Kvítková polka" -veselá oom-pah polka, až se louka rozezní (C dur)
+const SONG_POLKA: Song = {
+  name: "Kvítková polka",
+  step: 0.21,
+  bassWave: "triangle",
+  leadWave: "square",
+  bass: [130.81, 0, 196.0, 0, 130.81, 0, 196.0, 0, 174.61, 0, 196.0, 0, 130.81, 0, 196.0, 0],
+  lead: [523.25, 0, 587.33, 659.25, 0, 783.99, 659.25, 0, 523.25, 0, 587.33, 0, 659.25, 783.99, 0, 880],
+  arp: [1046.5, 0, 783.99, 0, 1046.5, 0, 783.99, 0, 1046.5, 0, 783.99, 0, 880, 0, 783.99, 0],
+  chords: [261.63, 220.0, 174.61, 196.0],
+  kick: [0, 8],
+  snare: [4, 12],
+  hat: [2, 6, 10, 14],
+  arpAlways: false,
+};
+// 🐝 „Bzučivý funk" - synkopovaný groove, když se na louce hemží (e moll)
+const SONG_FUNK: Song = {
+  name: "Bzučivý funk",
+  step: 0.22,
+  bassWave: "sawtooth",
+  leadWave: "triangle",
+  bass: [164.81, 0, 164.81, 196.0, 0, 164.81, 0, 220.0, 196.0, 0, 164.81, 0, 146.83, 0, 164.81, 0],
+  lead: [0, 0, 659.25, 0, 0, 587.33, 0, 659.25, 0, 0, 783.99, 659.25, 0, 587.33, 0, 523.25],
+  arp: [987.77, 0, 987.77, 783.99, 0, 987.77, 0, 1174.66, 987.77, 0, 987.77, 783.99, 0, 659.25, 0, 783.99],
+  chords: [164.81, 146.83],
+  kick: [0, 3, 8, 11],
+  snare: [4, 12],
+  hat: [2, 6, 7, 10, 14, 15],
+  arpAlways: false,
+};
+// ⚡ „Rozpukový rave" - four-on-the-floor EDM prásknutí na pozdní vlny (a moll)
+const SONG_RAVE: Song = {
+  name: "Rozpukový rave",
+  step: 0.175,
+  bassWave: "sawtooth",
+  leadWave: "sawtooth",
+  bass: [110.0, 0, 110.0, 110.0, 0, 110.0, 0, 130.81, 110.0, 0, 110.0, 110.0, 0, 98.77, 0, 103.83],
+  lead: [440, 0, 523.25, 0, 440, 0, 392, 0, 440, 0, 523.25, 587.33, 0, 523.25, 0, 440],
+  arp: [880, 1046.5, 1318.51, 1046.5, 880, 1046.5, 1318.51, 1046.5, 783.99, 987.77, 1318.51, 987.77, 659.25, 987.77, 1318.51, 1567.98],
+  chords: [220.0, 164.81],
+  kick: [0, 4, 8, 12],
+  snare: [4, 12],
+  hat: [2, 6, 10, 14],
+  arpAlways: true,
+};
+// 💀 „Mumie v rytmu" - tvrdé mollové boss téma s plnou sadou bubnů (c moll)
+const SONG_BOSS: Song = {
+  name: "Mumie v rytmu",
+  step: 0.214,
+  bassWave: "sawtooth",
+  leadWave: "square",
+  bass: [130.81, 130.81, 0, 130.81, 155.56, 0, 130.81, 0, 103.83, 103.83, 0, 103.83, 116.54, 0, 130.81, 0],
+  lead: [523.25, 0, 622.25, 0, 523.25, 622.25, 0, 466.16, 523.25, 0, 622.25, 0, 698.46, 622.25, 0, 523.25],
+  arp: [1244.51, 0, 1244.51, 0, 1244.51, 0, 1244.51, 0, 1244.51, 0, 1244.51, 0, 1396.91, 0, 1244.51, 0],
+  chords: [155.56, 116.54],
+  kick: [0, 4, 8, 12],
+  snare: [4, 12],
+  hat: [2, 6, 10, 14],
+  arpAlways: false,
+};
+// 👑 „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
+const SONG_FINAL: Song = {
+  name: "Koruna záhrobí",
+  step: 0.165,
+  bassWave: "sawtooth",
+  leadWave: "sawtooth",
+  bass: [110.0, 110.0, 0, 110.0, 123.47, 0, 110.0, 0, 103.83, 103.83, 0, 103.83, 116.54, 0, 123.47, 0],
+  lead: [466.16, 0, 554.37, 587.33, 0, 554.37, 466.16, 0, 466.16, 622.25, 587.33, 554.37, 0, 466.16, 0, 415.3],
+  arp: [932.33, 1108.73, 1244.51, 1108.73, 932.33, 1108.73, 1244.51, 1108.73, 932.33, 1108.73, 1244.51, 1108.73, 830.61, 1108.73, 1244.51, 1318.51],
+  chords: [116.54, 110.0],
+  kick: [0, 4, 8, 12],
+  snare: [4, 12],
+  hat: [1, 3, 5, 7, 9, 11, 13, 15],
+  arpAlways: true,
+};
 
 function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak: number): void {
   const o = AC!.createOscillator();
@@ -827,6 +940,24 @@ function ambTick(g: Game): void {
   ambSrc.start();
 }
 
+// 🎚 podle dění na louce se vybere track - boss má vlastní témata, pozdní hra rave
+function pickSong(g: Game): Song {
+  let finalBoss = false;
+  let boss = false;
+  for (const e of g.enemies) {
+    if (!e.dead && e.boss) {
+      boss = true;
+      finalBoss = e.final;
+      break;
+    }
+  }
+  if (boss) return finalBoss ? SONG_FINAL : SONG_BOSS;
+  if (g.level >= 16 || g.time > 540) return SONG_RAVE;
+  if (g.level >= 8 || g.time > 300 || g.enemies.length >= 32) return SONG_FUNK;
+  if (g.time > 110 || g.level >= 4) return SONG_POLKA;
+  return SONG_CALM;
+}
+
 // volá se každý snímek - noty se plánují ~0,35 s dopředu, takže hudba nezapráská
 function musicTick(g: Game): void {
   if (!g.opts.snd || !g.running || g.over || typeof AudioContext === "undefined") return;
@@ -841,43 +972,56 @@ function musicTick(g: Game): void {
       musNext = Math.max(musNext, AC.currentTime + 0.05);
       return;
     }
-    // podle toho, jestli je na mapě boss, se přepíná celé téma (fáze 3+ zrychluje tempo)
-    let boss = false;
-    let bossPhase = 1;
-    for (const e of g.enemies) {
-      if (!e.dead && e.boss) {
-        boss = true;
-        bossPhase = e.phase;
-        break;
-      }
-    }
-    if (boss !== musBoss) {
-      musBoss = boss;
+    const want = pickSong(g);
+    // 🔥 fever - při kombu 15+ se přidá arp vrstva a hi-haty v šestnáctinách
+    musFever = g.combo >= 15;
+    if (want !== musSong) {
+      const prev = musSong;
+      musSong = want;
       musStep = 0;
       musNext = Math.max(musNext, AC.currentTime + 0.05);
+      // 📣 přepnutý track se ohlásí toastem nahoře, u bosse se ozve i riser
+      musToast = want.name;
+      musToastAt = performance.now();
+      if ((want === SONG_BOSS || want === SONG_FINAL) && prev !== SONG_BOSS && prev !== SONG_FINAL) playSfx(g, "riser");
     }
-    const stepDur = musBoss ? (bossPhase >= 3 ? 0.19 : 0.214) : 0.33;
+    const song = musSong as Song;
+    let bossPhase = 1;
+    if (song === SONG_BOSS || song === SONG_FINAL) {
+      for (const e of g.enemies) {
+        if (!e.dead && e.boss) {
+          bossPhase = e.phase;
+          break;
+        }
+      }
+    }
+    // finální fáze bosse (3+) ještě zrychlí tempo - hra se zní jako smršť
+    const stepDur = song === SONG_BOSS && bossPhase >= 3 ? song.step * 0.88 : song.step;
     const now = AC.currentTime;
     if (musNext < now) musNext = now + 0.05;
     while (musNext < now + 0.35) {
       const s = musStep % 16;
       const t = musNext;
-      if (musBoss) {
-        const b = MUS_BOSS_BASS[s];
-        if (b) musicNote("sawtooth", b / 2, t, stepDur * 0.95, 0.045);
-        const l = MUS_BOSS_LEAD[s];
-        if (l) musicNote("square", l, t, stepDur * 0.9, 0.026);
-        if (s % 4 === 0) musicDrum(t, 0.09, 0.05, 300); // kopák
-        if (s === 4 || s === 12) musicDrum(t, 0.12, 0.038, 1800); // snára
-        // finální zúřilost - hi-hat v osminách rozjíždí tempo
-        if (bossPhase >= 3 && s % 2 === 1) musicDrum(t, 0.04, 0.016, 6000);
-      } else {
-        const b = MUS_CALM_BASS[s];
-        if (b) musicNote("triangle", b / 2, t, stepDur * 1.8, 0.04);
-        const l = MUS_CALM_LEAD[s];
-        if (l) musicNote("sine", l, t, stepDur * 1.5, 0.028);
-        if (s % 8 === 0) musicDrum(t, 0.1, 0.018, 500);
+      const b = song.bass[s];
+      if (b) musicNote(song.bassWave, b / 2, t, stepDur * 0.95, 0.05);
+      const l = song.lead[s];
+      if (l) musicNote(song.leadWave, l, t, stepDur * 0.9, 0.028);
+      // 🎹 pomalé polštářové kvinty - dávají trackům tělo
+      const ch = song.chords[(musStep >> 3) % song.chords.length];
+      if (ch && s % 8 === 0) {
+        musicNote("sine", ch, t, stepDur * 7.5, 0.016);
+        musicNote("sine", ch * 1.5, t, stepDur * 7.5, 0.012);
       }
+      // 🎸 arp vrstva - u rave a finálního bosse vždy, jinde jen ve fever kombu
+      const ar = song.arp[s];
+      if (ar && (song.arpAlways || (musFever && song !== SONG_CALM))) musicNote("square", ar, t, stepDur * 0.55, 0.014);
+      if (song.kick.includes(s)) {
+        musicDrum(t, 0.09, 0.05, 300);
+        // ⏱ kdy kopák zadudec - kvůli beat pulsu ve vizuálu
+        musKickAt = performance.now() + (t - now) * 1000;
+      }
+      if (song.snare.includes(s)) musicDrum(t, 0.12, 0.038, 1800);
+      if (song.hat.includes(s) || ((musFever || bossPhase >= 3) && song !== SONG_CALM && s % 2 === 1)) musicDrum(t, 0.04, 0.016, 6000);
       musNext += stepDur;
       musStep += 1;
     }
@@ -889,6 +1033,8 @@ function musicTick(g: Game): void {
 // 🔢 sčítaná čísla poškození - rychlé rány na jednoho nepřítele se spojí do jednoho součtu
 function dmgText(g: Game, e: Enemy, dmg: number, crit: boolean, src?: string): void {
   if (src) g.dmgSrc[src] = (g.dmgSrc[src] || 0) + dmg;
+  // ✨ crit rány vyhodí zlaté jiskry - čísla ne, jiskry vždy
+  if (crit && Math.random() < 0.4) burst(g, e.x + (Math.random() - 0.5) * 16, e.y + (Math.random() - 0.5) * 16, 4, 45, 95);
   if (!g.opts.nums) return;
   e.dmgAcc = (e.dmgAcc ?? 0) + dmg;
   e.dmgAccCrit = (e.dmgAccCrit ?? false) || crit;
@@ -1576,6 +1722,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     over: false,
     shake: 0,
     hitStop: 0,
+    goldFlash: 0,
     combo: 0,
     comboT: 0,
     comboBest: 0,
@@ -2326,6 +2473,14 @@ function killEnemy(g: Game, e: Enemy): void {
     addText(g, e.x, e.y - e.r - 22, `🔥 COMBO ×${g.combo}!`, 25, 15);
     playSfx(g, "combo");
   }
+  // 🔥 FEVER - při kombu 15 se rozjede hype režim: fanfára, zlatá vlna a fever hudba
+  if (g.combo === 15) {
+    addText(g, g.hero.x, g.hero.y - 40, "🔥 FEVER MODE! 🔥", 45, 21);
+    shock(g, g.hero.x, g.hero.y, 220, 45, 0.55, 9, 0.28);
+    playSfx(g, "fever");
+  }
+  // 🌟 každé desáté combo vystřelí zlatý prstenec kolem hrdiny
+  if (g.combo > 0 && g.combo % 10 === 0) shock(g, g.hero.x, g.hero.y, 150, 45, 0.4, 6, 0.18);
   playSfx(g, "kill");
   // 💥 elitní vlastnost "boom" - korunka vybuchne a zraní i tebe
   if (e.elite === "boom" && !e.boss && !e.minib) {
@@ -2377,6 +2532,8 @@ function killEnemy(g: Game, e: Enemy): void {
     shock(g, e.x, e.y, 260, 48, 0.6, 8, 0.2);
     shock(g, e.x, e.y, 130, 0, 0.4, 5, 0.25);
     g.shake = e.final ? 18 : 14;
+    // 🏆 zlatý záblesk přes celou obrazovku - pád bosse musí být vidět na orbitek
+    g.goldFlash = 1;
     playSfx(g, "boom");
     // 🎺 hrdinná fanfára - pád bosse musí znít jako vítězství
     playSfx(g, "fanfare");
@@ -6487,7 +6644,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   const inView = (x: number, y: number, pad = 60) =>
     x > h.x - halfW - pad && x < h.x + halfW + pad && y > h.y - halfH - pad && y < h.y + halfH + pad;
 
-  if (fxCache.ctx !== ctx || fxCache.w !== VW || fxCache.h !== VH || !fxCache.n1 || !fxCache.n2 || !fxCache.vg || !fxCache.lg) {
+  if (fxCache.ctx !== ctx || fxCache.w !== VW || fxCache.h !== VH || !fxCache.n1 || !fxCache.n2 || !fxCache.vg || !fxCache.lg || !fxCache.gl) {
     const n1 = ctx.createRadialGradient(ARENA * 0.3, ARENA * 0.3, 0, ARENA * 0.3, ARENA * 0.3, 800);
     n1.addColorStop(0, "rgba(250,240,150,0.12)");
     n1.addColorStop(1, "rgba(250,240,150,0)");
@@ -6501,7 +6658,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     const lg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.32, VW / 2, VH / 2, VW * 0.72);
     lg.addColorStop(0, "rgba(170,15,15,0)");
     lg.addColorStop(1, "rgba(170,15,15,1)");
-    fxCache = { ctx, n1, n2, vg, lg, w: VW, h: VH };
+    // 🥇 zlatá vinětace - beat puls ve stylu Just Dance a fever hype
+    const gl = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.36, VW / 2, VH / 2, VW * 0.74);
+    gl.addColorStop(0, "rgba(253,224,71,0)");
+    gl.addColorStop(1, "rgba(253,224,71,1)");
+    fxCache = { ctx, n1, n2, vg, lg, gl, w: VW, h: VH };
   }
   if (inView(ARENA * 0.3, ARENA * 0.3, 850)) {
     ctx.fillStyle = fxCache.n1!;
@@ -7563,6 +7724,60 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.globalAlpha = 1;
   }
 
+  // 🏆 zlatý záblesk po položení bosse - přejede přes obrazovku a plynule vyprchá
+  if (g.goldFlash > 0) {
+    ctx.fillStyle = `rgba(253,230,138,${(0.38 * g.goldFlash).toFixed(3)})`;
+    ctx.fillRect(0, 0, VW, VH);
+  }
+
+  // 🥁 beat puls - okraje obrazovky jiskří v rytmu kopáku (jen když se to rozjede)
+  const beatP = AC && g.opts.snd ? Math.max(0, 1 - (performance.now() - musKickAt) / 480) : 0;
+  const songIsBoss = musSong === SONG_BOSS || musSong === SONG_FINAL;
+  const hypeAmt = Math.min(1, g.combo / 12);
+  if (beatP > 0 && (hypeAmt >= 0.3 || songIsBoss || g.enemies.length > 18)) {
+    ctx.globalAlpha = 0.15 * beatP * Math.max(hypeAmt, songIsBoss ? 1 : 0.4);
+    ctx.fillStyle = fxCache.gl!;
+    ctx.fillRect(0, 0, VW, VH);
+    ctx.globalAlpha = 1;
+  }
+
+  // 💨 speed lines - při vysokém kombu se rozeběhne zlatý vír čar k okrajům
+  const hypeA = Math.min(1, Math.max(0, (g.combo - 8) / 12));
+  if (hypeA > 0) {
+    ctx.save();
+    ctx.strokeStyle = "rgba(253,224,71,1)";
+    ctx.lineWidth = 2;
+    const cx = VW / 2;
+    const cy = VH / 2;
+    const mx = Math.max(VW, VH);
+    for (let i = 0; i < 14; i++) {
+      const a = i * 0.449 + Math.floor(g.gtime * 9) * 0.313;
+      const r0 = mx * (0.36 + 0.1 * (((i * 37) + Math.floor(g.gtime * 13) * 11) % 10) / 10);
+      const r1 = r0 + 60 + 90 * (((i * 53) + Math.floor(g.gtime * 17)) % 12) / 12;
+      ctx.globalAlpha = hypeA * 0.22 * (0.35 + 0.65 * (((i * 7) + Math.floor(g.gtime * 15)) % 10) / 10);
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0);
+      ctx.lineTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // 📣 toast s názvem skladby - když se track přepne, chvíli se ukáže nahoře
+  const musToastAge = performance.now() - musToastAt;
+  if (musToast && musToastAge < 3400 && g.running && !g.over) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, (3400 - musToastAge) / 600, musToastAge / 220);
+    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    const tw = ctx.measureText(`🎵 ${musToast}`).width + 26;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(VW / 2 - tw / 2, 66, tw, 22);
+    ctx.fillStyle = "#fde68a";
+    ctx.fillText(`🎵 ${musToast}`, VW / 2, 81);
+    ctx.restore();
+  }
+
   // 📣 boss intro banner - první vteřiny se jméno bosse rozezní nad arénou
   if (g.bossIntroT > 0) {
     const bf = 1 - g.bossIntroT / 2.6;
@@ -8251,6 +8466,8 @@ export default function LoukaTisicePriser() {
       } else if (!blocked) {
         updateGame(g, dt, move, wantDash);
       }
+      // 🏆 zlatý záblesk po bossovi plynule vyprchá
+      if (g.goldFlash > 0) g.goldFlash = Math.max(0, g.goldFlash - dt * 2.2);
       if (!g.userPaused) updateFx(g, dt);
       render(ctx, g, joy);
       // 🎵 hudba na pozadí - klidná, u bosse intenzivní

@@ -537,6 +537,8 @@ let fxCache: { ctx?: CanvasRenderingContext2D; n1?: CanvasGradient; n2?: CanvasG
 // 🎨 cache gradientů, které se nemění mezi snímky (pozadí podle výšky, světlo hrdiny)
 let bgCache: { g: CanvasGradient; h: number } | null = null;
 let hlgCache: CanvasGradient | null = null;
+// 🚀 vinětace předrenderovaná do offscreen plátna - každý snímek pak jen blit místo drahého gradient fillu
+let vigCv: { cv: HTMLCanvasElement | null; w: number; h: number } = { cv: null, w: 0, h: 0 };
 
 function dist2(ax: number, ay: number, bx: number, by: number): number {
   const dx = ax - bx;
@@ -7092,7 +7094,15 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
 
   // travnatá podlaha - jediný blit z předrenderované cache (tráva, kytičky, pruhy, mřížka)
   const wbg = getWorldBg(g);
-  if (wbg) ctx.drawImage(wbg, 0, 0, ARENA, ARENA);
+  if (wbg) {
+    // 🚀 blit JEN výřezu kamery - kreslit celou 6000² mapu každý snímek byl hlavní žrout FPS
+    const bs = 0.5;
+    const sx = Math.max(0, h.x - halfW - 60);
+    const sy = Math.max(0, h.y - halfH - 60);
+    const sw = Math.min(ARENA - sx, VW + 120);
+    const sh = Math.min(ARENA - sy, VH + 120);
+    ctx.drawImage(wbg, sx * bs, sy * bs, sw * bs, sh * bs, sx, sy, sw, sh);
+  }
   // 🕯️ měkké světlo hrdiny - jako by nesl lampu (Survivor.io focus na postavu)
   // gradient se vytvoří jen jednou; posun kolem hrdiny řeší translate při kreslení
   if (!hlgCache) {
@@ -7855,9 +7865,22 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
 
   ctx.restore();
 
-  // vinětace
-  ctx.fillStyle = fxCache.vg!;
-  ctx.fillRect(0, 0, VW, VH);
+  // vinětace - předrenderovaná do offscreen plátna při změně rozlišení, pak jen rychlý blit
+  if (!vigCv.cv || vigCv.w !== VW || vigCv.h !== VH) {
+    const c = document.createElement("canvas");
+    c.width = Math.max(1, VW);
+    c.height = Math.max(1, VH);
+    const cc = c.getContext("2d");
+    if (cc) {
+      const vg2 = cc.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VW * 0.7);
+      vg2.addColorStop(0, "rgba(0,0,0,0)");
+      vg2.addColorStop(1, "rgba(0,0,0,0.5)");
+      cc.fillStyle = vg2;
+      cc.fillRect(0, 0, VW, VH);
+    }
+    vigCv = { cv: c, w: VW, h: VH };
+  }
+  if (vigCv.cv) ctx.drawImage(vigCv.cv, 0, 0, VW, VH);
 
   // 🌙 noc - celá louka se přelije modravou tmou (přes den nic)
   if (g.night) {
@@ -8134,10 +8157,10 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     }
   }
 
-  // minimapa
+  // 🗺️ minimapa - pod HUD lištou (ta zabírá vršek přes celou šířku), ať se nepřekrývají
   const ms = Math.min(110, Math.round(VH * 0.17));
   const mx = VW - ms - 14;
-  const my = 14;
+  const my = 58;
   ctx.fillStyle = "rgba(4,8,20,0.75)";
   ctx.fillRect(mx, my, ms, ms);
   ctx.strokeStyle = "rgba(148,163,255,0.35)";
@@ -8669,8 +8692,8 @@ export default function LoukaTisicePriser() {
       VW = w;
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
-      // 🖥️ 1080p - interní rozlišení se škáluje až na 1920×1080 pixelů
-      DPR = Math.max(1, Math.min(raw, Math.sqrt(2073600 / (w * hgt))));
+      // 🚀 interní rozlišení max ~1 MP (místo 2 MP) - fill-rate je na mobilech zabiják FPS
+      DPR = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt))));
       canvas.width = Math.floor(w * DPR);
       canvas.height = Math.floor(hgt * DPR);
     };

@@ -8981,7 +8981,7 @@ export default function LoukaTisicePriser() {
         .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
         .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
         @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
-        .ltp-startbar { position: sticky; bottom: 0; z-index: 30; width: 100%; margin-top: .4rem; padding: 1.6rem 1rem calc(env(safe-area-inset-bottom,0px) + 14px); background: linear-gradient(to top, #061410 40%, rgba(6,20,16,.88) 68%, transparent); pointer-events: none; }
+        .ltp-startbar { position: relative; z-index: 30; width: 100%; flex-shrink: 0; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: linear-gradient(to top, #061410 55%, rgba(6,20,16,.92) 78%, transparent); pointer-events: none; }
         .ltp-startbar > * { pointer-events: auto; }
         .ltp-sbxsec { border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; background: rgba(255,255,255,.04); padding: .6rem .7rem; }
         .ltp-sbxsec h4 { margin: 0 0 .5rem .2rem; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(240,171,252,.8); text-align: left; }
@@ -9017,9 +9017,10 @@ export default function LoukaTisicePriser() {
           onContextMenu={(e) => e.preventDefault()}
         />
 
-        {/* HUD - jediná řádka nahoře */}
-        <div className="ltp-hud pointer-events-none absolute left-[calc(env(safe-area-inset-left,0px)+8px)] top-[calc(env(safe-area-inset-top,0px)+8px)] flex max-w-[calc(100%-110px)] flex-nowrap items-center gap-1.5 overflow-hidden text-[10px] font-semibold sm:gap-2 sm:text-xs">
-          <span className="hidden rounded-lg border border-white/15 bg-black/40 px-2 py-1 font-bold text-white/90 sm:inline-block sm:px-3">
+        {/* 🧭 HUD - horní lišta přes celou šířku: vlevo statistiky (na mobilu se oříznou), vpravo čas + rekord + pauza */}
+        <div className="ltp-hud pointer-events-none absolute left-[calc(env(safe-area-inset-left,0px)+8px)] right-[calc(env(safe-area-inset-right,0px)+8px)] top-[calc(env(safe-area-inset-top,0px)+8px)] flex items-center gap-1.5 text-[10px] font-semibold sm:gap-2 sm:text-xs">
+          <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
+          <span className="hidden rounded-lg border border-white/15 bg-black/40 px-2 py-1 font-bold text-white/90 lg:inline-block sm:px-3">
             🌾 {trk("title")}
           </span>
           <span className="rounded-lg border border-indigo-400/30 bg-indigo-500/25 px-2 py-1 text-indigo-200 sm:px-3">
@@ -9065,16 +9066,18 @@ export default function LoukaTisicePriser() {
               {ui.weapons}
             </span>
           )}
+          </div>
+          <div className="flex shrink-0 items-center gap-1.5">
           <span className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-white/70 sm:px-3">
             {mm}:{ss.toString().padStart(2, "0")}
           </span>
           {best > 0 && (
-            <span className="hidden rounded-lg border border-amber-400/30 bg-amber-500/25 px-2 py-1 text-amber-200 sm:inline-block sm:px-3">
+            <span className="hidden rounded-lg border border-amber-400/30 bg-amber-500/25 px-2 py-1 text-amber-200 md:inline-block sm:px-3">
               🏆 {best}
             </span>
           )}
           {meta.pts > 0 && (
-            <span className="hidden rounded-lg border border-lime-400/30 bg-lime-500/25 px-2 py-1 text-lime-200 sm:inline-block sm:px-3">
+            <span className="hidden rounded-lg border border-lime-400/30 bg-lime-500/25 px-2 py-1 text-lime-200 md:inline-block sm:px-3">
               🌱 {meta.pts}
             </span>
           )}
@@ -9091,124 +9094,121 @@ export default function LoukaTisicePriser() {
               ⏸
             </button>
           )}
-        </div>
-
-        {/* HP bar - plovoucí vlevo dole nad dash tlačítkem */}
-        <div className="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom,0px)+88px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-36 items-center gap-2 text-[10px] font-semibold text-white/80 sm:w-44 sm:text-xs">
-          <span>❤️</span>
-          <div className="h-2.5 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-3">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${(ui.hp / ui.maxHp) * 100}%`,
-                background: ui.hp / ui.maxHp > 0.4 ? "linear-gradient(90deg,#f87171,#fb923c)" : "#ef4444",
-              }}
-            />
           </div>
-          <span>
-            {ui.hp}/{ui.maxHp}
-          </span>
         </div>
 
-        {/* ⚡💨 Cooldown bary - desktop, pod HP barem (mobil má vlastní tlačítka) */}
-        {!isTouch && started && !over && (
-          <div className="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom,0px)+62px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-36 flex-col gap-1 text-[9px] font-semibold text-white/70 sm:w-44 sm:text-[10px]">
-            <div className="flex items-center gap-1.5">
-              <span>⚡</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400"
-                  style={{ width: `${Math.min(100, (1 - ui.ult / ui.ultMax) * 100)}%` }}
-                />
+        {/* ❤️📊 LEVÝ DOLNÍ ROH - jeden sloupec: HP bar, pak cooldown bary (desktop) nebo tlačítka 💨⚡ (mobil) */}
+        <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-40 flex-col gap-2 sm:w-52">
+          <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
+            <span>❤️</span>
+            <div className="h-2.5 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-3">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${(ui.hp / ui.maxHp) * 100}%`,
+                  background: ui.hp / ui.maxHp > 0.4 ? "linear-gradient(90deg,#f87171,#fb923c)" : "#ef4444",
+                }}
+              />
+            </div>
+            <span>
+              {ui.hp}/{ui.maxHp}
+            </span>
+          </div>
+          {!isTouch && started && !over && (
+            <div className="pointer-events-none flex flex-col gap-1 text-[9px] font-semibold text-white/70 sm:text-[10px]">
+              <div className="flex items-center gap-1.5">
+                <span>⚡</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400"
+                    style={{ width: `${Math.min(100, (1 - ui.ult / ui.ultMax) * 100)}%` }}
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span>💨</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-300"
+                    style={{ width: `${ui.dash * 100}%` }}
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span>💨</span>
-              <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60">
-                <div
-                  className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-300"
-                  style={{ width: `${ui.dash * 100}%` }}
-                />
-              </div>
+          )}
+          {isTouch && started && !over && !upgrades && !crate && !sbx && (
+            <div className="flex items-end gap-2">
+              <button
+                aria-label="Úhyb"
+                className="relative flex h-16 w-16 touch-none select-none items-center justify-center rounded-full border-2 border-sky-300/60 text-2xl transition active:scale-95 active:bg-sky-400/70 sm:h-20 sm:w-20 sm:text-3xl"
+                style={{
+                  background: ui.dash >= 1 ? "rgba(56,189,248,0.35)" : "rgba(30,41,59,0.6)",
+                  opacity: ui.dash >= 1 ? 1 : 0.55,
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  dashRef.current = true;
+                }}
+                onTouchStart={() => {
+                  dashRef.current = true;
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                💨
+                <span className="absolute bottom-1 left-2 right-2 h-1 overflow-hidden rounded-full bg-black/50">
+                  <span className="block h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, ui.dash * 100)}%` }} />
+                </span>
+              </button>
+              <button
+                aria-label="Ultimátum"
+                className="relative flex h-14 w-14 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/60 text-xl transition active:scale-95 sm:h-16 sm:w-16 sm:text-2xl"
+                style={{
+                  background: ui.ult <= 0 ? "rgba(217,70,239,0.45)" : "rgba(30,41,59,0.6)",
+                  opacity: ui.ult <= 0 ? 1 : 0.6,
+                }}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  castUlt(gameRef.current);
+                }}
+                onContextMenu={(e) => e.preventDefault()}
+              >
+                {ui.ult > 0 ? `⏳${Math.ceil(ui.ult)}` : ULTS[gameRef.current.cls]?.emoji || "⚡"}
+                <span className="absolute bottom-1 left-2 right-2 h-1 overflow-hidden rounded-full bg-black/50">
+                  <span className="block h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400" style={{ width: `${Math.min(100, (1 - ui.ult / ui.ultMax) * 100)}%` }} />
+                </span>
+              </button>
             </div>
-          </div>
-        )}
-
-        {/* XP bar - vpravo dole */}
-        <div className="pointer-events-none absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] right-[calc(env(safe-area-inset-right,0px)+8px)] flex w-[50%] max-w-[260px] items-center gap-2 text-[10px] text-white/70 sm:text-xs">
-          <span className="font-semibold text-white/85">XP</span>
-          <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60 sm:h-2.5">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-teal-300 to-emerald-400 transition-all"
-              style={{ width: `${Math.min(100, (ui.xp / ui.need) * 100)}%` }}
-            />
-          </div>
-          <span>
-            {ui.xp}/{ui.need}
-          </span>
+          )}
         </div>
 
-        {/* Dash tlačítko - vlevo dole */}
-        {isTouch && started && !over && !upgrades && !crate && !sbx && (
-          <button
-            aria-label="Úhyb"
-            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex h-16 w-16 touch-none select-none items-center justify-center rounded-full border-2 border-sky-300/60 text-2xl transition active:scale-95 active:bg-sky-400/70 sm:h-20 sm:w-20 sm:text-3xl"
-            style={{
-              background: ui.dash >= 1 ? "rgba(56,189,248,0.35)" : "rgba(30,41,59,0.6)",
-              opacity: ui.dash >= 1 ? 1 : 0.55,
-            }}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              dashRef.current = true;
-            }}
-            onTouchStart={() => {
-              dashRef.current = true;
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            💨
-            <span className="absolute bottom-1 left-2 right-2 h-1 overflow-hidden rounded-full bg-black/50">
-              <span className="block h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, ui.dash * 100)}%` }} />
+        {/* 🧪📈 PRAVÝ DOLNÍ ROH - jeden sloupec: sandbox tlačítko nad XP barem */}
+        <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex w-[46%] max-w-[280px] flex-col items-end gap-2">
+          {started && !over && !upgrades && !crate && !sbx && gameRef.current.sandbox && (
+            <button
+              aria-label="Sandbox"
+              className="ltp-sbxbtn pointer-events-auto flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/70 bg-fuchsia-500/35 text-xl transition active:scale-95"
+              onClick={sbxOpen}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              🧪
+            </button>
+          )}
+          <div className="pointer-events-none flex w-full items-center gap-2 text-[10px] text-white/70 sm:text-xs">
+            <span className="font-semibold text-white/85">XP</span>
+            <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60 sm:h-2.5">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-indigo-400 via-teal-300 to-emerald-400 transition-all"
+                style={{ width: `${Math.min(100, (ui.xp / ui.need) * 100)}%` }}
+              />
+            </div>
+            <span>
+              {ui.xp}/{ui.need}
             </span>
-          </button>
-        )}
-
-        {/* ⚡ Ultimátum - vlevo dole nad dashem, s odpočtem cooldownu */}
-        {isTouch && started && !over && !upgrades && !crate && !sbx && (
-          <button
-            aria-label="Ultimátum"
-            className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+110px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex h-14 w-14 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/60 text-xl transition active:scale-95 sm:h-16 sm:w-16 sm:text-2xl"
-            style={{
-              background: ui.ult <= 0 ? "rgba(217,70,239,0.45)" : "rgba(30,41,59,0.6)",
-              opacity: ui.ult <= 0 ? 1 : 0.6,
-            }}
-            onPointerDown={(e) => {
-              e.preventDefault();
-              castUlt(gameRef.current);
-            }}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            {ui.ult > 0 ? `⏳${Math.ceil(ui.ult)}` : ULTS[gameRef.current.cls]?.emoji || "⚡"}
-            <span className="absolute bottom-1 left-2 right-2 h-1 overflow-hidden rounded-full bg-black/50">
-              <span className="block h-full rounded-full bg-gradient-to-r from-fuchsia-400 to-violet-400" style={{ width: `${Math.min(100, (1 - ui.ult / ui.ultMax) * 100)}%` }} />
-            </span>
-          </button>
-        )}
-
-        {/* 🧪 Sandbox tlačítko - vpravo dole, nad XP bar (nesedá na minimapu) */}
-        {started && !over && !upgrades && !crate && !sbx && gameRef.current.sandbox && (
-          <button
-            aria-label="Sandbox"
-            className="ltp-sbxbtn pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom,0px)+46px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/70 bg-fuchsia-500/35 text-xl transition active:scale-95"
-            onClick={sbxOpen}
-            onContextMenu={(e) => e.preventDefault()}
-          >
-            🧪
-          </button>
-        )}
+          </div>
+        </div>
 
         {!started && !over && (
-          <div className="ltp-menu absolute inset-0 flex flex-col items-center gap-2 overflow-y-auto overscroll-contain p-3 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] text-center sm:gap-3 sm:p-6 sm:pb-[calc(env(safe-area-inset-bottom,0px)+24px)]">
+          <div className="ltp-menu absolute inset-0 flex flex-col items-center overflow-hidden text-center">
             {/* 🌌 aurora koule - plovoucí světla za menu (Survivor.io lobbystický vibe) */}
             <div className="ltp-orb" style={{ background: "#34d399", width: 340, height: 340, top: "-8%", left: "-6%" }} />
             <div className="ltp-orb" style={{ background: "#8b5cf6", width: 300, height: 300, top: "28%", right: "-8%", animationDelay: "-4.5s" }} />
@@ -9218,7 +9218,9 @@ export default function LoukaTisicePriser() {
             <span className="ltp-floaty" style={{ top: "30%", right: "8%", fontSize: 18, animationDelay: "-3.5s" }}>🐛</span>
             <span className="ltp-floaty" style={{ bottom: "24%", left: "14%", fontSize: 20, animationDelay: "-5.2s" }}>🌻</span>
             <span className="ltp-floaty" style={{ top: "12%", right: "22%", fontSize: 16, animationDelay: "-2.2s" }}>✨</span>
-            <div className="relative z-10 flex shrink-0 flex-col items-center gap-1 pt-1">
+            {/* 📜 scrollovatelný obsah menu - start bar je mimo něj, takže nikdy nezjede ani se nepřekryje */}
+            <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain p-3 pb-8 sm:gap-3 sm:p-6 sm:pb-10">
+            <div className="relative flex shrink-0 flex-col items-center gap-1 pt-1">
               <h2 className="ltp-title">
                 🌾 {trk("title")}
               </h2>
@@ -9505,6 +9507,8 @@ export default function LoukaTisicePriser() {
                 🧪 {trk("sbx_badge").replace("🧪 ", "")}
               </span>
             )}
+            </div>
+            {/* 📌 Spustit run - úplně na spodku, fixně, nic ho nezakryje */}
             <div className="ltp-startbar">
               <button
                 onClick={startRun}

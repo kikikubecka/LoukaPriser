@@ -1579,6 +1579,8 @@ const LANG: Record<string, Record<string, string>> = {
   cs: {
     title: "Louka tisíce příšer",
     tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček",
+    tagline: "Přežij ten dlouhý den na louce", menu_best: "Rekord",
+    sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: "👑 Bossové", sbx_sec_mini: "🌟 Mini-bossové", sbx_sec_enemies: "👾 Nepřátelé",
     board_title: "Žebříček nejlepších runů",
     board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 🥇",
     ask_name: "Top 10! Zapiš se do žebříčku:",
@@ -1660,6 +1662,8 @@ const LANG: Record<string, Record<string, string>> = {
   en: {
     title: "Meadow of a Thousand Monsters",
     tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard",
+    tagline: "Survive the long day in the meadow", menu_best: "Best",
+    sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: "👑 Bosses", sbx_sec_mini: "🌟 Mini-bosses", sbx_sec_enemies: "👾 Enemies",
     board_title: "Best runs leaderboard",
     board_empty: "Nothing here yet. Start a run, sign in and win 🥇",
     ask_name: "Top 10! Sign the leaderboard:",
@@ -1741,6 +1745,8 @@ const LANG: Record<string, Record<string, string>> = {
   pl: {
     title: "Łąka tysiąca potworów",
     tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica",
+    tagline: "Przeżyj długi dzień na łące", menu_best: "Rekord",
+    sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: "👑 Bossowie", sbx_sec_mini: "🌟 Mini-bossowie", sbx_sec_enemies: "👾 Wrogowie",
     board_title: "Tablica najlepszych runów",
     board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 🥇",
     ask_name: "Top 10! Zapisz się na tablicę:",
@@ -8355,14 +8361,24 @@ function SbxCard(props: { u: Upgrade; onPick: (u: Upgrade) => void }) {
             : `linear-gradient(to bottom right, ${ri.color}33, rgba(255,255,255,0.04))`,
       }}
     >
-      <span className="text-2xl sm:text-3xl">{u.emoji}</span>
+      <span
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-2xl sm:h-14 sm:w-14 sm:text-4xl"
+        style={{
+          background: `radial-gradient(circle at 35% 30%, ${ri.color}66, rgba(0,0,0,.5))`,
+          boxShadow: `inset 0 0 0 1.5px ${ri.color}aa, 0 0 14px ${ri.color}55`,
+        }}
+      >
+        {u.emoji}
+      </span>
       <span className="flex flex-col gap-0.5">
         <span className="text-[9px] font-bold tracking-widest" style={{ color: ri.color }}>
           {u.rarity >= 5 ? `✨ ${ri.label}` : ri.label}
         </span>
-        <span className="text-sm font-bold text-amber-200">{u.name}</span>
+        <span className="text-sm font-extrabold text-amber-100 sm:text-base">{u.name}</span>
         <span className="text-xs text-white/70">{u.desc}</span>
-        <span className="text-[8px] font-semibold text-fuchsia-300/80">{trk("sbx_hold")}</span>
+        <span className="mt-0.5 w-fit rounded-full border border-fuchsia-400/40 bg-fuchsia-500/20 px-1.5 py-px text-[8px] font-bold text-fuchsia-200">
+          {trk("sbx_hold")}
+        </span>
       </span>
     </button>
   );
@@ -9037,6 +9053,22 @@ export default function LoukaTisicePriser() {
         .ltp-btn { position: relative; overflow: hidden; animation: ltpPulse 2.6s ease-in-out infinite; letter-spacing: .07em; text-transform: uppercase; }
         .ltp-gold { animation: ltpGold 3s ease-in-out infinite; }
         .ltp-hud span { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
+        @keyframes ltpFloaty { 0%,100% { transform: translateY(0) rotate(-6deg); opacity: .5; } 50% { transform: translateY(-16px) rotate(9deg); opacity: .95; } }
+        @keyframes ltpSbxRing { 0%,100% { box-shadow: 0 0 0 0 rgba(232,121,249,.55), 0 0 18px rgba(232,121,249,.5); } 70% { box-shadow: 0 0 0 13px rgba(232,121,249,0), 0 0 28px rgba(232,121,249,.85); } }
+        @keyframes ltpHdr { 0%,100% { filter: drop-shadow(0 0 10px rgba(232,121,249,.45)); } 50% { filter: drop-shadow(0 0 22px rgba(232,121,249,.9)); } }
+        .ltp-floaty { position: absolute; pointer-events: none; z-index: 1; animation: ltpFloaty 7s ease-in-out infinite; filter: drop-shadow(0 4px 8px rgba(0,0,0,.5)); }
+        .ltp-sbxbtn { animation: ltpSbxRing 2.2s ease-out infinite; }
+        .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
+        .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+        @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
+        .ltp-startbar { position: sticky; bottom: 0; z-index: 30; width: 100%; margin-top: .4rem; padding: 1.6rem 1rem calc(env(safe-area-inset-bottom,0px) + 14px); background: linear-gradient(to top, #061410 40%, rgba(6,20,16,.88) 68%, transparent); pointer-events: none; }
+        .ltp-startbar > * { pointer-events: auto; }
+        .ltp-sbxsec { border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; background: rgba(255,255,255,.04); padding: .6rem .7rem; }
+        .ltp-sbxsec h4 { margin: 0 0 .5rem .2rem; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(240,171,252,.8); text-align: left; }
+        .ltp-spawn { border-radius: .7rem; border: 1px solid; padding: .32rem .6rem; font-size: 10px; font-weight: 700; transition: transform .12s ease, filter .12s ease; }
+        .ltp-spawn:hover { filter: brightness(1.3); }
+        .ltp-spawn:active { transform: scale(.92); }
+        @media (min-width: 640px) { .ltp-spawn { font-size: 11px; } }
       `}</style>
       <div className="absolute inset-0">
         <canvas
@@ -9247,7 +9279,7 @@ export default function LoukaTisicePriser() {
         {started && !over && !upgrades && !crate && !sbx && gameRef.current.sandbox && (
           <button
             aria-label="Sandbox"
-            className="pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom,0px)+46px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/70 bg-fuchsia-500/35 text-xl transition active:scale-95"
+            className="ltp-sbxbtn pointer-events-auto absolute bottom-[calc(env(safe-area-inset-bottom,0px)+46px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/70 bg-fuchsia-500/35 text-xl transition active:scale-95"
             onClick={sbxOpen}
             onContextMenu={(e) => e.preventDefault()}
           >
@@ -9261,11 +9293,24 @@ export default function LoukaTisicePriser() {
             <div className="ltp-orb" style={{ background: "#34d399", width: 340, height: 340, top: "-8%", left: "-6%" }} />
             <div className="ltp-orb" style={{ background: "#8b5cf6", width: 300, height: 300, top: "28%", right: "-8%", animationDelay: "-4.5s" }} />
             <div className="ltp-orb" style={{ background: "#f59e0b", width: 260, height: 260, bottom: "-10%", left: "18%", animationDelay: "-9s" }} />
-            <h2 className="ltp-title relative z-10 pt-1">
-              🌾 {trk("title")}
-            </h2>
+            {/* 🦋 plovoucí detaily kolem menu */}
+            <span className="ltp-floaty" style={{ top: "16%", left: "10%", fontSize: 22, animationDelay: "-1s" }}>🦋</span>
+            <span className="ltp-floaty" style={{ top: "30%", right: "8%", fontSize: 18, animationDelay: "-3.5s" }}>🐛</span>
+            <span className="ltp-floaty" style={{ bottom: "24%", left: "14%", fontSize: 20, animationDelay: "-5.2s" }}>🌻</span>
+            <span className="ltp-floaty" style={{ top: "12%", right: "22%", fontSize: 16, animationDelay: "-2.2s" }}>✨</span>
+            <div className="relative z-10 flex shrink-0 flex-col items-center gap-1 pt-1">
+              <h2 className="ltp-title">
+                🌾 {trk("title")}
+              </h2>
+              <p className="ltp-tagline">{trk("tagline")}</p>
+              <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
+                <span className="ltp-chip">🏆 {trk("menu_best")}: 🌱{Math.max(best, ...Object.values(meta.best || {}))}</span>
+                <span className="ltp-chip">🌱 {meta.pts} {trk("seeds")}</span>
+                {(meta.board || [])[0] && <span className="ltp-chip border-amber-300/40 bg-amber-400/15 text-amber-200">🥇 {(meta.board || [])[0].name} · 🌱{(meta.board || [])[0].score}</span>}
+              </div>
+            </div>
             {/* 🌍 výběr jazyka */}
-            <div className="flex items-center justify-center gap-1.5">
+            <div className="flex shrink-0 items-center justify-center gap-1.5">
               {LANGS.map((lg) => (
                 <button
                   key={lg.id}
@@ -9279,7 +9324,7 @@ export default function LoukaTisicePriser() {
               ))}
             </div>
             {/* taby: classa / trofeje / sandbox / semínka */}
-            <div className="ltp-glass relative z-10 flex w-full max-w-2xl items-center justify-center gap-1.5 rounded-2xl p-1.5">
+            <div className="ltp-glass relative z-10 flex w-full max-w-2xl shrink-0 items-center justify-center gap-1.5 rounded-2xl p-1.5">
               {(
                 [
                   { id: "cls", emoji: "🎭", label: "Classa" },
@@ -9540,12 +9585,14 @@ export default function LoukaTisicePriser() {
                 🧪 {trk("sbx_badge").replace("🧪 ", "")}
               </span>
             )}
-            <button
-              onClick={startRun}
-              className="ltp-btn ltp-sheen relative z-10 mt-1 rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
-            >
-              {trk("start")} {sandboxSel ? "🧪" : "▶"}
-            </button>
+            <div className="ltp-startbar">
+              <button
+                onClick={startRun}
+                className="ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
+              >
+                {trk("start")} {sandboxSel ? "🧪" : "▶"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -9592,105 +9639,94 @@ export default function LoukaTisicePriser() {
           </div>
         )}
         {sbx && (
-          <div className="absolute inset-0 flex flex-col gap-2 overflow-y-auto bg-black/80 p-3 backdrop-blur-md sm:gap-3 sm:p-6">
-            <h2 className="bg-gradient-to-r from-fuchsia-300 via-violet-300 to-fuchsia-300 bg-clip-text text-center text-2xl font-black text-transparent drop-shadow-[0_0_14px_rgba(232,121,249,.5)] sm:text-3xl">
-              {trk("sbx_title")}
-            </h2>
-            {/* live staty - okamžitá kontrola, že upgrady fungují */}
-            <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-1.5 text-[10px] font-semibold sm:text-xs">
-              <span className="rounded-lg border border-red-400/30 bg-red-500/20 px-2 py-1 text-red-200">
-                ❤️ {Math.ceil(gameRef.current.hero.hp)}/{gameRef.current.hero.maxHp}
-              </span>
-              <span className="rounded-lg border border-amber-400/30 bg-amber-500/20 px-2 py-1 text-amber-200">
-                💪 +{Math.round(gameRef.current.stats.dmgMul * 100)}% {trk("dmg")}
-              </span>
-              <span className="rounded-lg border border-yellow-400/30 bg-yellow-500/20 px-2 py-1 text-yellow-200">
-                ⚡ +{Math.round(gameRef.current.stats.fireMul * 100)}% {trk("kadence")}
-              </span>
-              <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/20 px-2 py-1 text-emerald-200">
-                👟 +{Math.round(gameRef.current.stats.speedMul * 100)}% {trk("rychlost")}
-              </span>
-              <span className="rounded-lg border border-orange-400/30 bg-orange-500/20 px-2 py-1 text-orange-200">
-                🎯 {Math.round(gameRef.current.stats.crit * 100)}% {trk("crit")}
-              </span>
-              <span className="rounded-lg border border-sky-400/30 bg-sky-500/20 px-2 py-1 text-sky-200">
-                🛡️ {Math.round(gameRef.current.stats.armor * 100)}% {trk("zbroj")}
-              </span>
-              <span className="rounded-lg border border-violet-400/30 bg-violet-500/20 px-2 py-1 text-violet-200">
-                🏹 {Math.round(gameRef.current.stats.multishot)}× {trk("projektil")}
-              </span>
-            </div>
+          <div className="absolute inset-0 z-40 flex flex-col overflow-hidden backdrop-blur-md" style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(76,29,149,.55) 0%, rgba(13,6,24,.94) 55%, rgba(5,2,10,.97) 100%)" }}>
+            {/* 🔝 sticky hlavička */}
+            <div className="shrink-0 border-b border-fuchsia-400/25 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+12px)]" style={{ background: "rgba(13,6,24,.85)" }}>
+              <h2 className="bg-gradient-to-r from-fuchsia-300 via-violet-300 to-fuchsia-300 bg-clip-text text-center text-2xl font-black text-transparent sm:text-3xl" style={{ animation: "ltpHdr 2.8s ease-in-out infinite" }}>
+                {trk("sbx_title")}
+              </h2>
             {sbxMsg && (
-              <p className="mx-auto rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-center text-xs font-bold text-emerald-200 sm:text-sm">
+              <p className="mx-auto mt-1.5 w-fit max-w-full rounded-lg border border-emerald-400/40 bg-emerald-500/20 px-3 py-1 text-center text-xs font-bold text-emerald-200 sm:text-sm">
                 {sbxMsg}
               </p>
             )}
-            <div className="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-center gap-1.5">
-              <button
-                onClick={() => sbxClear()}
-                className="rounded-xl border-2 border-sky-400/60 bg-sky-500/25 px-3 py-1.5 text-[11px] font-bold text-sky-200 transition active:scale-95 sm:text-sm"
-              >
-                {trk("sbx_clear")}
-              </button>
-              <button
-                onClick={() => sbxBoss(-1, true)}
-                className="rounded-xl border-2 border-red-400/60 bg-red-500/25 px-3 py-1.5 text-[11px] font-bold text-red-200 transition active:scale-95 sm:text-sm"
-              >
-                {trk("sbx_final")}
-              </button>
-              <button
-                onClick={sbxClose}
-                className="rounded-xl border-2 border-white/25 bg-white/10 px-3 py-1.5 text-[11px] font-bold text-white/80 transition active:scale-95 sm:text-sm"
-              >
-                {trk("sbx_close")}
-              </button>
+            {/* live staty - okamžitá kontrola, že upgrady fungují */}
+            <p className="mt-2 text-center text-[10px] font-extrabold uppercase tracking-[.16em] text-fuchsia-200/70">{trk("sbx_live")}</p>
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+              <span className="ltp-chip border-red-400/40 bg-red-500/20 text-red-200">❤️ {Math.ceil(gameRef.current.hero.hp)}/{gameRef.current.hero.maxHp}</span>
+              <span className="ltp-chip border-amber-400/40 bg-amber-500/20 text-amber-200">💪 +{Math.round(gameRef.current.stats.dmgMul * 100)}% {trk("dmg")}</span>
+              <span className="ltp-chip border-yellow-400/40 bg-yellow-500/20 text-yellow-200">⚡ +{Math.round(gameRef.current.stats.fireMul * 100)}% {trk("kadence")}</span>
+              <span className="ltp-chip border-emerald-400/40 bg-emerald-500/20 text-emerald-200">👟 +{Math.round(gameRef.current.stats.speedMul * 100)}% {trk("rychlost")}</span>
+              <span className="ltp-chip border-orange-400/40 bg-orange-500/20 text-orange-200">🎯 {Math.round(gameRef.current.stats.crit * 100)}% {trk("crit")}</span>
+              <span className="ltp-chip border-sky-400/40 bg-sky-500/20 text-sky-200">🛡️ {Math.round(gameRef.current.stats.armor * 100)}% {trk("zbroj")}</span>
+              <span className="ltp-chip border-violet-400/40 bg-violet-500/20 text-violet-200">🏹 {Math.round(gameRef.current.stats.multishot)}× {trk("projektil")}</span>
             </div>
-            {/* spawny konkrétních druhů */}
-            <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-center gap-1.5">
-              {BOSS_TYPES.map((bt, i) => (
-                <button
-                  key={bt.name}
-                  onClick={() => sbxBoss(i)}
-                  className="rounded-lg border border-red-400/40 bg-red-500/15 px-2 py-1 text-[10px] font-semibold text-red-100 transition active:scale-95 sm:text-xs"
-                >
-                  👑 {bt.name}
-                </button>
-              ))}
-              {BOSS_TYPES.map((bt, i) => (
-                <button
-                  key={`fin-${bt.name}`}
-                  onClick={() => sbxBoss(i, true)}
-                  className="rounded-lg border border-rose-500/50 bg-rose-600/20 px-2 py-1 text-[10px] font-semibold text-rose-100 transition active:scale-95 sm:text-xs"
-                >
-                  ☠️ {bt.name} FINÁL
-                </button>
-              ))}
-              {MINI_TYPES.map((mt, i) => (
-                <button
-                  key={mt.name}
-                  onClick={() => sbxMini(i)}
-                  className="rounded-lg border border-amber-400/40 bg-amber-500/15 px-2 py-1 text-[10px] font-semibold text-amber-100 transition active:scale-95 sm:text-xs"
-                >
-                  🌟 {mt.name}
-                </button>
-              ))}
-              {SBX_ENEMIES.map((se) => (
-                <button
-                  key={se.k}
-                  onClick={() => sbxEnemy(se.k)}
-                  className="rounded-lg border border-emerald-400/40 bg-emerald-500/15 px-2 py-1 text-[10px] font-semibold text-emerald-100 transition active:scale-95 sm:text-xs"
-                >
-                  {se.emoji} {se.name}
-                </button>
-              ))}
             </div>
-            <p className="text-center text-[10px] text-white/50 sm:text-xs">
+            {/* 📜 scrollovatelný obsah */}
+            <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5">
+            {/* ⚡ akce */}
+            <div className="ltp-sbxsec mx-auto w-full max-w-3xl">
+              <h4>{trk("sbx_sec_actions")}</h4>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                <button onClick={() => sbxClear()} className="ltp-spawn border-sky-400/60 bg-sky-500/25 text-sky-200">{trk("sbx_clear")}</button>
+                <button onClick={() => sbxBoss(-1, true)} className="ltp-spawn border-red-400/60 bg-red-500/25 text-red-200">{trk("sbx_final")}</button>
+              </div>
+            </div>
+            {/* 👑 bossové */}
+            <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
+              <h4>{trk("sbx_sec_boss")}</h4>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {BOSS_TYPES.map((bt, i) => (
+                  <button key={bt.name} onClick={() => sbxBoss(i)} className="ltp-spawn border-red-400/40 bg-red-500/15 text-red-100">
+                    👑 {bt.name}
+                  </button>
+                ))}
+                {BOSS_TYPES.map((bt, i) => (
+                  <button key={`fin-${bt.name}`} onClick={() => sbxBoss(i, true)} className="ltp-spawn border-rose-500/50 bg-rose-600/20 text-rose-100">
+                    ☠️ {bt.name} FINÁL
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* 🌟 mini-bossové */}
+            <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
+              <h4>{trk("sbx_sec_mini")}</h4>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {MINI_TYPES.map((mt, i) => (
+                  <button key={mt.name} onClick={() => sbxMini(i)} className="ltp-spawn border-amber-400/40 bg-amber-500/15 text-amber-100">
+                    🌟 {mt.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* 👾 nepřátelé */}
+            <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
+              <h4>{trk("sbx_sec_enemies")}</h4>
+              <div className="flex flex-wrap items-center justify-center gap-1.5">
+                {SBX_ENEMIES.map((se) => (
+                  <button key={se.k} onClick={() => sbxEnemy(se.k)} className="ltp-spawn border-emerald-400/40 bg-emerald-500/15 text-emerald-100">
+                    {se.emoji} {se.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mx-auto mt-3 w-full max-w-3xl text-center text-[10px] text-fuchsia-100/50 sm:text-xs">
               {trk("sbx_hint")}
             </p>
-            <div className="mx-auto grid w-full max-w-4xl grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
+            <div className="mx-auto mt-3 grid w-full max-w-4xl grid-cols-1 gap-2 pb-2 sm:grid-cols-3 sm:gap-3">
               {sbx.map((u) => (
                 <SbxCard key={u.id} u={u} onPick={sbxApply} />
               ))}
+            </div>
+            </div>
+            {/* 🔻 sticky patička */}
+            <div className="shrink-0 border-t border-fuchsia-400/25 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-2.5" style={{ background: "rgba(13,6,24,.88)" }}>
+              <button
+                onClick={sbxClose}
+                className="mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-fuchsia-400 via-violet-400 to-fuchsia-400 px-8 py-3 text-base font-extrabold text-fuchsia-950 transition hover:brightness-110 active:scale-95"
+              >
+                {trk("sbx_close")}
+              </button>
             </div>
           </div>
         )}

@@ -264,7 +264,7 @@ type Slash = { x: number; y: number; a: number; r: number; t: number; dur: numbe
 type Crate = { x: number; y: number; t: number };
 type Telegraph = { x: number; y: number; r: number; t: number; dur: number; dmg: number; dyn?: boolean; friendly?: boolean };
 type Arena = { x: number; y: number; r: number; active: boolean };
-type TreeDeco = { x: number; y: number; r: number; k: number; rn: number };
+type TreeDeco = { x: number; y: number; r: number; k: number; rn: number; cv?: HTMLCanvasElement; pad?: number };
 
 type WSlot = { id: string; cd: number; lvl: number };
 
@@ -614,11 +614,51 @@ function getOrbSprite(hue: number): HTMLCanvasElement {
 }
 
 let fxCache: { ctx?: CanvasRenderingContext2D; n1?: CanvasGradient; n2?: CanvasGradient; vg?: CanvasGradient; lg?: CanvasGradient; gl?: CanvasGradient; w?: number; h?: number } = {};
+// 🎨 cache gradientů, které se nemění mezi snímky (pozadí podle výšky, světlo hrdiny)
+let bgCache: { g: CanvasGradient; h: number } | null = null;
+let hlgCache: CanvasGradient | null = null;
 
 function dist2(ax: number, ay: number, bx: number, by: number): number {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
+}
+
+// 🕸️ PROSTOROVÁ MŘÍŽKA nepřátel - přestavuje se každý snímek; kolize pak běží jen mezi
+// sousedními buňkami místo O(n²) přes všechny příšery (klíčové pro plynulost v endgame)
+const GRID_CELL = 160;
+const GRID_N = Math.ceil(ARENA / GRID_CELL) + 1; // počet buněk na osu
+const GRID_STRIDE = GRID_N + 1;
+const GRID: Map<number, Enemy[]> = new Map();
+function gridKey(x: number, y: number): number {
+  const cx = Math.min(GRID_N - 1, Math.max(0, Math.floor(x / GRID_CELL)));
+  const cy = Math.min(GRID_N - 1, Math.max(0, Math.floor(y / GRID_CELL)));
+  return cx * GRID_STRIDE + cy;
+}
+function buildGrid(g: Game): void {
+  GRID.clear();
+  for (const e of g.enemies) {
+    if (e.dead) continue;
+    const k = gridKey(e.x, e.y);
+    const arr = GRID.get(k);
+    if (arr) arr.push(e);
+    else GRID.set(k, [e]);
+  }
+}
+// projde všechny nepřátele v okruhu r kolem (x, y) - včetně sousedních buněk
+function gridEach(x: number, y: number, r: number, cb: (e: Enemy) => void): void {
+  const c = GRID_CELL;
+  const x0 = Math.max(0, Math.floor((x - r) / c));
+  const x1 = Math.min(GRID_N - 1, Math.floor((x + r) / c));
+  const y0 = Math.max(0, Math.floor((y - r) / c));
+  const y1 = Math.min(GRID_N - 1, Math.floor((y + r) / c));
+  for (let cx = x0; cx <= x1; cx++) {
+    for (let cy = y0; cy <= y1; cy++) {
+      const arr = GRID.get(cx * GRID_STRIDE + cy);
+      if (!arr) continue;
+      for (let i = 0; i < arr.length; i++) cb(arr[i]);
+    }
+  }
 }
 
 function xpNeed(level: number): number {
@@ -3535,8 +3575,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       if (tu.windCd <= 0) {
         tu.windCd = 1.7;
         let hitAny = false;
-        for (const e of g.enemies) {
-          if (e.dead) continue;
+        gridEach(tu.x, tu.y, 170, (e) => {
+          if (e.dead) return;
           const d2v = dist2(tu.x, tu.y, e.x, e.y);
           if (d2v < 170 * 170) {
             const dd = Math.sqrt(d2v) || 1;
@@ -3550,18 +3590,20 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             if (e.hp <= 0) killEnemy(g, e);
             hitAny = true;
           }
-        }
+        });
         if (hitAny) burst(g, tu.x, tu.y, 10, 195, 130);
       }
     }
   }
 
   // šípy
+  // 🕸️ nejdřív mřížka nepřátel - kolize šípů pak běží jen v sousedství, ne přes celou mapu
+  buildGrid(g);
   for (let i = g.arrows.length - 1; i >= 0; i--) {
     const a = g.arrows[i];
     a.x += a.vx * dt;
     a.y += a.vy * dt;
-    // 🌬️ vítr žene i projektile
+    // 🌬️ vítr žene i projektil
     if (g.weather === "wind") {
       a.x += Math.cos(g.windA) * 60 * dt;
       a.y += Math.sin(g.windA) * 60 * dt;
@@ -3569,14 +3611,16 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     a.life -= dt;
     let remove = a.life <= 0 || a.x < 0 || a.x > ARENA || a.y < 0 || a.y > ARENA;
     if (!remove) {
-      for (const e of g.enemies) {
-        if (e.dead || a.hits.indexOf(e.id) !== -1) continue;
+      let hit = false;
+      gridEach(a.x, a.y, 170, (e) => {
+        if (hit) return;
+        if (e.dead || a.hits.indexOf(e.id) !== -1) return;
         // 🛡️ boss v imunitě - projektily ho proletí bez poškození
-        if (e.immT && e.immT > 0) continue;
+        if (e.immT && e.immT > 0) return;
         // 👻 duch ve fázi - prolnul skrze střely
-        if (e.kind === 6 && !e.boss && e.lungeT > 0) continue;
+        if (e.kind === 6 && !e.boss && e.lungeT > 0) return;
         // 🦡 zahrabaný jezevec - pod zemí nezranitelný
-        if ((e.subT ?? 0) > 0) continue;
+        if ((e.subT ?? 0) > 0) return;
         const rr = e.r + 5;
         if (dist2(a.x, a.y, e.x, e.y) < rr * rr) {
           a.hits.push(e.id);
@@ -3600,31 +3644,31 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             const aoe = a.lvl >= 5 ? 100 : 64;
             burst(g, a.x, a.y, 12, 20, 210);
             g.shake = Math.max(g.shake, 3);
-            for (const e2 of g.enemies) {
-              if (e2.dead || e2.id === e.id) continue;
-              if (e2.immT && e2.immT > 0) continue;
-              if (e2.kind === 6 && !e2.boss && e2.lungeT > 0) continue;
-              if ((e2.subT ?? 0) > 0) continue;
+            gridEach(a.x, a.y, aoe + 100, (e2) => {
+              if (e2.dead || e2.id === e.id) return;
+              if (e2.immT && e2.immT > 0) return;
+              if (e2.kind === 6 && !e2.boss && e2.lungeT > 0) return;
+              if ((e2.subT ?? 0) > 0) return;
               if (dist2(a.x, a.y, e2.x, e2.y) < aoe * aoe) {
                 e2.hp -= a.dmg * 0.75;
                 e2.flash = 0.09;
                 if (e2.hp <= 0) killEnemy(g, e2);
               }
-            }
+            });
             remove = true;
           } else if (a.chain > 0) {
-            // ⚡ řetězový blesk - přeskočí na další cíl
+            // ⚡ řetězový blesk - přeskočí na další cíl v okolí
             let nt: Enemy | null = null;
             let nd = 300 * 300;
-            for (const e2 of g.enemies) {
-              if (e2.dead || a.hits.indexOf(e2.id) !== -1) continue;
-              if (e2.immT && e2.immT > 0) continue; // blesk nepřeskočí na bosse v imunitě
+            gridEach(a.x, a.y, 300, (e2) => {
+              if (e2.dead || a.hits.indexOf(e2.id) !== -1) return;
+              if (e2.immT && e2.immT > 0) return; // blesk nepřeskočí na bosse v imunitě
               const d2 = dist2(a.x, a.y, e2.x, e2.y);
               if (d2 < nd) {
                 nd = d2;
                 nt = e2;
               }
-            }
+            });
             if (nt) {
               a.chain -= 1;
               const na = Math.atan2(nt.y - a.y, nt.x - a.x);
@@ -3641,9 +3685,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           } else {
             remove = true;
           }
-          break;
+          hit = true; // místo break - jsme v callbacku
         }
-      }
+      });
     }
     if (remove) {
       // ♻️ swap-pop + návrat do bazénu - žádné splice, žádné GC škytání
@@ -4203,8 +4247,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       }
       // 💣 přátelská bomba (náletek vojáka) - pálení platí netvorům, ne tobě
       if (tl.friendly) {
-        for (const e of g.enemies) {
-          if (e.dead || (e.immT ?? 0) > 0 || (e.subT ?? 0) > 0) continue;
+        // 🕸️ jen nepřátelé v dosahu zóny
+        gridEach(tl.x, tl.y, tl.r + 120, (e) => {
+          if (e.dead || (e.immT ?? 0) > 0 || (e.subT ?? 0) > 0) return;
           if (dist2(e.x, e.y, tl.x, tl.y) < (tl.r + e.r) * (tl.r + e.r)) {
             e.hp -= tl.dmg;
             e.flash = 0.1;
@@ -4213,7 +4258,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             e.kby += ((e.y - tl.y) / kd) * 200;
             if (e.hp <= 0) killEnemy(g, e);
           }
-        }
+        });
       } else {
         if (h.invuln <= 0 && dist2(h.x, h.y, tl.x, tl.y) < (tl.r + 13) * (tl.r + 13)) {
           damageHero(g, tl.dmg);
@@ -4288,13 +4333,15 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   const es = g.enemies;
   // při zácpě přes 110 nepřátel řešíme jen bossy/minibossy (O(n²) by zaseklo FPS)
   const heavy = es.length > 110;
+  // 🕸️ mřížka se přestaví podle aktuálních pozic - separace běží jen mezi sousedy
+  buildGrid(g);
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
     if (a.dead) continue;
-    for (let j = i + 1; j < es.length; j++) {
-      const b = es[j];
-      if (b.dead) continue;
-      if (heavy && !a.boss && !a.minib && !b.boss && !b.minib) continue;
+    gridEach(a.x, a.y, a.r + 100, (b) => {
+      // každý pár jen jednou (a.id < b.id) a bez přesahu přes hranice buněk
+      if (b === a || b.dead || a.id >= b.id) return;
+      if (heavy && !a.boss && !a.minib && !b.boss && !b.minib) return;
       const rr = a.r + b.r;
       const dx = b.x - a.x;
       const dy = b.y - a.y;
@@ -4307,7 +4354,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         b.x += dx * push;
         b.y += dy * push;
       }
-    }
+    });
   }
   for (let i = es.length - 1; i >= 0; i--) {
     if (es[i].dead) es.splice(i, 1);
@@ -4364,16 +4411,17 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         // 💥 mohutná dvojitá rázová vlna výbuchu
         shock(g, h.x, h.y, br + 40, 25, 0.6, 12, 0.3);
         shock(g, h.x, h.y, br * 0.55, 40, 0.45, 7, 0.2);
-        for (const e of g.enemies) {
-          if (e.dead) continue;
-          if (e.immT && e.immT > 0) continue;
+        // 🕸️ výbuch zasáhne jen nepřátele v dosahu (mřížka místo celé mapy)
+        gridEach(h.x, h.y, br + 100, (e) => {
+          if (e.dead) return;
+          if (e.immT && e.immT > 0) return;
           const dd = dist2(e.x, e.y, h.x, h.y);
           if (dd < br * br) {
             e.hp -= bdmg * (1 - Math.sqrt(dd) / (br * 1.4));
             e.flash = 0.09;
             if (e.hp <= 0) killEnemy(g, e);
           }
-        }
+        });
       } else if (o.pk === 3) {
         // 🧲 magnet - vysaje všechny koule z celé mapy
         g.magT = 2.2;
@@ -6809,15 +6857,268 @@ function getWorldBg(g: Game): HTMLCanvasElement | null {
 // 🚀 cache fontů letících textů - žádné skládání řetězců každý snímek
 const FT_FONTS: Record<number, string> = {};
 
+// 🎨 kreslí jeden dekorativní strom/keř do libovolného kontextu (jednou, při tvorbě sprite)
+function paintTree(c: CanvasRenderingContext2D, tr: TreeDeco): void {
+  const rn = tr.rn;
+  const sway = 0;
+  // stín
+  c.fillStyle = "rgba(0,0,0,0.25)";
+  c.beginPath();
+  c.ellipse(tr.x + 5, tr.y + 6, tr.r * 1.05, tr.r * 0.42, 0, 0, Math.PI * 2);
+  c.fill();
+  if (tr.k === 0) {
+    // --- strom: kmen s přechodem a kořenovým pakůtkem ---
+    const cx = tr.x + sway * 0.3;
+    const cy = tr.y - tr.r * 0.5;
+    const tg = c.createLinearGradient(tr.x - 4, 0, tr.x + 4, 0);
+    tg.addColorStop(0, "#9a6b3f");
+    tg.addColorStop(0.55, "#6b4226");
+    tg.addColorStop(1, "#3f2413");
+    c.fillStyle = tg;
+    c.beginPath();
+    c.moveTo(cx - 3.5, cy);
+    c.lineTo(cx + 3.5, cy);
+    c.lineTo(cx + 2, tr.y + tr.r * 0.5);
+    c.lineTo(cx - 2, tr.y + tr.r * 0.5);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.ellipse(cx, tr.y + tr.r * 0.5, 6, 2.5, 0, 0, Math.PI * 2);
+    c.fill();
+    // uzel na kmeni
+    c.fillStyle = "rgba(30,15,5,0.4)";
+    c.beginPath();
+    c.ellipse(cx + 0.8, cy + tr.r * 0.28, 1.6, 2.4, 0, 0, Math.PI * 2);
+    c.fill();
+    // koruna - tmavý podklad
+    const hx2 = cx + sway;
+    const hy2 = cy - tr.r * 0.12;
+    c.fillStyle = "#16351c";
+    c.beginPath();
+    c.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
+    c.fill();
+    // pět bochánků listí
+    for (let b = 0; b < 5; b++) {
+      const ba = (b / 5) * Math.PI * 2 + rn * 6.28 + (b % 2) * 0.4;
+      const br = tr.r * (0.42 + (((b * 7) + rn * 13) % 10) / 30);
+      c.fillStyle = b % 2 ? "#2d6a2e" : "#256028";
+      c.beginPath();
+      c.arc(hx2 + Math.cos(ba) * tr.r * 0.55, hy2 + Math.sin(ba) * tr.r * 0.44, br, 0, Math.PI * 2);
+      c.fill();
+    }
+    // spodní stín koruny (objem zespodu)
+    c.fillStyle = "rgba(6,24,10,0.28)";
+    c.beginPath();
+    c.ellipse(hx2, hy2 + tr.r * 0.62, tr.r * 0.62, tr.r * 0.3, 0, 0, Math.PI * 2);
+    c.fill();
+    // světlá kopice listí + odlesk
+    c.fillStyle = "#48a04a";
+    c.beginPath();
+    c.arc(hx2 - tr.r * 0.28, hy2 - tr.r * 0.35, tr.r * 0.45, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(190,242,160,0.4)";
+    c.beginPath();
+    c.arc(hx2 - tr.r * 0.42, hy2 - tr.r * 0.48, tr.r * 0.22, 0, Math.PI * 2);
+    c.fill();
+    // tmavý obrys koruny
+    c.strokeStyle = "rgba(10,30,14,0.55)";
+    c.lineWidth = 2;
+    c.beginPath();
+    c.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
+    c.stroke();
+    // plody s lesklým jadérkem
+    if (tr.r > 24 || rn > 0.55) {
+      for (let f = 0; f < 3; f++) {
+        const fa = rn * 6.28 + f * 2.3;
+        const fx = hx2 + Math.cos(fa) * tr.r * 0.55;
+        const fy = hy2 + Math.sin(fa) * tr.r * 0.5;
+        c.fillStyle = "#ef4444";
+        c.beginPath();
+        c.arc(fx, fy, 2.3, 0, Math.PI * 2);
+        c.fill();
+        c.fillStyle = "rgba(255,255,255,0.55)";
+        c.beginPath();
+        c.arc(fx - 0.7, fy - 0.7, 0.7, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+    // trs trávy u paty stromu
+    c.fillStyle = "rgba(120,200,110,0.55)";
+    c.fillRect(tr.x - 9, tr.y + tr.r * 0.5, 2, 4);
+    c.fillRect(tr.x + 7, tr.y + tr.r * 0.45, 2, 4);
+    c.fillStyle = "rgba(40,100,45,0.8)";
+    c.fillRect(tr.x - 3, tr.y + tr.r * 0.55, 2, 5);
+  } else if (tr.k === 2) {
+    // --- muchomůrka: červená kloboučka s bílými tečkami a noha ---
+    const cx = tr.x + sway * 0.2;
+    const capY = tr.y - tr.r * 0.55;
+    // noha
+    c.fillStyle = "#e7d8c3";
+    c.beginPath();
+    c.moveTo(cx - tr.r * 0.22, capY);
+    c.lineTo(cx + tr.r * 0.22, capY);
+    c.lineTo(cx + tr.r * 0.3, tr.y + tr.r * 0.6);
+    c.lineTo(cx - tr.r * 0.3, tr.y + tr.r * 0.6);
+    c.closePath();
+    c.fill();
+    // kloboučka
+    c.fillStyle = "#dc2626";
+    c.beginPath();
+    c.ellipse(cx, capY, tr.r * 0.95, tr.r * 0.68, 0, Math.PI, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "rgba(120,10,10,0.4)";
+    c.beginPath();
+    c.ellipse(cx, capY, tr.r * 0.95, tr.r * 0.68, 0, Math.PI * 0.15, Math.PI * 0.85);
+    c.fill();
+    // bílé tečky
+    c.fillStyle = "#fff";
+    for (let d = 0; d < 4; d++) {
+      const da = rn * 6.28 + d * 1.7;
+      c.beginPath();
+      c.arc(cx + Math.cos(da) * tr.r * 0.5, capY - tr.r * 0.28 + Math.sin(da) * tr.r * 0.1, 1.4, 0, Math.PI * 2);
+      c.fill();
+    }
+    // spodní okraj kloboučky
+    c.fillStyle = "#f3e8e0";
+    c.fillRect(cx - tr.r * 0.85, capY - 1.5, tr.r * 1.7, 2.5);
+    // trs trávy
+    c.fillStyle = "rgba(120,200,110,0.6)";
+    c.fillRect(tr.x - 5, tr.y + tr.r * 0.5, 2, 4);
+    c.fillRect(tr.x + 3, tr.y + tr.r * 0.45, 2, 4);
+  } else if (tr.k === 3) {
+    // --- kámen: šedý balvan s odleskem a prasklinou ---
+    const gx = tr.x + sway * 0.15;
+    c.fillStyle = "#78716c";
+    c.beginPath();
+    c.moveTo(gx - tr.r, tr.y + tr.r * 0.5);
+    c.lineTo(gx - tr.r * 0.75, tr.y - tr.r * 0.55);
+    c.lineTo(gx - tr.r * 0.15, tr.y - tr.r * 0.85);
+    c.lineTo(gx + tr.r * 0.6, tr.y - tr.r * 0.6);
+    c.lineTo(gx + tr.r * 0.95, tr.y + tr.r * 0.1);
+    c.lineTo(gx + tr.r * 0.7, tr.y + tr.r * 0.5);
+    c.closePath();
+    c.fill();
+    // světlejší horní plocha
+    c.fillStyle = "#a8a29e";
+    c.beginPath();
+    c.moveTo(gx - tr.r * 0.6, tr.y - tr.r * 0.4);
+    c.lineTo(gx - tr.r * 0.15, tr.y - tr.r * 0.78);
+    c.lineTo(gx + tr.r * 0.5, tr.y - tr.r * 0.55);
+    c.lineTo(gx + tr.r * 0.3, tr.y - tr.r * 0.15);
+    c.lineTo(gx - tr.r * 0.3, tr.y - tr.r * 0.1);
+    c.closePath();
+    c.fill();
+    // odlesk
+    c.fillStyle = "rgba(255,255,255,0.25)";
+    c.beginPath();
+    c.arc(gx - tr.r * 0.25, tr.y - tr.r * 0.45, tr.r * 0.16, 0, Math.PI * 2);
+    c.fill();
+    // prasklina
+    c.strokeStyle = "rgba(41,37,36,0.5)";
+    c.lineWidth = 1.3;
+    c.beginPath();
+    c.moveTo(gx + tr.r * 0.1, tr.y - tr.r * 0.5);
+    c.lineTo(gx + tr.r * 0.2, tr.y - tr.r * 0.1);
+    c.lineTo(gx + tr.r * 0.05, tr.y + tr.r * 0.3);
+    c.stroke();
+    // mech při patě
+    c.fillStyle = "rgba(74,124,54,0.6)";
+    c.beginPath();
+    c.ellipse(gx - tr.r * 0.5, tr.y + tr.r * 0.3, tr.r * 0.3, tr.r * 0.14, 0, 0, Math.PI * 2);
+    c.fill();
+  } else if (tr.k === 4) {
+    // --- bobulový keř: svěží bochánky plné modrých bobulí ---
+    const bx2 = tr.x + sway * 0.5;
+    c.fillStyle = "#2c5e1f";
+    for (let b = 0; b < 3; b++) {
+      const ba = (b / 3) * Math.PI * 2 + rn * 5;
+      c.beginPath();
+      c.arc(bx2 + Math.cos(ba) * tr.r * 0.35, tr.y + Math.sin(ba) * tr.r * 0.28, tr.r * 0.62, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "#4d8f35";
+    for (let b = 0; b < 3; b++) {
+      const ba = (b / 3) * Math.PI * 2 + rn * 5 + 0.5;
+      c.beginPath();
+      c.arc(bx2 + Math.cos(ba) * tr.r * 0.25, tr.y - tr.r * 0.2 + Math.sin(ba) * tr.r * 0.2, tr.r * 0.48, 0, Math.PI * 2);
+      c.fill();
+    }
+    // modrofialové bobule s leskem
+    for (let f = 0; f < 6; f++) {
+      const fa = rn * 9 + f * 1.15;
+      const fx = bx2 + Math.cos(fa) * tr.r * 0.42;
+      const fy = tr.y - tr.r * 0.15 + Math.sin(fa) * tr.r * 0.3;
+      c.fillStyle = "#6d28d9";
+      c.beginPath();
+      c.arc(fx, fy, 1.8, 0, Math.PI * 2);
+      c.fill();
+      c.fillStyle = "rgba(216,180,254,0.7)";
+      c.beginPath();
+      c.arc(fx - 0.5, fy - 0.5, 0.6, 0, Math.PI * 2);
+      c.fill();
+    }
+  } else {
+    // --- keř: tři bochánky s obrysem a bobulemi ---
+    const bx2 = tr.x + sway * 0.5;
+    c.fillStyle = "#1c4517";
+    for (let b = 0; b < 3; b++) {
+      const ba = (b / 3) * Math.PI * 2 + rn * 5;
+      c.beginPath();
+      c.arc(bx2 + Math.cos(ba) * tr.r * 0.35, tr.y + Math.sin(ba) * tr.r * 0.28, tr.r * 0.62, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "#35742a";
+    for (let b = 0; b < 3; b++) {
+      const ba = (b / 3) * Math.PI * 2 + rn * 5 + 0.5;
+      c.beginPath();
+      c.arc(bx2 + Math.cos(ba) * tr.r * 0.25, tr.y - tr.r * 0.2 + Math.sin(ba) * tr.r * 0.2, tr.r * 0.48, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.fillStyle = "rgba(255,255,255,0.2)";
+    c.beginPath();
+    c.arc(bx2 - tr.r * 0.3, tr.y - tr.r * 0.35, tr.r * 0.28, 0, Math.PI * 2);
+    c.fill();
+    if (rn > 0.4) {
+      c.fillStyle = "#b91c1c";
+      for (let f = 0; f < 3; f++) {
+        const fa = rn * 9 + f * 2.1;
+        c.beginPath();
+        c.arc(bx2 + Math.cos(fa) * tr.r * 0.4, tr.y + Math.sin(fa) * tr.r * 0.3, 1.6, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  }
+}
+
+// 🌳 předrenderuje strom do vlastního sprite - pak už jen drawImage (místo desítek cest každý snímek)
+function makeTreeSprite(tr: TreeDeco): HTMLCanvasElement {
+  const pad = Math.ceil(tr.r * 0.7) + 10;
+  const size = Math.ceil(tr.r * 2 + pad * 2);
+  const cv = document.createElement("canvas");
+  cv.width = size;
+  cv.height = size;
+  const c = cv.getContext("2d");
+  if (c) {
+    c.translate(size / 2 - tr.x, size / 2 - tr.y);
+    paintTree(c, tr);
+  }
+  tr.pad = size / 2;
+  return cv;
+}
+
 function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   const h = g.hero;
   const zoom = 1;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  const bg = ctx.createLinearGradient(0, 0, 0, VH);
-  bg.addColorStop(0, "#265231");
-  bg.addColorStop(1, "#12321d");
-  ctx.fillStyle = bg;
+  // 🎨 pozadí se přechází jen při změně výšky - jeden gradient se cacheuje
+  if (!bgCache || bgCache.h !== VH) {
+    const b = ctx.createLinearGradient(0, 0, 0, VH);
+    b.addColorStop(0, "#265231");
+    b.addColorStop(1, "#12321d");
+    bgCache = { g: b, h: VH };
+  }
+  ctx.fillStyle = bgCache.g;
   ctx.fillRect(0, 0, VW, VH);
 
   const sh = g.opts.shk ? g.shake : 0; // 📴 třesení lze vypnout v pauze
@@ -6867,11 +7168,17 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   const wbg = getWorldBg(g);
   if (wbg) ctx.drawImage(wbg, 0, 0, ARENA, ARENA);
   // 🕯️ měkké světlo hrdiny - jako by nesl lampu (Survivor.io focus na postavu)
-  const hlg = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, 200);
-  hlg.addColorStop(0, "rgba(255,250,200,0.11)");
-  hlg.addColorStop(1, "rgba(255,250,200,0)");
-  ctx.fillStyle = hlg;
-  ctx.fillRect(h.x - 200, h.y - 200, 400, 400);
+  // gradient se vytvoří jen jednou; posun kolem hrdiny řeší translate při kreslení
+  if (!hlgCache) {
+    hlgCache = ctx.createRadialGradient(0, 0, 0, 0, 0, 200);
+    hlgCache.addColorStop(0, "rgba(255,250,200,0.11)");
+    hlgCache.addColorStop(1, "rgba(255,250,200,0)");
+  }
+  ctx.save();
+  ctx.translate(h.x, h.y);
+  ctx.fillStyle = hlgCache;
+  ctx.fillRect(-200, -200, 400, 400);
+  ctx.restore();
 
   // ✨ světlušky po louce (chvilkové problikávání) - počet škáluje s mapou, ať neztratí
   const ffN = Math.min(30, Math.max(12, Math.round(ARENA / 280)));
@@ -6895,238 +7202,12 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   ctx.strokeRect(0, 0, ARENA, ARENA);
 
   // 🌳 stromy a keře - vrstvené koruny, kmeny s kořeny, houpející se listí
+  // 🌳 stromy a keře - předrenderované sprite + lehký výkyv celého stromu (místo stovek cest každý snímek)
   for (const tr of g.trees) {
     if (!inView(tr.x, tr.y, tr.r + 42)) continue;
-    // stabilní pseudonáhoda předpočtená při vzniku mapy (optimalizace)
-    const rn = tr.rn;
-    const sway = Math.sin(g.gtime * 1.3 + tr.x * 0.07 + rn * 6) * 1.8;
-    // stín
-    ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.beginPath();
-    ctx.ellipse(tr.x + 5, tr.y + 6, tr.r * 1.05, tr.r * 0.42, 0, 0, Math.PI * 2);
-    ctx.fill();
-    if (tr.k === 0) {
-      // --- strom: kmen s přechodem a kořenovým pakůtkem ---
-      const cx = tr.x + sway * 0.3;
-      const cy = tr.y - tr.r * 0.5;
-      const tg = ctx.createLinearGradient(tr.x - 4, 0, tr.x + 4, 0);
-      tg.addColorStop(0, "#9a6b3f");
-      tg.addColorStop(0.55, "#6b4226");
-      tg.addColorStop(1, "#3f2413");
-      ctx.fillStyle = tg;
-      ctx.beginPath();
-      ctx.moveTo(cx - 3.5, cy);
-      ctx.lineTo(cx + 3.5, cy);
-      ctx.lineTo(cx + 2, tr.y + tr.r * 0.5);
-      ctx.lineTo(cx - 2, tr.y + tr.r * 0.5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(cx, tr.y + tr.r * 0.5, 6, 2.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // uzel na kmeni
-      ctx.fillStyle = "rgba(30,15,5,0.4)";
-      ctx.beginPath();
-      ctx.ellipse(cx + 0.8, cy + tr.r * 0.28, 1.6, 2.4, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // koruna - tmavý podklad
-      const hx2 = cx + sway;
-      const hy2 = cy - tr.r * 0.12;
-      ctx.fillStyle = "#16351c";
-      ctx.beginPath();
-      ctx.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
-      ctx.fill();
-      // pět bochánků listí
-      for (let b = 0; b < 5; b++) {
-        const ba = (b / 5) * Math.PI * 2 + rn * 6.28 + (b % 2) * 0.4;
-        const br = tr.r * (0.42 + (((b * 7) + rn * 13) % 10) / 30);
-        ctx.fillStyle = b % 2 ? "#2d6a2e" : "#256028";
-        ctx.beginPath();
-        ctx.arc(hx2 + Math.cos(ba) * tr.r * 0.55, hy2 + Math.sin(ba) * tr.r * 0.44, br, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // spodní stín koruny (objem zespodu)
-      ctx.fillStyle = "rgba(6,24,10,0.28)";
-      ctx.beginPath();
-      ctx.ellipse(hx2, hy2 + tr.r * 0.62, tr.r * 0.62, tr.r * 0.3, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // světlá kopice listí + odlesk
-      ctx.fillStyle = "#48a04a";
-      ctx.beginPath();
-      ctx.arc(hx2 - tr.r * 0.28, hy2 - tr.r * 0.35, tr.r * 0.45, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(190,242,160,0.4)";
-      ctx.beginPath();
-      ctx.arc(hx2 - tr.r * 0.42, hy2 - tr.r * 0.48, tr.r * 0.22, 0, Math.PI * 2);
-      ctx.fill();
-      // tmavý obrys koruny
-      ctx.strokeStyle = "rgba(10,30,14,0.55)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
-      ctx.stroke();
-      // plody s lesklým jadérkem
-      if (tr.r > 24 || rn > 0.55) {
-        for (let f = 0; f < 3; f++) {
-          const fa = rn * 6.28 + f * 2.3;
-          const fx = hx2 + Math.cos(fa) * tr.r * 0.55;
-          const fy = hy2 + Math.sin(fa) * tr.r * 0.5;
-          ctx.fillStyle = "#ef4444";
-          ctx.beginPath();
-          ctx.arc(fx, fy, 2.3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = "rgba(255,255,255,0.55)";
-          ctx.beginPath();
-          ctx.arc(fx - 0.7, fy - 0.7, 0.7, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-      // trs trávy u paty stromu
-      ctx.fillStyle = "rgba(120,200,110,0.55)";
-      ctx.fillRect(tr.x - 9, tr.y + tr.r * 0.5, 2, 4);
-      ctx.fillRect(tr.x + 7, tr.y + tr.r * 0.45, 2, 4);
-      ctx.fillStyle = "rgba(40,100,45,0.8)";
-      ctx.fillRect(tr.x - 3, tr.y + tr.r * 0.55, 2, 5);
-    } else if (tr.k === 2) {
-      // --- muchomůrka: červená kloboučka s bílými tečkami a noha ---
-      const cx = tr.x + sway * 0.2;
-      const capY = tr.y - tr.r * 0.55;
-      // noha
-      ctx.fillStyle = "#e7d8c3";
-      ctx.beginPath();
-      ctx.moveTo(cx - tr.r * 0.22, capY);
-      ctx.lineTo(cx + tr.r * 0.22, capY);
-      ctx.lineTo(cx + tr.r * 0.3, tr.y + tr.r * 0.6);
-      ctx.lineTo(cx - tr.r * 0.3, tr.y + tr.r * 0.6);
-      ctx.closePath();
-      ctx.fill();
-      // kloboučka
-      ctx.fillStyle = "#dc2626";
-      ctx.beginPath();
-      ctx.ellipse(cx, capY, tr.r * 0.95, tr.r * 0.68, 0, Math.PI, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = "rgba(120,10,10,0.4)";
-      ctx.beginPath();
-      ctx.ellipse(cx, capY, tr.r * 0.95, tr.r * 0.68, 0, Math.PI * 0.15, Math.PI * 0.85);
-      ctx.fill();
-      // bílé tečky
-      ctx.fillStyle = "#fff";
-      for (let d = 0; d < 4; d++) {
-        const da = rn * 6.28 + d * 1.7;
-        ctx.beginPath();
-        ctx.arc(cx + Math.cos(da) * tr.r * 0.5, capY - tr.r * 0.28 + Math.sin(da) * tr.r * 0.1, 1.4, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // spodní okraj kloboučky
-      ctx.fillStyle = "#f3e8e0";
-      ctx.fillRect(cx - tr.r * 0.85, capY - 1.5, tr.r * 1.7, 2.5);
-      // trs trávy
-      ctx.fillStyle = "rgba(120,200,110,0.6)";
-      ctx.fillRect(tr.x - 5, tr.y + tr.r * 0.5, 2, 4);
-      ctx.fillRect(tr.x + 3, tr.y + tr.r * 0.45, 2, 4);
-    } else if (tr.k === 3) {
-      // --- kámen: šedý balvan s odleskem a prasklinou ---
-      const gx = tr.x + sway * 0.15;
-      ctx.fillStyle = "#78716c";
-      ctx.beginPath();
-      ctx.moveTo(gx - tr.r, tr.y + tr.r * 0.5);
-      ctx.lineTo(gx - tr.r * 0.75, tr.y - tr.r * 0.55);
-      ctx.lineTo(gx - tr.r * 0.15, tr.y - tr.r * 0.85);
-      ctx.lineTo(gx + tr.r * 0.6, tr.y - tr.r * 0.6);
-      ctx.lineTo(gx + tr.r * 0.95, tr.y + tr.r * 0.1);
-      ctx.lineTo(gx + tr.r * 0.7, tr.y + tr.r * 0.5);
-      ctx.closePath();
-      ctx.fill();
-      // světlejší horní plocha
-      ctx.fillStyle = "#a8a29e";
-      ctx.beginPath();
-      ctx.moveTo(gx - tr.r * 0.6, tr.y - tr.r * 0.4);
-      ctx.lineTo(gx - tr.r * 0.15, tr.y - tr.r * 0.78);
-      ctx.lineTo(gx + tr.r * 0.5, tr.y - tr.r * 0.55);
-      ctx.lineTo(gx + tr.r * 0.3, tr.y - tr.r * 0.15);
-      ctx.lineTo(gx - tr.r * 0.3, tr.y - tr.r * 0.1);
-      ctx.closePath();
-      ctx.fill();
-      // odlesk
-      ctx.fillStyle = "rgba(255,255,255,0.25)";
-      ctx.beginPath();
-      ctx.arc(gx - tr.r * 0.25, tr.y - tr.r * 0.45, tr.r * 0.16, 0, Math.PI * 2);
-      ctx.fill();
-      // prasklina
-      ctx.strokeStyle = "rgba(41,37,36,0.5)";
-      ctx.lineWidth = 1.3;
-      ctx.beginPath();
-      ctx.moveTo(gx + tr.r * 0.1, tr.y - tr.r * 0.5);
-      ctx.lineTo(gx + tr.r * 0.2, tr.y - tr.r * 0.1);
-      ctx.lineTo(gx + tr.r * 0.05, tr.y + tr.r * 0.3);
-      ctx.stroke();
-      // mech při patě
-      ctx.fillStyle = "rgba(74,124,54,0.6)";
-      ctx.beginPath();
-      ctx.ellipse(gx - tr.r * 0.5, tr.y + tr.r * 0.3, tr.r * 0.3, tr.r * 0.14, 0, 0, Math.PI * 2);
-      ctx.fill();
-    } else if (tr.k === 4) {
-      // --- bobulový keř: svěží bochánky plné modrých bobulí ---
-      const bx2 = tr.x + sway * 0.5;
-      ctx.fillStyle = "#2c5e1f";
-      for (let b = 0; b < 3; b++) {
-        const ba = (b / 3) * Math.PI * 2 + rn * 5;
-        ctx.beginPath();
-        ctx.arc(bx2 + Math.cos(ba) * tr.r * 0.35, tr.y + Math.sin(ba) * tr.r * 0.28, tr.r * 0.62, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#4d8f35";
-      for (let b = 0; b < 3; b++) {
-        const ba = (b / 3) * Math.PI * 2 + rn * 5 + 0.5;
-        ctx.beginPath();
-        ctx.arc(bx2 + Math.cos(ba) * tr.r * 0.25, tr.y - tr.r * 0.2 + Math.sin(ba) * tr.r * 0.2, tr.r * 0.48, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      // modrofialové bobule s leskem
-      for (let f = 0; f < 6; f++) {
-        const fa = rn * 9 + f * 1.15;
-        const fx = bx2 + Math.cos(fa) * tr.r * 0.42;
-        const fy = tr.y - tr.r * 0.15 + Math.sin(fa) * tr.r * 0.3;
-        ctx.fillStyle = "#6d28d9";
-        ctx.beginPath();
-        ctx.arc(fx, fy, 1.8, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "rgba(216,180,254,0.7)";
-        ctx.beginPath();
-        ctx.arc(fx - 0.5, fy - 0.5, 0.6, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    } else {
-      // --- keř: tři bochánky s obrysem a bobulemi ---
-      const bx2 = tr.x + sway * 0.5;
-      ctx.fillStyle = "#1c4517";
-      for (let b = 0; b < 3; b++) {
-        const ba = (b / 3) * Math.PI * 2 + rn * 5;
-        ctx.beginPath();
-        ctx.arc(bx2 + Math.cos(ba) * tr.r * 0.35, tr.y + Math.sin(ba) * tr.r * 0.28, tr.r * 0.62, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "#35742a";
-      for (let b = 0; b < 3; b++) {
-        const ba = (b / 3) * Math.PI * 2 + rn * 5 + 0.5;
-        ctx.beginPath();
-        ctx.arc(bx2 + Math.cos(ba) * tr.r * 0.25, tr.y - tr.r * 0.2 + Math.sin(ba) * tr.r * 0.2, tr.r * 0.48, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.fillStyle = "rgba(255,255,255,0.2)";
-      ctx.beginPath();
-      ctx.arc(bx2 - tr.r * 0.3, tr.y - tr.r * 0.35, tr.r * 0.28, 0, Math.PI * 2);
-      ctx.fill();
-      if (rn > 0.4) {
-        ctx.fillStyle = "#b91c1c";
-        for (let f = 0; f < 3; f++) {
-          const fa = rn * 9 + f * 2.1;
-          ctx.beginPath();
-          ctx.arc(bx2 + Math.cos(fa) * tr.r * 0.4, tr.y + Math.sin(fa) * tr.r * 0.3, 1.6, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
+    if (!tr.cv) tr.cv = makeTreeSprite(tr);
+    const sway = Math.sin(g.gtime * 1.3 + tr.x * 0.07 + tr.rn * 6) * 1.8;
+    ctx.drawImage(tr.cv, Math.round(tr.x - (tr.pad || 0) + sway), Math.round(tr.y - (tr.pad || 0)));
   }
 
   // 🏟️ boss aréna - červený kruh vězení

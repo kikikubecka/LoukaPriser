@@ -977,23 +977,21 @@ const SONG_BOSS: Song = {
   hat: [2, 6, 10, 14],
   arpAlways: false,
 };
-// ⚔️ „Bitva o louku" - epické bitevní téma v d moll (Minas Tirith vibes): gallopovací osminový bas
-// (dum-dum-DUM jako jízda rohatéků), brass fanfáry, smyčcový pad, timpani a crash - žádný chill
+// 🌸 „Jitro na louce" - původní pastorální téma, jen mírně pozměněné: o chlup rychlejší tempo,
+// jemné hi-haty a snára, pár vyšších tónů v melodii a basu - zní skoro stejně, jen o kousek živější
 const SONG_EPIC: Song = {
-  name: "⚔️ Bitva o louku",
-  step: 0.15,
-  bassWave: "sawtooth",
-  leadWave: "sawtooth",
-  bass: [146.83, 0, 146.83, 146.83, 146.83, 0, 146.83, 146.83, 174.61, 0, 174.61, 174.61, 130.81, 0, 130.81, 196.0],
-  lead: [587.33, 0, 0, 698.46, 0, 0, 880.0, 0, 932.33, 0, 0, 880.0, 0, 783.99, 698.46, 0],
-  arp: [587.33, 880.0, 1174.66, 1396.91, 587.33, 880.0, 1174.66, 1396.91, 698.46, 932.33, 1396.91, 1760.0, 523.25, 783.99, 1046.5, 1318.51],
-  chords: [293.66, 233.08, 349.23, 261.63],
-  kick: [0, 4, 8, 12],
-  snare: [4, 12],
-  hat: [2, 6, 10, 14],
-  arpAlways: true,
-  fanfare: [3, 7, 11, 15],
-  strings: true,
+  name: "Jitro na louce",
+  step: 0.3,
+  bassWave: "triangle",
+  leadWave: "sine",
+  bass: [130.81, 0, 0, 196.0, 246.94, 0, 0, 164.81, 174.61, 0, 0, 130.81, 196.0, 0, 0, 261.63],
+  lead: [0, 523.25, 659.25, 0, 783.99, 0, 659.25, 880.0, 523.25, 0, 440.0, 0, 587.33, 0, 783.99, 0],
+  arp: [1046.5, 0, 1318.51, 0, 1046.5, 0, 880.0, 0, 987.77, 0, 1318.51, 0, 880.0, 0, 1174.66, 0],
+  chords: [261.63, 220.0],
+  kick: [0, 8],
+  snare: [12],
+  hat: [4, 12],
+  arpAlways: false,
 };
 // 👑 „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
 const SONG_FINAL: Song = {
@@ -1140,7 +1138,7 @@ function pickSong(g: Game): Song {
 
 // volá se každý snímek - noty se plánují ~0,35 s dopředu, takže hudba nezapráská
 function musicTick(g: Game): void {
-  // 🎵 hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je bitevní
+  // 🎵 hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je hlavní téma
   if (!g.opts.snd || g.over || typeof AudioContext === "undefined") return;
   try {
     if (!AC) AC = new AudioContext();
@@ -1167,7 +1165,6 @@ function musicTick(g: Game): void {
       if ((want === SONG_BOSS || want === SONG_FINAL) && prev !== SONG_BOSS && prev !== SONG_FINAL) playSfx(g, "riser");
     }
     const song = musSong as Song;
-    const epic = song === SONG_EPIC;
     let bossPhase = 1;
     if (song === SONG_BOSS || song === SONG_FINAL) {
       for (const e of g.enemies) {
@@ -1201,22 +1198,9 @@ function musicTick(g: Game): void {
       const s = musStep % 16;
       const t = musNext;
       const b = song.bass[s];
-      if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);
+      if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, 0.05);
       const l = song.lead[s];
-      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028);
-      // 🎺 EPICKÁ VRSTVA: brass fanfáry (power akord root+kvinta+oktáva), timpani pod kopákem, crash na takt
-      if (epic) {
-        if (song.fanfare && song.fanfare.includes(s)) {
-          const f0 = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
-          musicNote("sawtooth", f0, t, stepDur * 1.6, 0.036);
-          musicNote("sawtooth", f0 * 1.5, t, stepDur * 1.6, 0.03);
-          musicNote("sawtooth", f0 * 2, t, stepDur * 1.6, 0.026);
-        }
-        // 🥁 timpani - válečný buben zahouká s každým kopákem
-        if (song.kick.includes(s)) musicThump(t, 0.075);
-        // 🥁 orchestrální crash na začátku každého taktu
-        if (s === 0) musicDrum(t, 0.6, 0.02, 7000);
-      }
+      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, 0.028);
       // 🎹 pomalé polštářové kvinty - dávají trackům tělo
       const ch = song.chords[(musStep >> 3) % song.chords.length];
       if (ch && s % 8 === 0) {
@@ -8840,7 +8824,8 @@ export default function LoukaTisicePriser() {
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
       // 🚀 interní rozlišení max ~1,5 MP - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
-      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1500000 / (w * hgt))));
+      // 🖥️ rozlišení: strop 1 MP a zároveň max 1920×1080 (1080p); adaptivní scaler smí klesnout níž
+      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt)), 1920 / w, 1080 / hgt));
       DPR = DPR_CAP;
       canvas.width = Math.floor(w * DPR);
       canvas.height = Math.floor(hgt * DPR);

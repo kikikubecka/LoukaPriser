@@ -975,6 +975,22 @@ const SONG_BOSS: Song = {
   hat: [2, 6, 10, 14],
   arpAlways: false,
 };
+// ⚔️ „Bitva o louku" - epické bitevní téma v d moll (Minas Tirith vibes): hnací osminový bas,
+// staccato melodie, 16tinový arpeggio a čtyřpodlahový kopák - od první vteřiny napětí, žádný chill
+const SONG_EPIC: Song = {
+  name: "⚔️ Bitva o louku",
+  step: 0.16,
+  bassWave: "sawtooth",
+  leadWave: "sawtooth",
+  bass: [146.83, 0, 146.83, 0, 146.83, 0, 220.0, 0, 174.61, 0, 174.61, 0, 130.81, 0, 196.0, 0],
+  lead: [587.33, 0, 587.33, 698.46, 0, 587.33, 0, 880.0, 932.33, 0, 880.0, 0, 783.99, 698.46, 0, 587.33],
+  arp: [587.33, 880.0, 1174.66, 1396.91, 587.33, 880.0, 1174.66, 1396.91, 698.46, 932.33, 1396.91, 1760.0, 523.25, 783.99, 1046.5, 1318.51],
+  chords: [293.66, 233.08, 349.23, 261.63],
+  kick: [0, 4, 8, 12],
+  snare: [4, 12],
+  hat: [2, 6, 10, 14],
+  arpAlways: true,
+};
 // 👑 „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
 const SONG_FINAL: Song = {
   name: "Koruna záhrobí",
@@ -1115,12 +1131,13 @@ function pickSong(g: Game): Song {
   if (g.level >= 16 || g.time > 540) return SONG_RAVE;
   if (g.level >= 8 || g.time > 300 || g.enemies.length >= 32) return SONG_FUNK;
   if (g.time > 110 || g.level >= 4) return SONG_POLKA;
-  return SONG_CALM;
+  return SONG_EPIC;
 }
 
 // volá se každý snímek - noty se plánují ~0,35 s dopředu, takže hudba nezapráská
 function musicTick(g: Game): void {
-  if (!g.opts.snd || !g.running || g.over || typeof AudioContext === "undefined") return;
+  // 🎵 hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je bitevní
+  if (!g.opts.snd || g.over || typeof AudioContext === "undefined") return;
   try {
     if (!AC) AC = new AudioContext();
     if (AC.state === "suspended") {
@@ -8798,8 +8815,8 @@ export default function LoukaTisicePriser() {
       VW = w;
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
-      // 🚀 interní rozlišení max ~1 MP - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
-      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt))));
+      // 🚀 interní rozlišení max ~1,5 MP - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
+      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1500000 / (w * hgt))));
       DPR = DPR_CAP;
       canvas.width = Math.floor(w * DPR);
       canvas.height = Math.floor(hgt * DPR);
@@ -9125,12 +9142,11 @@ export default function LoukaTisicePriser() {
         @keyframes ltpFloaty { 0%,100% { transform: translateY(0) rotate(-6deg); opacity: .5; } 50% { transform: translateY(-16px) rotate(9deg); opacity: .95; } }
         @keyframes ltpSbxRing { 0%,100% { box-shadow: 0 0 0 0 rgba(232,121,249,.55), 0 0 18px rgba(232,121,249,.5); } 70% { box-shadow: 0 0 0 13px rgba(232,121,249,0), 0 0 28px rgba(232,121,249,.85); } }
         @keyframes ltpHdr { 0%,100% { filter: drop-shadow(0 0 10px rgba(232,121,249,.45)); } 50% { filter: drop-shadow(0 0 22px rgba(232,121,249,.9)); } }
-        .ltp-floaty { position: absolute; pointer-events: none; z-index: 1; animation: ltpFloaty 7s ease-in-out infinite; filter: drop-shadow(0 4px 8px rgba(0,0,0,.5)); }
         .ltp-sbxbtn { animation: ltpSbxRing 2.2s ease-out infinite; }
         .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
         .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
         @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
-        .ltp-startbar { position: relative; z-index: 40; width: 100%; flex-shrink: 0; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
+        .ltp-startbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
         .ltp-startbar > * { pointer-events: auto; }
         .ltp-sbxsec { border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; background: rgba(255,255,255,.04); padding: .6rem .7rem; }
         .ltp-sbxsec h4 { margin: 0 0 .5rem .2rem; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(240,171,252,.8); text-align: left; }
@@ -9362,11 +9378,6 @@ export default function LoukaTisicePriser() {
             <div className="ltp-orb" style={{ background: "#34d399", width: 340, height: 340, top: "-8%", left: "-6%" }} />
             <div className="ltp-orb" style={{ background: "#8b5cf6", width: 300, height: 300, top: "28%", right: "-8%", animationDelay: "-4.5s" }} />
             <div className="ltp-orb" style={{ background: "#f59e0b", width: 260, height: 260, bottom: "-10%", left: "18%", animationDelay: "-9s" }} />
-            {/* 🦋 plovoucí detaily kolem menu */}
-            <span className="ltp-floaty" style={{ top: "16%", left: "10%", fontSize: 22, animationDelay: "-1s" }}>🦋</span>
-            <span className="ltp-floaty" style={{ top: "30%", right: "8%", fontSize: 18, animationDelay: "-3.5s" }}>🐛</span>
-            <span className="ltp-floaty" style={{ bottom: "24%", left: "14%", fontSize: 20, animationDelay: "-5.2s" }}>🌻</span>
-            <span className="ltp-floaty" style={{ top: "12%", right: "22%", fontSize: 16, animationDelay: "-2.2s" }}>✨</span>
             {/* 📜 scrollovatelný obsah menu - start bar je mimo něj, takže nikdy nezjede ani se nepřekryje */}
             <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain p-3 pb-8 sm:gap-3 sm:p-6 sm:pb-10">
             <div className="relative flex shrink-0 flex-col items-center gap-1 pt-1">
@@ -9657,7 +9668,8 @@ export default function LoukaTisicePriser() {
               </span>
             )}
             </div>
-            {/* 📌 Spustit run - úplně na spodku, fixně, nic ho nezakryje */}
+            {/* 📌 Spustit run - připnuté fixně na spodek viewportu, nikdy se nehne, nic ho nezakryje */}
+            <div className="w-full shrink-0" style={{ height: "118px" }} />
             <div className="ltp-startbar">
               <button
                 onClick={startRun}

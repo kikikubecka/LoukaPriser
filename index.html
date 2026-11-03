@@ -898,6 +898,8 @@ interface Song {
   snare: number[]; // kroky se snárou
   hat: number[]; // kroky s hi-hatem
   arpAlways: boolean;
+  fanfare?: number[]; // 🎺 fanfárové brass stabs - power akordy v bitevním rytmu
+  strings?: boolean; // 🎻 smyčcový orchestrální pad držící harmonii
 }
 
 // 🌅 „Jitro na louce" - klidné pastoralní téma na začátek (C dur pentatonika)
@@ -975,21 +977,23 @@ const SONG_BOSS: Song = {
   hat: [2, 6, 10, 14],
   arpAlways: false,
 };
-// ⚔️ „Bitva o louku" - epické bitevní téma v d moll (Minas Tirith vibes): hnací osminový bas,
-// staccato melodie, 16tinový arpeggio a čtyřpodlahový kopák - od první vteřiny napětí, žádný chill
+// ⚔️ „Bitva o louku" - epické bitevní téma v d moll (Minas Tirith vibes): gallopovací osminový bas
+// (dum-dum-DUM jako jízda rohatéků), brass fanfáry, smyčcový pad, timpani a crash - žádný chill
 const SONG_EPIC: Song = {
   name: "⚔️ Bitva o louku",
-  step: 0.16,
+  step: 0.15,
   bassWave: "sawtooth",
   leadWave: "sawtooth",
-  bass: [146.83, 0, 146.83, 0, 146.83, 0, 220.0, 0, 174.61, 0, 174.61, 0, 130.81, 0, 196.0, 0],
-  lead: [587.33, 0, 587.33, 698.46, 0, 587.33, 0, 880.0, 932.33, 0, 880.0, 0, 783.99, 698.46, 0, 587.33],
+  bass: [146.83, 0, 146.83, 146.83, 146.83, 0, 146.83, 146.83, 174.61, 0, 174.61, 174.61, 130.81, 0, 130.81, 196.0],
+  lead: [587.33, 0, 0, 698.46, 0, 0, 880.0, 0, 932.33, 0, 0, 880.0, 0, 783.99, 698.46, 0],
   arp: [587.33, 880.0, 1174.66, 1396.91, 587.33, 880.0, 1174.66, 1396.91, 698.46, 932.33, 1396.91, 1760.0, 523.25, 783.99, 1046.5, 1318.51],
   chords: [293.66, 233.08, 349.23, 261.63],
   kick: [0, 4, 8, 12],
   snare: [4, 12],
   hat: [2, 6, 10, 14],
   arpAlways: true,
+  fanfare: [3, 7, 11, 15],
+  strings: true,
 };
 // 👑 „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
 const SONG_FINAL: Song = {
@@ -1163,6 +1167,7 @@ function musicTick(g: Game): void {
       if ((want === SONG_BOSS || want === SONG_FINAL) && prev !== SONG_BOSS && prev !== SONG_FINAL) playSfx(g, "riser");
     }
     const song = musSong as Song;
+    const epic = song === SONG_EPIC;
     let bossPhase = 1;
     if (song === SONG_BOSS || song === SONG_FINAL) {
       for (const e of g.enemies) {
@@ -1196,14 +1201,33 @@ function musicTick(g: Game): void {
       const s = musStep % 16;
       const t = musNext;
       const b = song.bass[s];
-      if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, 0.05);
+      if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);
       const l = song.lead[s];
-      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, 0.028);
+      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028);
+      // 🎺 EPICKÁ VRSTVA: brass fanfáry (power akord root+kvinta+oktáva), timpani pod kopákem, crash na takt
+      if (epic) {
+        if (song.fanfare && song.fanfare.includes(s)) {
+          const f0 = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
+          musicNote("sawtooth", f0, t, stepDur * 1.6, 0.036);
+          musicNote("sawtooth", f0 * 1.5, t, stepDur * 1.6, 0.03);
+          musicNote("sawtooth", f0 * 2, t, stepDur * 1.6, 0.026);
+        }
+        // 🥁 timpani - válečný buben zahouká s každým kopákem
+        if (song.kick.includes(s)) musicThump(t, 0.075);
+        // 🥁 orchestrální crash na začátku každého taktu
+        if (s === 0) musicDrum(t, 0.6, 0.02, 7000);
+      }
       // 🎹 pomalé polštářové kvinty - dávají trackům tělo
       const ch = song.chords[(musStep >> 3) % song.chords.length];
       if (ch && s % 8 === 0) {
         musicNote("sine", ch * detune, t, stepDur * 7.5, 0.016);
         musicNote("sine", ch * 1.5 * detune, t, stepDur * 7.5, 0.012);
+        // 🎻 smyčcový pad - orchestr drží harmonii jako v bitevní scéně
+        if (song.strings) {
+          musicNote("sawtooth", ch * detune, t, stepDur * 7.6, 0.019);
+          musicNote("sawtooth", ch * 1.19 * detune, t, stepDur * 7.6, 0.015);
+          musicNote("sawtooth", ch * 2 * detune, t, stepDur * 7.6, 0.013);
+        }
       }
       // 🎸 arp vrstva - u rave a finálního bosse vždy, u bosse ve fázi 3 taky, jinde jen ve fever kombu
       const ar = song.arp[s];
@@ -9146,7 +9170,7 @@ export default function LoukaTisicePriser() {
         .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
         .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
         @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
-        .ltp-startbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
+        .ltp-startbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 60; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
         .ltp-startbar > * { pointer-events: auto; }
         .ltp-sbxsec { border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; background: rgba(255,255,255,.04); padding: .6rem .7rem; }
         .ltp-sbxsec h4 { margin: 0 0 .5rem .2rem; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(240,171,252,.8); text-align: left; }
@@ -9668,16 +9692,8 @@ export default function LoukaTisicePriser() {
               </span>
             )}
             </div>
-            {/* 📌 Spustit run - připnuté fixně na spodek viewportu, nikdy se nehne, nic ho nezakryje */}
-            <div className="w-full shrink-0" style={{ height: "118px" }} />
-            <div className="ltp-startbar">
-              <button
-                onClick={startRun}
-                className="ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
-              >
-                {trk("start")} {sandboxSel ? "🧪" : "▶"}
-              </button>
-            </div>
+            {/* 📌 rezerva místa pro start bar - sám žije JINDE (vlastní vrstva pod rootem) */}
+            <div className="w-full shrink-0" style={{ height: "132px" }} />
           </div>
         )}
 
@@ -10111,6 +10127,19 @@ export default function LoukaTisicePriser() {
           </div>
         )}
       </div>
+
+      {/* 📌 Spustit run - vlastní vrstva mimo herní scénu, přilepená ke spodku fixního rootu:
+          není součástí menu, takže se nemůže hýbat se scrolluje a nic ji nemůže zakrýt */}
+      {!started && !over && (
+        <div className="ltp-startbar">
+          <button
+            onClick={startRun}
+            className="ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
+          >
+            {trk("start")} {sandboxSel ? "🧪" : "▶"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

@@ -484,7 +484,7 @@ type Game = {
   bossHpMul: number;
   crateBonus: number;
   dmgSrc: Record<string, number>;
-  opts: { snd: boolean; shk: boolean; nums: boolean };
+  opts: { snd: boolean; shk: boolean; nums: boolean; surp: boolean };
   achToast: string[];
   lastBoomSfx?: number;
 };
@@ -930,6 +930,22 @@ const SONG_FINAL: Song = {
   hat: [1, 3, 5, 7, 9, 11, 13, 15],
   arpAlways: true,
 };
+// 🎺 „Arnold Rimmer" - 🎁 speciální překvapení: veselá muzikálová hymna (oom-pah bas,
+// pláclivá melodie ve F dur, ofbeatové „pah" stabs) - v překvapení hraje dokola, dokud ji nevypneš
+const SONG_RIMMER: Song = {
+  name: "🎺 Arnold Rimmer",
+  step: 0.165,
+  bassWave: "triangle",
+  leadWave: "square",
+  bass: [174.61, 0, 130.81, 0, 174.61, 0, 130.81, 0, 130.81, 0, 116.54, 0, 130.81, 0, 116.54, 0],
+  lead: [523.25, 466.16, 440.0, 392.0, 349.23, 392.0, 440.0, 523.25, 392.0, 0, 440.0, 0, 349.23, 0, 587.33, 0],
+  arp: [0, 698.46, 0, 880.0, 0, 698.46, 0, 880.0, 0, 932.33, 0, 783.99, 0, 932.33, 0, 783.99],
+  chords: [174.61, 130.81],
+  kick: [0, 8],
+  snare: [4, 12],
+  hat: [2, 6, 10, 14],
+  arpAlways: true,
+};
 
 function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak: number): void {
   const o = AC!.createOscillator();
@@ -1040,7 +1056,7 @@ function ambTick(g: Game): void {
   ambSrc.start();
 }
 
-// 🎚 podle dění na louce se vybere track - boss má vlastní témata, pozdní hra rave
+// 🎚 normálně hraje bitevní téma, jen boss si vezme svá tematická_tracks; překvapení (🎁) přebíjí všechno
 function pickSong(g: Game): Song {
   let finalBoss = false;
   let boss = false;
@@ -1052,9 +1068,6 @@ function pickSong(g: Game): Song {
     }
   }
   if (boss) return finalBoss ? SONG_FINAL : SONG_BOSS;
-  if (g.level >= 16 || g.time > 540) return SONG_RAVE;
-  if (g.level >= 8 || g.time > 300 || g.enemies.length >= 32) return SONG_FUNK;
-  if (g.time > 110 || g.level >= 4) return SONG_POLKA;
   return SONG_EPIC;
 }
 
@@ -1073,9 +1086,9 @@ function musicTick(g: Game): void {
       musNext = Math.max(musNext, AC.currentTime + 0.05);
       return;
     }
-    const want = pickSong(g);
-    // 🔥 fever - při kombu 15+ se přidá arp vrstva a hi-haty v šestnáctinách
-    musFever = g.combo >= 15;
+    const want = g.opts.surp ? SONG_RIMMER : pickSong(g);
+    // 🔥 fever - při kombu 15+ se přidá arp vrstva a hi-haty v šestnáctinách (v překvapení ne)
+    musFever = !g.opts.surp && g.combo >= 15;
     if (want !== musSong) {
       const prev = musSong;
       musSong = want;
@@ -1103,11 +1116,11 @@ function musicTick(g: Game): void {
     // 💀 DANGER - čím blíž smrti (pod 45 % HP), tím větší děs: 0 = v pohodě, 1 = skoro mrtvý
     // 👹 a když je na mapě boss, běží děs na 45 % i při plném HP - „teď už to máš spočítaný"
     const bossDread = song === SONG_BOSS || song === SONG_FINAL ? 0.45 : 0;
-    const danger = Math.max(bossDread, Math.max(0, Math.min(1, 1 - g.hero.hp / (g.hero.maxHp * 0.45))));
+    const danger = g.opts.surp ? 0 : Math.max(bossDread, Math.max(0, Math.min(1, 1 - g.hero.hp / (g.hero.maxHp * 0.45))));
     // 🎻 při velkém strachu se celá hudba mírně rozladí (detune) - podvědomá úzkost
     const detune = danger > 0.45 ? 0.978 : 1;
     // 👹 davová tlačenice - když je louka plná nepřátel, přidávají se hi-haty v 16tinách
-    const horde = g.enemies.length > 40;
+    const horde = !g.opts.surp && g.enemies.length > 40;
     // 💓 přechod do kritického stavu zahouká děsivý sting (jen jednou, dokud nezvedneš HP)
     if (danger >= 0.55 && !musDangerSting) {
       musDangerSting = true;
@@ -1447,7 +1460,7 @@ type Meta = {
   ach?: Record<string, boolean>;
   best?: Record<string, number>;
   unlock?: Record<string, boolean>;
-  opts?: { snd: boolean; shk: boolean; nums: boolean };
+  opts?: { snd: boolean; shk: boolean; nums: boolean; surp?: boolean };
   vol?: number;
   lang?: string;
   daily?: { key: string; best: number };
@@ -1470,7 +1483,7 @@ function loadMeta(): Meta {
           ach: p.ach || {},
           best: p.best || {},
           unlock: p.unlock || {},
-          opts: p.opts || { snd: true, shk: true, nums: true },
+          opts: p.opts ? { surp: false, ...p.opts } : { snd: true, shk: true, nums: true, surp: false },
           vol: p.vol,
           lang: p.lang,
           daily: p.daily || { key: "", best: 0 },
@@ -1482,7 +1495,7 @@ function loadMeta(): Meta {
   } catch {
     // localStorage nedostupný - hrajeme bez uložení
   }
-  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true }, daily: { key: "", best: 0 }, board: [], lastName: "" };
+  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true, surp: false }, daily: { key: "", best: 0 }, board: [], lastName: "" };
 }
 
 function saveMeta(m: Meta): void {
@@ -1589,7 +1602,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Pauza",
     kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo", rerolls: "rerollů",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
-    snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg",
+    snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎁 Překvapení: ZAP", surp_off: "🎁 Překvapení",
     src_title: "📊 Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
     pacts: "🩸 Sedm paktů (Krvavý, Šílence, Fénixův, Titán, Skla, Sběratele, Lovce) padá mezi upgrady — každý jednou za run, každý s kletbou.",
     turret_kinds: "⚙️ Druhy turetek:",
@@ -1672,7 +1685,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Paused",
     kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo", rerolls: "rerolls",
     boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
-    snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers",
+    snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎁 Surprise: ON", surp_off: "🎁 Surprise",
     src_title: "📊 Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
     pacts: "🩸 Seven pacts (Blood, Madman, Phoenix, Titan, Glass, Collector, Hunter) drop among upgrades — once per run, each with a curse.",
     turret_kinds: "⚙️ Turret kinds:",
@@ -1755,7 +1768,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Pauza",
     kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo", rerolls: "przerzutów",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
-    snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.",
+    snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎁 Niespodzianka: WŁ", surp_off: "🎁 Niespodzianka",
     src_title: "📊 Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
     pacts: "🩸 Siedem paktów (Krwawy, Szaleńca, Feniksa, Tytana, Szkła, Kolekcjonera, Łowcy) trafia między ulepszenia — raz na run, każdy z klątwą.",
     turret_kinds: "⚙️ Rodzaje wieżyczek:",
@@ -1957,7 +1970,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     bossHpMul: 1,
     crateBonus: 0,
     dmgSrc: {},
-    opts: meta && meta.opts ? { ...meta.opts } : { snd: true, shk: true, nums: true },
+    opts: meta && meta.opts ? { surp: false, ...meta.opts } : { snd: true, shk: true, nums: true, surp: false },
     achToast: [],
   };
   for (let i = 0; i < 2160; i++) {
@@ -8579,7 +8592,7 @@ export default function LoukaTisicePriser() {
 
 
   // ⚙️ nastavení zvuku / třesení / čísel poškození - perzistuje se do mety
-  const toggleOpt = (key: "snd" | "shk" | "nums") => {
+  const toggleOpt = (key: "snd" | "shk" | "nums" | "surp") => {
     const g = gameRef.current;
     g.opts[key] = !g.opts[key];
     setMeta((m) => {
@@ -8759,8 +8772,8 @@ export default function LoukaTisicePriser() {
       VW = w;
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
-      // 🚀 interní rozlišení max ~1,5 MP - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
-      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1500000 / (w * hgt))));
+      // 🚀 interní rozlišení max ~1 MP a strop 1080p (1920×1080) - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
+      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt)), 1920 / w, 1080 / hgt));
       DPR = DPR_CAP;
       canvas.width = Math.floor(w * DPR);
       canvas.height = Math.floor(hgt * DPR);
@@ -9348,6 +9361,17 @@ export default function LoukaTisicePriser() {
                   {lg.flag} {lg.label}
                 </button>
               ))}
+              {/* 🎁 speciální překvapení - bonusová písnička hraje dokola, dokud ji nevypneš */}
+              <button
+                onClick={() => toggleOpt("surp")}
+                className={`rounded-xl border-2 px-2.5 py-1 text-[10px] font-bold transition active:scale-95 sm:text-xs ${
+                  gameRef.current.opts.surp
+                    ? "border-fuchsia-400/70 bg-fuchsia-500/25 text-fuchsia-100"
+                    : "border-white/10 bg-white/5 text-white/55"
+                }`}
+              >
+                {gameRef.current.opts.surp ? "🎺" : "🎁"}
+              </button>
             </div>
             {/* taby: classa / trofeje / sandbox / semínka */}
             <div className="ltp-glass relative z-10 flex w-full max-w-2xl shrink-0 items-center justify-center gap-1.5 rounded-2xl p-1.5">
@@ -9790,6 +9814,7 @@ export default function LoukaTisicePriser() {
                   { key: "snd" },
                   { key: "shk" },
                   { key: "nums" },
+                  { key: "surp" },
                 ] as const
               ).map((ob) => (
                 <button

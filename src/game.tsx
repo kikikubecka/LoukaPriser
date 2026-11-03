@@ -7,6 +7,9 @@ const ARENA = 6000;
 let VW = 960;
 let VH = 620;
 let DPR = 1;
+let DPR_CAP = 2; // strop DPR z rozlišení obrazovky - adaptivní scaler pod něj může klesnout
+let MM_Y = 58; // aktuální spodek HUD lišty + odsazení (měří se z DOM, ať minimapa nikdy nesedí pod ní)
+let mmFC = 0;
 const JOY_R = 46;
 
 const HERO = {
@@ -544,6 +547,20 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
   const dx = ax - bx;
   const dy = ay - by;
   return dx * dx + dy * dy;
+}
+
+// 🧙‍♂️ úsečka (x1,y1)-(x2,y2) vs kruh (cx,cy,r) - swept kolize projektilů proti tunelování:
+// při větším dt projektil nesmí nepřátela přeskočit jen proto, že testujeme koncový bod
+function segHit(x1: number, y1: number, x2: number, y2: number, cx: number, cy: number, r: number): boolean {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? ((cx - x1) * dx + (cy - y1) * dy) / len2 : 0;
+  if (t < 0) t = 0;
+  else if (t > 1) t = 1;
+  const qx = x1 + dx * t - cx;
+  const qy = y1 + dy * t - cy;
+  return qx * qx + qy * qy < r * r;
 }
 
 // 🕸️ PROSTOROVÁ MŘÍŽKA nepřátel - přestavuje se každý snímek; kolize pak běží jen mezi
@@ -3529,6 +3546,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   buildGrid(g);
   for (let i = g.arrows.length - 1; i >= 0; i--) {
     const a = g.arrows[i];
+    const ppx = a.x;
+    const ppy = a.y;
     a.x += a.vx * dt;
     a.y += a.vy * dt;
     // 🌬️ vítr žene i projektil
@@ -3550,7 +3569,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         // 🦡 zahrabaný jezevec - pod zemí nezranitelný
         if ((e.subT ?? 0) > 0) return;
         const rr = e.r + 5;
-        if (dist2(a.x, a.y, e.x, e.y) < rr * rr) {
+        // 🧙‍♂️ swept kolize po celé úsečce letu - při výkyvu dt projektil cíl nesmí přeskočit nezasažený
+        if (segHit(ppx, ppy, a.x, a.y, e.x, e.y, rr)) {
           a.hits.push(e.id);
           e.hp -= a.dmg;
           e.flash = 0.09;
@@ -7039,6 +7059,12 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   const zoom = 1;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
+  // 📏 spodek HUD lišty měříme z DOM (1× za 20 snímků) - minimapa a boss bar se pod něj nikdy nedostanou
+  if ((mmFC++ % 20) === 0) {
+    const hudEl = document.querySelector(".ltp-hud");
+    MM_Y = Math.max(58, (hudEl ? hudEl.getBoundingClientRect().bottom : 48) + 8);
+  }
+
   // 🎨 pozadí se přechází jen při změně výšky - jeden gradient se cacheuje
   if (!bgCache || bgCache.h !== VH) {
     const b = ctx.createLinearGradient(0, 0, 0, VH);
@@ -8045,7 +8071,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   if (boss) {
     const bw = Math.min(300, VW * 0.5);
     const bx = (VW - bw) / 2;
-    const by = 14;
+    const by = MM_Y + 2;
     ctx.fillStyle = "rgba(0,0,0,0.6)";
     ctx.fillRect(bx - 3, by - 3, bw + 6, 20);
     ctx.fillStyle = "#7f1d1d";
@@ -8157,10 +8183,10 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     }
   }
 
-  // 🗺️ minimapa - pod HUD lištou (ta zabírá vršek přes celou šířku), ať se nepřekrývají
+  // 🗺️ minimapa - vždy pod HUD lištou, při bossovi ještě pod boss barem, ať se nikdy nic nepřekrývá
   const ms = Math.min(110, Math.round(VH * 0.17));
   const mx = VW - ms - 14;
-  const my = 58;
+  const my = MM_Y + (boss ? 28 : 2);
   ctx.fillStyle = "rgba(4,8,20,0.75)";
   ctx.fillRect(mx, my, ms, ms);
   ctx.strokeStyle = "rgba(148,163,255,0.35)";
@@ -8692,8 +8718,9 @@ export default function LoukaTisicePriser() {
       VW = w;
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
-      // 🚀 interní rozlišení max ~1 MP (místo 2 MP) - fill-rate je na mobilech zabiják FPS
-      DPR = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt))));
+      // 🚀 interní rozlišení max ~1 MP - fill-rate je na mobilech zabiják FPS; adaptivní scaler smí DPR snižovat dál
+      DPR_CAP = Math.max(1, Math.min(raw, Math.sqrt(1000000 / (w * hgt))));
+      DPR = DPR_CAP;
       canvas.width = Math.floor(w * DPR);
       canvas.height = Math.floor(hgt * DPR);
     };
@@ -8707,12 +8734,31 @@ export default function LoukaTisicePriser() {
     let last = performance.now();
     let uiT = 0;
     let achT = 0;
+    let qTime = 0;
+    let qFrames = 0;
     let prevOver = false;
 
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, (now - last) / 1000);
+      const rawDt = (now - last) / 1000;
+      const dt = Math.min(0.05, rawDt);
       last = now;
+      // 📉📈 adaptivní kvalita: každou sekundu podle reálného frame time se doladí DPR (1..DPR_CAP) - plynulost před ostrostí
+      qFrames++;
+      qTime += rawDt;
+      if (qTime >= 1) {
+        const avg = qTime / qFrames;
+        let nd = DPR;
+        if (avg > 1 / 27 && nd > 1) nd = Math.max(1, nd - 0.25);
+        else if (avg < 1 / 52 && nd < DPR_CAP) nd = Math.min(DPR_CAP, nd + 0.25);
+        if (nd !== DPR) {
+          DPR = nd;
+          canvas.width = Math.floor(VW * DPR);
+          canvas.height = Math.floor(VH * DPR);
+        }
+        qTime = 0;
+        qFrames = 0;
+      }
       const g = gameRef.current;
       // ♻️ reset příznaku smrti - bez toho by se obrazovka konce ukázala jen při první smrti za session
       if (!g.over) prevOver = false;
@@ -9004,7 +9050,7 @@ export default function LoukaTisicePriser() {
         .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
         .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
         @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
-        .ltp-startbar { position: relative; z-index: 30; width: 100%; flex-shrink: 0; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: linear-gradient(to top, #061410 55%, rgba(6,20,16,.92) 78%, transparent); pointer-events: none; }
+        .ltp-startbar { position: relative; z-index: 40; width: 100%; flex-shrink: 0; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
         .ltp-startbar > * { pointer-events: auto; }
         .ltp-sbxsec { border: 1px solid rgba(255,255,255,.1); border-radius: 1rem; background: rgba(255,255,255,.04); padding: .6rem .7rem; }
         .ltp-sbxsec h4 { margin: 0 0 .5rem .2rem; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(240,171,252,.8); text-align: left; }

@@ -877,9 +877,6 @@ let musSong: Song | null = null;
 // 📣 toast s názvem skladby + ⏱ čas posledního kopáku (kvůli beat pulsu ve vizuálu)
 let musToast = "";
 let musToastAt = -1e9;
-// 🎤 aktuální karaoke řádka překvapení + čas jejího objevení (kvůli pop animaci)
-let musLyric = "";
-let musLyricAt = -1e9;
 let musKickAt = -1e9;
 let musThumpAt = -1e9;
 let musStepDur = 0.3;
@@ -888,7 +885,7 @@ let musFever = false;
 let musDangerSting = false;
 
 // jedna skladba jukeboxu - pattern (0 = pauza), výchozí délka 16 kroků, delší skladby
-// (sloka i refrén) mají vlastní len a karaoke text - každá řádka drží 16 kroků
+// (sloka i refrén) mají vlastní len a text, který zazpívá syntetický hlas
 interface Song {
   name: string;
   step: number;
@@ -905,7 +902,7 @@ interface Song {
   fanfare?: number[]; // 🎺 fanfárové brass stabs - power akordy v bitevním rytmu
   strings?: boolean; // 🎻 smyčcový orchestrální pad držící harmonii
   len?: number; // 🧭 délka patternu v krocích (výchozí 16)
-  lyrics?: string[]; // 🎤 karaoke text - řádky po 16 krocích, zobrazují se u překvapení
+  lyrics?: string[]; // 🎤 text k zazpívání - řádky po 16 krocích, zpívá se hlasem v rytmu
 }
 
 // 🌅 „Jitro na louce" - klidné pastoralní téma na začátek (C dur pentatonika)
@@ -1018,7 +1015,7 @@ const SONG_FINAL: Song = {
 };
 // 🎺 „Arnold Rimmer" - 🎁 speciální překvapení z Red Dwarf: muzikálová oom-pah hymna
 // ve F dur (F C7 / Gm C7 / F Am / F A / Bb A / Dm G7), 128 kroků = celá sloka + refrén,
-// karaoke text běží dole na obrazovce - hraje dokola, dokud ji nevypneš
+// text zazpívá syntetický hlas - hraje dokola, dokud ji nevypneš
 const SONG_RIMMER: Song = {
   name: "🎺 Arnold Rimmer",
   step: 0.165,
@@ -1181,6 +1178,33 @@ function ambTick(g: Game): void {
   ambSrc.start();
 }
 
+// 🎤 ZPÍVÁNÍ - syntetický hlas zazpívá texty překvapení (Web Speech API, britština jako v originále)
+let voxOn = false;
+function stopVox(): void {
+  if (voxOn && typeof speechSynthesis !== "undefined") {
+    try {
+      speechSynthesis.cancel();
+    } catch {
+      // hlas nedostupný - nevadí
+    }
+  }
+  voxOn = false;
+}
+function singLine(line: string, idx: number): void {
+  if (typeof speechSynthesis === "undefined") return;
+  try {
+    const u = new SpeechSynthesisUtterance(line);
+    u.lang = "en-GB";
+    // 🎵 verse níž, refrén výš - hlas drží s melodií, tempo stihne celou řádku do jejích 16 kroků
+    u.pitch = idx >= 3 ? 1.35 : 1.05;
+    u.rate = 1.25;
+    speechSynthesis.speak(u);
+    voxOn = true;
+  } catch {
+    // hlas nedostupný - hraje se jen hudba
+  }
+}
+
 // 🎚 normálně hraje bitevní téma, jen boss si vezme svá tematická_tracks; překvapení (🎁) přebíjí všechno
 function pickSong(g: Game): Song {
   let finalBoss = false;
@@ -1199,7 +1223,10 @@ function pickSong(g: Game): Song {
 // volá se každý snímek - noty se plánují ~0,35 s dopředu, takže hudba nezapráská
 function musicTick(g: Game): void {
   // 🎵 hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je bitevní
-  if (!g.opts.snd || g.over || typeof AudioContext === "undefined") return;
+  if (!g.opts.snd || g.over || typeof AudioContext === "undefined") {
+    stopVox();
+    return;
+  }
   try {
     if (!AC) AC = new AudioContext();
     if (AC.state === "suspended") {
@@ -1209,6 +1236,7 @@ function musicTick(g: Game): void {
     // ⏸ v pauze a level-upu hudba zmlkne - po návratu pokračuje tam, kde skončila
     if (g.paused || g.userPaused) {
       musNext = Math.max(musNext, AC.currentTime + 0.05);
+      stopVox();
       return;
     }
     const want = g.opts.surp ? SONG_RIMMER : pickSong(g);
@@ -1222,6 +1250,8 @@ function musicTick(g: Game): void {
       // 📣 přepnutý track se ohlásí toastem nahoře, u bosse se ozve i riser
       musToast = want.name;
       musToastAt = performance.now();
+      // 🎤 při přepnutí tracku se zpívání zastaví (nová skladba začíná od začátku)
+      stopVox();
       if ((want === SONG_BOSS || want === SONG_FINAL) && prev !== SONG_BOSS && prev !== SONG_FINAL) playSfx(g, "riser");
     }
     const song = musSong as Song;
@@ -1259,13 +1289,10 @@ function musicTick(g: Game): void {
       // 🧭 délka patternu - výchozí 16 kroků, ale delší skladby (sloka + refrén) mají vlastní len
       const s = musStep % (song.len ?? 16);
       const t = musNext;
-      // 🎤 karaoke - každá textová řádka drží 16 kroků, u překvapení se zpívá dole na obrazovce
-      if (s % 16 === 0) {
-        const li = song.lyrics ? song.lyrics[(musStep >> 4) % song.lyrics.length] : "";
-        if (li !== musLyric) {
-          musLyric = li;
-          if (li) musLyricAt = performance.now();
-        }
+      // 🎤 ZPÍVÁ SE - na začátku každé řádky (16 kroků) zazpívá syntetický hlas celý verš originálu
+      if (s % 16 === 0 && song.lyrics) {
+        const li = (musStep >> 4) % song.lyrics.length;
+        singLine(song.lyrics[li], li);
       }
       const b = song.bass[s];
       if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);
@@ -1736,7 +1763,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Pauza",
     kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo", rerolls: "rerollů",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
-    snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎺 Rimmer: ZAP", surp_off: "🎁 Rimmer",
+    snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎁 Překvapení: ZAP", surp_off: "🎁 Překvapení",
     src_title: "📊 Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
     pacts: "🩸 Sedm paktů (Krvavý, Šílence, Fénixův, Titán, Skla, Sběratele, Lovce) padá mezi upgrady — každý jednou za run, každý s kletbou.",
     turret_kinds: "⚙️ Druhy turetek:",
@@ -1819,7 +1846,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Paused",
     kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo", rerolls: "rerolls",
     boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
-    snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎺 Rimmer: ON", surp_off: "🎁 Rimmer",
+    snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎁 Surprise: ON", surp_off: "🎁 Surprise",
     src_title: "📊 Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
     pacts: "🩸 Seven pacts (Blood, Madman, Phoenix, Titan, Glass, Collector, Hunter) drop among upgrades — once per run, each with a curse.",
     turret_kinds: "⚙️ Turret kinds:",
@@ -1902,7 +1929,7 @@ const LANG: Record<string, Record<string, string>> = {
     pause: "⏸ Pauza",
     kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo", rerolls: "przerzutów",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
-    snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎺 Rimmer: WŁ", surp_off: "🎁 Rimmer",
+    snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎁 Niespodzianka: WŁ", surp_off: "🎁 Niespodzianka",
     src_title: "📊 Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
     pacts: "🩸 Siedem paktów (Krwawy, Szaleńca, Feniksa, Tytana, Szkła, Kolekcjonera, Łowcy) trafia między ulepszenia — raz na run, każdy z klątwą.",
     turret_kinds: "⚙️ Rodzaje wieżyczek:",
@@ -8220,25 +8247,6 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.restore();
   }
 
-  // 🎤 karaoke překvapení - aktuální řádka písničky se zpívá dole uprostřed
-  if (musLyric && g.opts.surp && !g.over) {
-    const lAge = performance.now() - musLyricAt;
-    ctx.save();
-    ctx.globalAlpha = Math.min(1, lAge / 160) * (g.running ? 1 : 0.85);
-    // 👏 pop - řádka naskočí malým nárůžem a pak se usadí
-    const pop = 1 + 0.08 * Math.max(0, 1 - lAge / 200);
-    ctx.translate(VW / 2, VH - 58);
-    ctx.scale(pop, pop);
-    ctx.font = "bold 15px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    const lw = ctx.measureText(musLyric).width + 30;
-    ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(-lw / 2, -14, lw, 24);
-    ctx.fillStyle = "#fef3c7";
-    ctx.fillText(musLyric, 0, 3);
-    ctx.restore();
-  }
-
   // 📣 boss intro banner - první vteřiny se jméno bosse rozezní nad arénou
   if (g.bossIntroT > 0) {
     const bf = 1 - g.bossIntroT / 2.6;
@@ -9523,7 +9531,7 @@ export default function LoukaTisicePriser() {
                     : "border-white/10 bg-white/5 text-white/55"
                 }`}
               >
-                {gameRef.current.opts.surp ? "🎺 Rimmer" : "🎁 Rimmer"}
+                {gameRef.current.opts.surp ? "🎺" : "🎁"}
               </button>
             </div>
             {/* taby: classa / trofeje / sandbox / semínka */}

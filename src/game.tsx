@@ -1652,8 +1652,7 @@ function trk(k: string): string {
 const LANG: Record<string, Record<string, string>> = {
   cs: {
     title: "Louka tisíce příšer",
-    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček",
-    tagline: "Přežij ten dlouhý den na louce", menu_best: "Rekord",
+    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček", menu_best: "Rekord",
     sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: "👑 Bossové", sbx_sec_mini: "🌟 Mini-bossové", sbx_sec_enemies: "👾 Nepřátelé",
     board_title: "Žebříček nejlepších runů",
     board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 🥇",
@@ -1735,8 +1734,7 @@ const LANG: Record<string, Record<string, string>> = {
   },
   en: {
     title: "Meadow of a Thousand Monsters",
-    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard",
-    tagline: "Survive the long day in the meadow", menu_best: "Best",
+    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard", menu_best: "Best",
     sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: "👑 Bosses", sbx_sec_mini: "🌟 Mini-bosses", sbx_sec_enemies: "👾 Enemies",
     board_title: "Best runs leaderboard",
     board_empty: "Nothing here yet. Start a run, sign in and win 🥇",
@@ -1818,8 +1816,7 @@ const LANG: Record<string, Record<string, string>> = {
   },
   pl: {
     title: "Łąka tysiąca potworów",
-    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica",
-    tagline: "Przeżyj długi dzień na łące", menu_best: "Rekord",
+    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica", menu_best: "Rekord",
     sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: "👑 Bossowie", sbx_sec_mini: "🌟 Mini-bossowie", sbx_sec_enemies: "👾 Wrogowie",
     board_title: "Tablica najlepszych runów",
     board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 🥇",
@@ -9181,7 +9178,6 @@ export default function LoukaTisicePriser() {
         @keyframes ltpSbxRing { 0%,100% { box-shadow: 0 0 0 0 rgba(232,121,249,.55), 0 0 18px rgba(232,121,249,.5); } 70% { box-shadow: 0 0 0 13px rgba(232,121,249,0), 0 0 28px rgba(232,121,249,.85); } }
         @keyframes ltpHdr { 0%,100% { filter: drop-shadow(0 0 10px rgba(232,121,249,.45)); } 50% { filter: drop-shadow(0 0 22px rgba(232,121,249,.9)); } }
         .ltp-sbxbtn { animation: ltpSbxRing 2.2s ease-out infinite; }
-        .ltp-tagline { font-size: clamp(.66rem, 2.6vw, .82rem); font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: rgba(209,250,229,.78); text-shadow: 0 2px 8px rgba(0,0,0,.65); }
         .ltp-chip { display: inline-flex; align-items: center; gap: .3rem; border-radius: 9999px; border: 1px solid rgba(255,255,255,.16); background: rgba(255,255,255,.07); padding: .22rem .65rem; font-size: 10px; font-weight: 700; color: #d1fae5; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
         @media (min-width: 640px) { .ltp-chip { font-size: 11px; } }
         .ltp-startbar { position: absolute; left: 0; right: 0; bottom: 0; z-index: 60; padding: .9rem 1rem calc(env(safe-area-inset-bottom,0px) + 12px); background: #061410; border-top: 1px solid rgba(52,211,153,.3); box-shadow: 0 -12px 32px rgba(0,0,0,.5); pointer-events: none; }
@@ -9422,7 +9418,6 @@ export default function LoukaTisicePriser() {
               <h2 className="ltp-title">
                 🌾 {trk("title")}
               </h2>
-              <p className="ltp-tagline">{trk("tagline")}</p>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="ltp-chip">🏆 {trk("menu_best")}: 🌱{Math.max(best, ...Object.values(meta.best || {}))}</span>
                 <span className="ltp-chip">🌱 {meta.pts} {trk("seeds")}</span>

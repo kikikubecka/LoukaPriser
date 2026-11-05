@@ -1244,7 +1244,7 @@ function stopVox(): void {
   }
   voxOn = false;
 }
-// 🔓 odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z práže proběhlého dotyku
+// 🔓 odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z právě proběhlého dotyku
 function warmVox(): void {
   if (typeof speechSynthesis === "undefined") return;
   try {

@@ -1158,6 +1158,8 @@ function stopVox(): void {
     }
   }
   voxOn = false;
+  // 🤖 robotí vokál se při pauze / přepnutí tracku taky střihne
+  cutVoxSynth();
 }
 // 🔓 odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z právě proběhlého dotyku
 function warmVox(): void {
@@ -1172,22 +1174,145 @@ function warmVox(): void {
     // hlas nedostupný - hraje se jen hudba
   }
 }
-function singLine(line: string, idx: number): void {
+// 🤖 ROBOTÍ VOKÁL - garantovaný zpěv přímo ve zvukovém enginu: formantový hlas zazpívá
+// slabiky textu na melodii linky. Na mobilu často chybí hlasová syntéza (TTS) - tahle
+// cesta je čistě Web Audio, takže Rimmer zazpívá vždycky, i když TTS mlčí.
+let ttsWorks = false; // jakmile skutečné TTS poprvé promluví, robot ustoupí a zpívají slova
+let voxSynthLive: OscillatorNode[] = [];
+function voxSynthTrack(node: OscillatorNode): void {
+  voxSynthLive.push(node);
+  node.onended = () => {
+    const i = voxSynthLive.indexOf(node);
+    if (i >= 0) voxSynthLive.splice(i, 1);
+  };
+}
+function cutVoxSynth(): void {
+  for (const n of voxSynthLive) {
+    try {
+      n.stop();
+    } catch {
+      // už dozněl - nevadí
+    }
+  }
+  voxSynthLive.length = 0;
+}
+// 🧮 text se rozloží na slabiky (skupiny samohlásek) - každou zazpívá jedna nota linky
+function voxSyllables(line: string): string[] {
+  const words = line
+    .toLowerCase()
+    .replace(/[^a-z' ]/g, "")
+    .split(/\s+/)
+    .filter(Boolean);
+  const out: string[] = [];
+  for (const w of words) {
+    const groups = w.match(/[bcdfghjklmnpqrstvwxyz]*[aeiouy]+[bcdfghjklmnpqrstvwxyz]*/g);
+    if (groups && groups.length) out.push(...groups);
+    else out.push(w);
+  }
+  return out;
+}
+// 🗣 formanty samohlásek (F1/F2) - podle samohlásky ve slabice zní "á", "í", "ó"...
+const VOX_FORMANTS: Record<string, [number, number]> = {
+  a: [730, 1090],
+  e: [530, 1840],
+  i: [300, 2290],
+  o: [570, 840],
+  u: [320, 800],
+  y: [730, 1090],
+};
+// 🗣 jedna slabika - pila se dvěma formantovými filtry + vibrato = "lá lá" jako zpěv
+function voxNote(f: number, t: number, dur: number, vw: string): void {
+  if (!AC) return;
+  try {
+    const fm = VOX_FORMANTS[vw] || VOX_FORMANTS.a;
+    const o = AC.createOscillator();
+    o.type = "sawtooth";
+    o.frequency.setValueAtTime(f, t);
+    // 🎵 vibrato - bez něho by to znělo jako siréna
+    const lfo = AC.createOscillator();
+    lfo.frequency.value = 5.2;
+    const lfoG = AC.createGain();
+    lfoG.gain.value = f * 0.013;
+    lfo.connect(lfoG);
+    lfoG.connect(o.frequency);
+    // 🗣 dva úzké pásmové filtry na formantech - z pily se stane otevřená ústa
+    const f1 = AC.createBiquadFilter();
+    f1.type = "bandpass";
+    f1.frequency.value = fm[0];
+    f1.Q.value = 5;
+    const f2 = AC.createBiquadFilter();
+    f2.type = "bandpass";
+    f2.frequency.value = fm[1];
+    f2.Q.value = 8;
+    const g = AC.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.075, t + 0.035);
+    g.gain.setValueAtTime(0.075, t + dur * 0.55);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(f1);
+    o.connect(f2);
+    f1.connect(g);
+    f2.connect(g);
+    g.connect(audioOut());
+    o.start(t);
+    o.stop(t + dur + 0.03);
+    lfo.start(t);
+    lfo.stop(t + dur + 0.03);
+    voxSynthTrack(o);
+    voxSynthTrack(lfo);
+  } catch {
+    // zvuk nedostupný - nevadí
+  }
+}
+// 🎼 celá řádka - slabiky textu se zazpívají rovnoměrně na noty melodické linky,
+// refrén o kvintu výš, verš níž - hlas drží s melodií písničky
+function synthVox(line: string, li: number, song: Song, t: number, stepDur: number): void {
+  const syl = voxSyllables(line);
+  if (!syl.length || !song.lead) return;
+  const mul = li >= 3 ? 0.75 : 0.5;
+  const notes: number[] = [];
+  for (let j = 0; j < 16; j += 2) {
+    const f = song.lead[li * 16 + j];
+    if (f) notes.push(f * mul);
+  }
+  if (!notes.length) return;
+  const per = (stepDur * 16) / syl.length;
+  for (let k = 0; k < syl.length; k++) {
+    const nf = notes[Math.min(notes.length - 1, Math.floor((k * notes.length) / syl.length))];
+    const vw = syl[k].match(/[aeiouy]/);
+    voxNote(nf, t + k * per, Math.min(per * 0.9, 0.42), vw ? vw[0] : "a");
+  }
+}
+// 🎤 ZPĚV RIMMERA - na každé řádce písničky se zazpívá její text a když písnička dojede
+// na konec, zpěv se točí znovu od začátku (spolu s hudbou, dokola). Zpívají dva hlasy:
+// robotí vokál (zazní vždy) a pokud má prohlížeč hlasovou syntézu, i skutečná slova -
+// jakmile TTS poprvé promluví, robot ustoupí.
+function singLine(song: Song, li: number, t: number, stepDur: number): void {
+  const line = song.lyrics ? song.lyrics[li] : "";
+  if (!line) return;
+  // 🤖 robotí vokál - rezerva, která zazní i bez hlasové syntézy
+  if (!ttsWorks) synthVox(line, li, song, t, stepDur);
   if (typeof speechSynthesis === "undefined") return;
   try {
-    // ✂️ původní řádka se prostříhne - zpěv se nikdy nerozsype ani nezpozdí za hudbou
+    if (!speechSynthesis.getVoices().length && !voxVoice) return;
     speechSynthesis.cancel();
+    speechSynthesis.resume();
     const u = new SpeechSynthesisUtterance(line);
     u.lang = "en-GB";
     if (voxVoice) u.voice = voxVoice;
     // 🎵 verse níž, refrén výš - hlas drží s melodií, tempo stihne celou řádku do jejích 16 kroků
-    u.pitch = idx >= 3 ? 1.35 : 1.05;
+    u.pitch = li >= 3 ? 1.35 : 1.05;
     u.rate = 1.25;
     u.volume = 1;
+    u.onstart = () => {
+      // 🗣 skutečná slova se rozběhla - robotímu vokálu už není třeba
+      ttsWorks = true;
+      cutVoxSynth();
+    };
     speechSynthesis.speak(u);
     voxOn = true;
   } catch {
-    // hlas nedostupný - hraje se jen hudba
+    // hlas nedostupný - zpívá robotí vokál
   }
 }
 
@@ -1277,10 +1402,10 @@ function musicTick(g: Game): void {
       // 🧭 délka patternu - výchozí 16 kroků, ale delší skladby (sloka + refrén) mají vlastní len
       const s = musStep % (song.len ?? 16);
       const t = musNext;
-      // 🎤 ZPÍVÁ SE - na začátku každé řádky (16 kroků) zazpívá syntetický hlas celý verš originálu
+      // 🎤 ZPÍVÁ SE - na začátku každé řádky (16 kroků) se zazpívá celý verš, na konci písničky se zpěv točí od začátku
       if (s % 16 === 0 && song.lyrics) {
         const li = (musStep >> 4) % song.lyrics.length;
-        singLine(song.lyrics[li], li);
+        singLine(song, li, t, stepDur);
       }
       const b = song.bass[s];
       if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);

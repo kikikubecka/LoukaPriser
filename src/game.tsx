@@ -989,8 +989,28 @@ const SONG_RIMMER: Song = {
   ],
 };
 
+// ✂️ rejstřík živých hudebních hlasů - při přepnutí tracku se tvrdě střihnou, nic nedoznívá do nové skladby
+let musLive: (OscillatorNode | AudioBufferSourceNode)[] = [];
+function musTrackVoice(node: OscillatorNode | AudioBufferSourceNode): void {
+  musLive.push(node);
+  node.onended = () => {
+    const i = musLive.indexOf(node);
+    if (i >= 0) musLive.splice(i, 1);
+  };
+}
+function cutMusic(): void {
+  for (const n of musLive) {
+    try {
+      n.stop();
+    } catch {
+      // už dozněl - nevadí
+    }
+  }
+  musLive.length = 0;
+}
 function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak: number): void {
   const o = AC!.createOscillator();
+  musTrackVoice(o);
   const gg = AC!.createGain();
   o.type = type;
   o.frequency.setValueAtTime(f, t);
@@ -1010,6 +1030,7 @@ function musicDrum(t: number, dur: number, peak: number, f: number): void {
     for (let i = 0; i < dch.length; i++) dch[i] = Math.random() * 2 - 1;
   }
   const src = AC!.createBufferSource();
+  musTrackVoice(src);
   src.buffer = noiseBuf;
   const flt = AC!.createBiquadFilter();
   flt.type = "lowpass";
@@ -1027,6 +1048,7 @@ function musicDrum(t: number, dur: number, peak: number, f: number): void {
 // 💓 tlukot srdce - hluboký buch (sine propad frekvence), sílí s klesajícím HP
 function musicThump(t: number, peak: number): void {
   const o = AC!.createOscillator();
+  musTrackVoice(o);
   const gg = AC!.createGain();
   o.type = "sine";
   o.frequency.setValueAtTime(88, t);
@@ -1100,24 +1122,68 @@ function ambTick(g: Game): void {
 
 // 🎤 ZPÍVÁNÍ - syntetický hlas zazpívá texty překvapení (Web Speech API, britština jako v originále)
 let voxOn = false;
+// 📻 konkrétní anglický hlas - hlasy se na mobilu načítají asynchronně, bez čekání by zpěv neměl čím zaznít
+let voxVoice: SpeechSynthesisVoice | null = null;
+function voxPick(): void {
+  try {
+    const vs = speechSynthesis.getVoices();
+    if (!vs.length) return;
+    voxVoice =
+      vs.find((v) => /^en[-_]GB/i.test(v.lang)) ||
+      vs.find((v) => /^en[-_]/i.test(v.lang)) ||
+      vs.find((v) => /en/i.test(v.lang)) ||
+      vs.find((v) => /Google|Natural/i.test(v.name)) ||
+      vs[0] ||
+      null;
+  } catch {
+    // hlasy nedostupné - nevadí
+  }
+}
+if (typeof speechSynthesis !== "undefined") {
+  voxPick();
+  try {
+    speechSynthesis.addEventListener("voiceschanged", voxPick);
+  } catch {
+    // starší prohlížeč bez voiceschanged - nevadí
+  }
+}
 function stopVox(): void {
   if (voxOn && typeof speechSynthesis !== "undefined") {
     try {
       speechSynthesis.cancel();
+      // ⚠️ Android umí po cancel nechat hlas viset - resume ho uvolní
+      speechSynthesis.resume();
     } catch {
       // hlas nedostupný - nevadí
     }
   }
   voxOn = false;
 }
+// 🔓 odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z právě proběhlého dotyku
+function warmVox(): void {
+  if (typeof speechSynthesis === "undefined") return;
+  try {
+    voxPick();
+    speechSynthesis.cancel();
+    const w = new SpeechSynthesisUtterance(" ");
+    w.volume = 0;
+    speechSynthesis.speak(w);
+  } catch {
+    // hlas nedostupný - hraje se jen hudba
+  }
+}
 function singLine(line: string, idx: number): void {
   if (typeof speechSynthesis === "undefined") return;
   try {
+    // ✂️ původní řádka se prostříhne - zpěv se nikdy nerozsype ani nezpozdí za hudbou
+    speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(line);
     u.lang = "en-GB";
+    if (voxVoice) u.voice = voxVoice;
     // 🎵 verse níž, refrén výš - hlas drží s melodií, tempo stihne celou řádku do jejích 16 kroků
     u.pitch = idx >= 3 ? 1.35 : 1.05;
     u.rate = 1.25;
+    u.volume = 1;
     speechSynthesis.speak(u);
     voxOn = true;
   } catch {
@@ -1172,6 +1238,8 @@ function musicTick(g: Game): void {
       musToastAt = performance.now();
       // 🎤 při přepnutí tracku se zpívání zastaví (nová skladba začíná od začátku)
       stopVox();
+      // ✂️ a rozvržené noty starého tracku se tvrdě střihnou - žádné překrývání dvou melodií
+      cutMusic();
       if ((want === SONG_BOSS || want === SONG_FINAL) && prev !== SONG_BOSS && prev !== SONG_FINAL) playSfx(g, "riser");
     }
     const song = musSong as Song;
@@ -8673,6 +8741,8 @@ export default function LoukaTisicePriser() {
   const toggleOpt = (key: "snd" | "shk" | "nums" | "surp") => {
     const g = gameRef.current;
     g.opts[key] = !g.opts[key];
+    // 🎤 zapnuté překvapení odemkne řeč hned v gestě klepnutí - na mobilu by jinak hlas mlčel
+    if (key === "surp" && g.opts[key]) warmVox();
     setMeta((m) => {
       const nm = { ...m, opts: { ...m.opts, [key]: g.opts[key] } };
       saveMeta(nm);

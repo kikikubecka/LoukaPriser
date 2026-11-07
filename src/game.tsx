@@ -8723,7 +8723,7 @@ function MetaShop(props: { meta: Meta; onBuy: (id: string) => void }) {
   );
 }
 
-export default function LoukaTisicePriser() {
+function LoukaTisicePriser() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRef = useRef<Game>(initGame());
   const keysRef = useRef<Record<string, boolean>>({});

@@ -904,6 +904,7 @@ interface Song {
   snare: number[]; // kroky se snárou
   hat: number[]; // kroky s hi-hatem
   arpAlways: boolean;
+  oompah?: boolean; // 🕊 oom-pah dechová sekce - tuba-bum + brass staby v muzikálovém rytmu
   fanfare?: number[]; // 🎺 fanfárové brass stabs - power akordy v bitevním rytmu
   strings?: boolean; // 🎻 smyčcový orchestrální pad držící harmonii
   len?: number; // 🧭 délka patternu v krocích (výchozí 16)
@@ -1023,7 +1024,7 @@ const SONG_FINAL: Song = {
 // text zazpívá syntetický hlas - hraje dokola, dokud ji nevypneš
 const SONG_RIMMER: Song = {
   name: "🎺 Arnold Rimmer",
-  step: 0.165,
+  step: 0.185,
   bassWave: "triangle",
   leadWave: "square",
   bass: [
@@ -1060,7 +1061,8 @@ const SONG_RIMMER: Song = {
   kick: [0, 8, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96, 104, 112, 120],
   snare: [4, 12, 20, 28, 36, 44, 52, 60, 68, 76, 84, 92, 100, 108, 116, 124],
   hat: [2, 6, 10, 14, 18, 22, 26, 30, 34, 38, 42, 46, 50, 54, 58, 62, 66, 70, 74, 78, 82, 86, 90, 94, 98, 102, 106, 110, 114, 118, 122, 126],
-  arpAlways: true,
+  arpAlways: false,
+  oompah: true,
   len: 128,
   lyrics: [
     "If you're in trouble he will save the day",
@@ -1093,12 +1095,25 @@ function cutMusic(): void {
   }
   musLive.length = 0;
 }
-function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak: number): void {
+function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak: number, vib = 0): void {
   const o = AC!.createOscillator();
   musTrackVoice(o);
   const gg = AC!.createGain();
   o.type = type;
   o.frequency.setValueAtTime(f, t);
+  // 🎵 jemné vibrato s náběhem - oom-pah lead zní jako živá tuba, ne jako varhany
+  if (vib > 0) {
+    const vl = AC!.createOscillator();
+    const vg = AC!.createGain();
+    vl.frequency.value = 5.5;
+    vg.gain.setValueAtTime(0.0001, t);
+    vg.gain.linearRampToValueAtTime(f * vib, t + Math.min(0.18, dur * 0.5));
+    vl.connect(vg);
+    vg.connect(o.frequency);
+    vl.start(t);
+    vl.stop(t + dur + 0.02);
+    musTrackVoice(vl);
+  }
   gg.gain.setValueAtTime(0.0001, t);
   gg.gain.linearRampToValueAtTime(peak, t + 0.01);
   gg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -1296,49 +1311,126 @@ function voxSyllables(line: string): string[] {
   }
   return out;
 }
-// 🗣 formanty samohlásek (F1/F2) - podle samohlásky ve slabice zní "á", "í", "ó"...
-const VOX_FORMANTS: Record<string, [number, number]> = {
-  a: [730, 1090],
-  e: [530, 1840],
-  i: [300, 2290],
-  o: [570, 840],
-  u: [320, 800],
-  y: [730, 1090],
+// 🗣 formanty samohlásek (F1/F2/F3) - tři rezonance z pily udělají opravdovou samohlásku,
+// třetí formant utahuje "i" a rozjasňuje hlas (dřív jen F1/F2 = znělo to jako bouda)
+const VOX_FORMANTS: Record<string, [number, number, number]> = {
+  a: [730, 1090, 2440],
+  e: [530, 1840, 2480],
+  i: [300, 2290, 3010],
+  o: [570, 840, 2410],
+  u: [320, 800, 2240],
+  y: [730, 1090, 2440],
 };
-// 🗣 jedna slabika - pila se dvěma formantovými filtry + vibrato = "lá lá" jako zpěv
-function voxNote(f: number, t: number, dur: number, vw: string): void {
+// 🌀 diftongy - sklouzávky dvou samohlásek, formanty se během noty svezou z první do druhé
+const VOX_DIPHTHONGS: Record<string, [string, string]> = {
+  ai: ["a", "i"],
+  ay: ["a", "i"],
+  ei: ["e", "i"],
+  ey: ["e", "i"],
+  oi: ["o", "i"],
+  oy: ["o", "i"],
+  au: ["a", "u"],
+  aw: ["a", "u"],
+  ou: ["o", "u"],
+  ow: ["o", "u"],
+  ie: ["i", "e"],
+};
+// 🫧 souhlásky pro artikulaci - před samohláskou se oťuknou šumem, "Rimmer" nezí jako "immer"
+const VOX_CONSONANTS = /[bcdfghjklmnpqrstvwxyz]/;
+// 🗣 jedna slabika - pila třemi formanty (F1/F2/F3), diftongový skluz, vibrato s náběhem,
+// portamento mezi notami, souhlásková artikulace a dech - z robotího "lá lá" se stane zpěvák
+let voxPrevF = 0;
+function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): void {
   if (!AC) return;
   try {
-    const fm = VOX_FORMANTS[vw] || VOX_FORMANTS.a;
+    if (!noiseBuf) {
+      noiseBuf = AC.createBuffer(1, 4410, 44100);
+      const dch = noiseBuf.getChannelData(0);
+      for (let i = 0; i < dch.length; i++) dch[i] = Math.random() * 2 - 1;
+    }
+    // 🧮 ze slabiky: samohlásková skupina (třeba diftong "ou") + úvodní souhláska pro artikulaci
+    const vm = syl.match(/[aeiouy]+/);
+    const vg = vm ? vm[0] : "a";
+    const diph = vg.length >= 2 ? VOX_DIPHTHONGS[vg.slice(0, 2)] : null;
+    const fm0 = VOX_FORMANTS[diph ? diph[0] : vg[0]] || VOX_FORMANTS.a;
+    const fm1 = diph ? VOX_FORMANTS[diph[1]] || null : null;
     const o = AC.createOscillator();
     o.type = "sawtooth";
-    o.frequency.setValueAtTime(f, t);
-    // 🎵 vibrato - bez něho by to znělo jako siréna
+    // 🎢 portamento - hlas se k nové notě přisune hladce, neskočí po notách jako robot
+    if (voxPrevF > 0 && Math.abs(Math.log(f / voxPrevF)) < 0.7) {
+      o.frequency.setValueAtTime(voxPrevF, t);
+      o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.05, dur * 0.3));
+    } else {
+      o.frequency.setValueAtTime(f, t);
+    }
+    voxPrevF = f;
+    // 🎵 vibrato s náběhem - nota začne čistě a pomalu se rozkmitá, jako skutečný zpěv
     const lfo = AC.createOscillator();
-    lfo.frequency.value = 5.2;
+    lfo.frequency.value = 5.8;
     const lfoG = AC.createGain();
-    lfoG.gain.value = f * 0.013;
+    lfoG.gain.setValueAtTime(0.0001, t);
+    lfoG.gain.linearRampToValueAtTime(f * 0.015, t + Math.max(0.07, dur * 0.45));
     lfo.connect(lfoG);
     lfoG.connect(o.frequency);
-    // 🗣 dva úzké pásmové filtry na formantech - z pily se stane otevřená ústa
+    // 🗣 tři úzké formantové rezonance - u diftongu formanty během noty svezou ("ou" = ó→u)
     const f1 = AC.createBiquadFilter();
     f1.type = "bandpass";
-    f1.frequency.value = fm[0];
-    f1.Q.value = 5;
+    f1.frequency.setValueAtTime(fm0[0], t);
+    f1.Q.value = 8;
+    if (fm1) f1.frequency.linearRampToValueAtTime(fm1[0], t + dur * 0.8);
     const f2 = AC.createBiquadFilter();
     f2.type = "bandpass";
-    f2.frequency.value = fm[1];
-    f2.Q.value = 8;
+    f2.frequency.setValueAtTime(fm0[1], t);
+    f2.Q.value = 10;
+    if (fm1) f2.frequency.linearRampToValueAtTime(fm1[1], t + dur * 0.8);
+    const f3 = AC.createBiquadFilter();
+    f3.type = "bandpass";
+    f3.frequency.setValueAtTime(fm0[2], t);
+    f3.Q.value = 12;
+    if (fm1) f3.frequency.linearRampToValueAtTime(fm1[2], t + dur * 0.8);
     const g = AC.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.075, t + 0.035);
-    g.gain.setValueAtTime(0.075, t + dur * 0.55);
+    g.gain.linearRampToValueAtTime(peak, t + 0.035);
+    g.gain.setValueAtTime(peak, t + dur * 0.6);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(f1);
     o.connect(f2);
+    o.connect(f3);
     f1.connect(g);
     f2.connect(g);
+    f3.connect(g);
     g.connect(audioOut());
+    // 🫧 artikulace - úvodní souhláska se oťukne krátkým šumem, "Rimmer" už nezí jako "immer"
+    if (VOX_CONSONANTS.test(syl[0])) {
+      const cs = AC.createBufferSource();
+      cs.buffer = noiseBuf;
+      const cf = AC.createBiquadFilter();
+      cf.type = "bandpass";
+      cf.frequency.value = /[szfhv]/.test(syl[0]) ? 4800 : 1900;
+      cf.Q.value = 1.2;
+      const cg = AC.createGain();
+      cg.gain.setValueAtTime(peak * 0.45, t);
+      cg.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
+      cs.connect(cf);
+      cf.connect(cg);
+      cg.connect(audioOut());
+      cs.start(t);
+      cs.stop(t + 0.06);
+    }
+    // 🌬 dech - jemný šumový nádech na začátku slabiky, hlas bez něho zní sterilně
+    const br = AC.createBufferSource();
+    br.buffer = noiseBuf;
+    const bf = AC.createBiquadFilter();
+    bf.type = "highpass";
+    bf.frequency.value = 1400;
+    const bg = AC.createGain();
+    bg.gain.setValueAtTime(peak * 0.22, t);
+    bg.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(0.08, dur * 0.3));
+    br.connect(bf);
+    bf.connect(bg);
+    bg.connect(audioOut());
+    br.start(t);
+    br.stop(t + dur + 0.03);
     o.start(t);
     o.stop(t + dur + 0.03);
     lfo.start(t);
@@ -1362,10 +1454,11 @@ function synthVox(line: string, li: number, song: Song, t: number, stepDur: numb
   }
   if (!notes.length) return;
   const per = (stepDur * 16) / syl.length;
+  // 🎤 refrén se zpívá hlasitěji a slabiky se déle drží - muzikálový "big finish"
+  const peak = li >= 3 ? 0.1 : 0.082;
   for (let k = 0; k < syl.length; k++) {
     const nf = notes[Math.min(notes.length - 1, Math.floor((k * notes.length) / syl.length))];
-    const vw = syl[k].match(/[aeiouy]/);
-    voxNote(nf, t + k * per, Math.min(per * 0.9, 0.42), vw ? vw[0] : "a");
+    voxNote(nf, t + k * per, Math.min(per * 1.15, 0.48), syl[k], peak);
   }
 }
 // 🎤 ZPĚV RIMMERA - na každé řádce písničky se zazpívá její text a když písnička dojede
@@ -1386,7 +1479,7 @@ function singLine(song: Song, li: number, t: number, stepDur: number): void {
     u.lang = "en-GB";
     if (voxVoice) u.voice = voxVoice;
     // 🎵 verse níž, refrén výš - hlas drží s melodií, tempo stihne celou řádku do jejích 16 kroků
-    u.pitch = li >= 3 ? 1.35 : 1.05;
+    u.pitch = li >= 3 ? 1.22 : 1.15;
     u.rate = 1.25;
     u.volume = 1;
     u.onstart = () => {
@@ -1495,7 +1588,17 @@ function musicTick(g: Game): void {
       const b = song.bass[s];
       if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);
       const l = song.lead[s];
-      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028);
+      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028, song.oompah ? 0.007 : 0);
+      // 🕊 OOM-PAH - armádní kapela: na lichých krocích brass staby root+kvinta (PAH!),
+      // pod kopákem zaduní hluboká tuba (OOM) - Rimmerova noční můra v plné parádě
+      if (song.oompah) {
+        const oph = song.chords[(musStep >> 3) % song.chords.length];
+        if (s % 2 === 1) {
+          musicNote("sawtooth", oph * detune, t, stepDur * 0.4, 0.03);
+          musicNote("sawtooth", oph * 1.5 * detune, t, stepDur * 0.4, 0.022);
+        }
+        if (song.kick.includes(s)) musicThump(t, 0.06);
+      }
       // 🎺 EPICKÁ VRSTVA: brass fanfáry (power akord root+kvinta+oktáva), timpani pod kopákem, crash na takt
       if (epic) {
         if (song.fanfare && song.fanfare.includes(s)) {

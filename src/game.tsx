@@ -510,7 +510,8 @@ let orbSprites: Map<number, HTMLCanvasElement> | null = null;
 
 function getOrbSprite(hue: number): HTMLCanvasElement {
   if (!orbSprites) orbSprites = new Map();
-  const bucket = (((Math.round(hue / 30) * 30) % 360) + 360) % 360;
+  // 🌈 krok 15° - jemnější přechody žlutá→červená u XP orbů (dřív hrubé 30°)
+  const bucket = (((Math.round(hue / 15) * 15) % 360) + 360) % 360;
   let c = orbSprites.get(bucket);
   if (!c) {
     const hr = ORB_SPRITE_R * 2.6;
@@ -1192,7 +1193,6 @@ function warmVox(): void {
 // 🤖 ROBOTÍ VOKÁL - garantovaný zpěv přímo ve zvukovém enginu: formantový hlas zazpívá
 // slabiky textu na melodii linky. Na mobilu často chybí hlasová syntéza (TTS) - tahle
 // cesta je čistě Web Audio, takže Rimmer zazpívá vždycky, i když TTS mlčí.
-let ttsWorks = false; // jakmile skutečné TTS poprvé promluví, robot ustoupí a zpívají slova
 let voxSynthLive: OscillatorNode[] = [];
 function voxSynthTrack(node: OscillatorNode): void {
   voxSynthLive.push(node);
@@ -1377,36 +1377,15 @@ function synthVox(line: string, li: number, song: Song, t: number, stepDur: numb
   }
 }
 // 🎤 ZPĚV RIMMERA - na každé řádce písničky se zazpívá její text a když písnička dojede
-// na konec, zpěv se točí znovu od začátku (spolu s hudbou, dokola). Zpívají dva hlasy:
-// robotí vokál (zazní vždy) a pokud má prohlížeč hlasovou syntézu, i skutečná slova -
-// jakmile TTS poprvé promluví, robot ustoupí.
+// na konec, zpěv se točí znovu od začátku (spolu s hudbou, dokola). Zpívá VŽY robotí vokál:
+// TTS v prohlížeči často nastartuje (onstart), ale žádný zvuk nevyjde - dřív tak hlas
+// utnul robota a nezpíval nikdo. Robot je čisté Web Audio, zazní vždy.
 function singLine(song: Song, li: number, t: number, stepDur: number): void {
   const line = song.lyrics ? song.lyrics[li] : "";
   if (!line) return;
-  // 🤖 robotí vokál - rezerva, která zazní i bez hlasové syntézy
-  if (!ttsWorks) synthVox(line, li, song, t, stepDur);
-  if (typeof speechSynthesis === "undefined") return;
-  try {
-    if (!speechSynthesis.getVoices().length && !voxVoice) return;
-    speechSynthesis.cancel();
-    speechSynthesis.resume();
-    const u = new SpeechSynthesisUtterance(line);
-    u.lang = "en-GB";
-    if (voxVoice) u.voice = voxVoice;
-    // 🎵 verse níž, refrén výš - hlas drží s melodií, tempo stihne celou řádku do jejích 16 kroků
-    u.pitch = li >= 3 ? 1.22 : 1.15;
-    u.rate = 1.25;
-    u.volume = 1;
-    u.onstart = () => {
-      // 🗣 skutečná slova se rozběhla - robotímu vokálu už není třeba
-      ttsWorks = true;
-      cutVoxSynth();
-    };
-    speechSynthesis.speak(u);
-    voxOn = true;
-  } catch {
-    // hlas nedostupný - zpívá robotí vokál
-  }
+  // 🤖 zpívá VŽY robotí vokál (čisté Web Audio) - na TTS se nedá spolehnout:
+  // umí nastartovat (onstart), ale nevydat zvuk - a dřív tak utnul i robota, takže nezpíval nikdo
+  synthVox(line, li, song, t, stepDur);
 }
 
 // 🎚 normálně hraje bitevní téma, jen boss si vezme svá tematická_tracks; překvapení (🎁) přebíjí všechno
@@ -1591,9 +1570,11 @@ function spawnOrb(g: Game, x: number, y: number, xp: number, pk = 0): void {
     y,
     vx: 0,
     vy: 0,
-    r: pk > 0 ? 9 : 4 + xp * 2,
+    // 🎨 XP koule: čím víc XP, tím červenější (žlutá = nejméně, plná červeň = xp 8+);
+    // velikost znovu roste až od plné červené - čím cennější, tím vzácnější
+    r: pk > 0 ? 9 : 6 + Math.max(0, xp - 8) * 2,
     xp,
-    hue: pk === 1 ? 350 : pk === 2 ? 25 : pk === 3 ? 210 : 48,
+    hue: pk === 1 ? 350 : pk === 2 ? 25 : pk === 3 ? 210 : Math.max(0, 55 - (55 * Math.min(xp, 8)) / 8),
     pk,
   });
 }
@@ -1947,7 +1928,7 @@ function trk(k: string): string {
 }
 const LANG: Record<string, Record<string, string>> = {
   cs: {
-    title: "Louka tisíce příšer",
+    title: "Louka příšer",
     tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček", menu_best: "Rekord",
     sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: "👑 Bossové", sbx_sec_mini: "🌟 Mini-bossové", sbx_sec_enemies: "👾 Nepřátelé",
     board_title: "Žebříček nejlepších runů",
@@ -2029,7 +2010,7 @@ const LANG: Record<string, Record<string, string>> = {
     wpn_bow: "Luk", wpn_darts: "Šipky", wpn_knives: "Nože", wpn_shotgun: "Brokovnice", wpn_mg: "Kulomet", wpn_pistol: "Pistole", wpn_fireball: "Ohnivá koule", wpn_frost: "Mrazík", wpn_lightning: "Blesk", wpn_flamethrower: "Plamenomet", wpn_shuriken: "Šurikeny", wpn_sword: "Meč", wpn_splinters: "Třísky", wpn_turret: "Turetka",
   },
   en: {
-    title: "Meadow of a Thousand Monsters",
+    title: "Meadow of Monsters",
     tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard", menu_best: "Best",
     sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: "👑 Bosses", sbx_sec_mini: "🌟 Mini-bosses", sbx_sec_enemies: "👾 Enemies",
     board_title: "Best runs leaderboard",
@@ -2111,7 +2092,7 @@ const LANG: Record<string, Record<string, string>> = {
     wpn_bow: "Bow", wpn_darts: "Darts", wpn_knives: "Knives", wpn_shotgun: "Shotgun", wpn_mg: "Machine gun", wpn_pistol: "Pistol", wpn_fireball: "Fireball", wpn_frost: "Frost bolt", wpn_lightning: "Lightning", wpn_flamethrower: "Flamethrower", wpn_shuriken: "Shurikens", wpn_sword: "Sword", wpn_splinters: "Splinters", wpn_turret: "Turret",
   },
   pl: {
-    title: "Łąka tysiąca potworów",
+    title: "Łąka potworów",
     tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica", menu_best: "Rekord",
     sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: "👑 Bossowie", sbx_sec_mini: "🌟 Mini-bossowie", sbx_sec_enemies: "👾 Wrogowie",
     board_title: "Tablica najlepszych runów",
@@ -9130,7 +9111,7 @@ function LoukaTisicePriser() {
       ? "📅 DENNÍ VÝZVA! Dnešní louka je zlá…"
       : sandboxSel
         ? "🧪 Sandbox — jen si hraj!"
-        : "🌾 Louka tisíce příšer — přežij ten dlouhý den!";
+        : "🌾 Louka příšer — přežij ten dlouhý den!";
     addText(g0, g0.hero.x, g0.hero.y - 60, intro, 120, 18);
     if (dailyRun) addText(g0, g0.hero.x, g0.hero.y - 84, `🎭 ${CLASSES.find((c) => c.id === clsSel)?.name ?? "?"} · ${(DIFFS[dd] || DIFFS[1]).name}`, 200, 13);
   };

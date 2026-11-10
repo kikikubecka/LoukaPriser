@@ -1949,6 +1949,13 @@ function saveMeta(m: Meta): void {
   }
 }
 
+// 🌍 ONLINE ŽEBŘÍČEK - rekordy se ukládají na server (Google Apps Script + Tabulky),
+// takže je vidíš mezi zařízeními a i ostatní hráči. Návod: leaderboard/README.md.
+// Nech prázdné, dokud URL nevložíš - hra pak použije lokální žebříček jako dřív.
+const LB_API = ""; // 👉 sem vlož URL webové aplikace z Apps Scriptu (končí na /exec)
+const LB_SHOW = 20; // kolik globálních rekordů ukázat v tabulce
+const LB_SYNC_KEY = "louka_lb_sync_v1"; // poznámka "staré lokální rekordy už jsou na serveru"
+
 // 🥇 ŽEBŘÍČEK - arcade styl: top 10 runů uložených v prohlížeči
 const BOARD_MAX = 10;
 // dostane se skóre mezi top 10? (sandbox se nezapočítává)
@@ -1960,6 +1967,60 @@ function boardQualifies(m: Meta, score: number): boolean {
 function pushBoard(m: Meta, e: ScoreEntry): Meta {
   const b = [...(m.board || []), e].sort((x, y) => y.score - x.score).slice(0, BOARD_MAX);
   return { ...m, board: b, lastName: e.name };
+}
+
+// 📡 JSON ze serveru s bezpečným timeoutem - při výpadku prostě použijeme lokální data
+async function lbFetch(url: string): Promise<{ ok?: boolean; rows?: unknown[] } | null> {
+  try {
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 6000);
+    try {
+      const r = await fetch(url, { signal: ctrl.signal });
+      if (!r.ok) return null;
+      return await r.json();
+    } finally {
+      clearTimeout(to);
+    }
+  } catch {
+    // server nedostupný / zablokovaný - nevadí, máme lokální zálohu
+    return null;
+  }
+}
+// 🦟 normalizace řádku ze serveru - nikdy nevěř vstupu, čísla musí být čísla
+function lbRow(r: Record<string, unknown>): ScoreEntry {
+  const nn = (v: unknown): number => {
+    const x = Number(v);
+    return isFinite(x) && x >= 0 ? x : 0;
+  };
+  return {
+    name: String(r && r.name ? r.name : "?").slice(0, 12),
+    score: nn(r.score),
+    level: nn(r.level),
+    kills: nn(r.kills),
+    time: nn(r.time),
+    cls: typeof r.cls === "string" ? r.cls : "?",
+    diff: nn(r.diff),
+    date: typeof r.date === "string" ? r.date : "",
+    combo: nn(r.combo),
+  };
+}
+// 🌍 stažení globálního top listu ze serveru
+async function lbTop(): Promise<ScoreEntry[] | null> {
+  if (!LB_API) return null;
+  const d = await lbFetch(LB_API + (LB_API.indexOf("?") >= 0 ? "&" : "?") + "op=top");
+  if (!d || d.ok !== true || !Array.isArray(d.rows)) return null;
+  return (d.rows as Record<string, unknown>[]).map(lbRow).filter((e) => e.score > 0);
+}
+// 📤 upload skóre na server - GET = simple request, žádný CORS preflight
+async function lbSubmit(e: ScoreEntry): Promise<boolean> {
+  if (!LB_API) return false;
+  const q =
+    "op=submit&name=" + encodeURIComponent(e.name) +
+    "&score=" + e.score + "&level=" + e.level + "&kills=" + e.kills +
+    "&time=" + e.time + "&cls=" + encodeURIComponent(e.cls) +
+    "&diff=" + e.diff + "&date=" + encodeURIComponent(e.date) + "&combo=" + e.combo;
+  const d = await lbFetch(LB_API + (LB_API.indexOf("?") >= 0 ? "&" : "?") + q);
+  return !!(d && d.ok === true);
 }
 
 type MetaUp = {
@@ -2024,6 +2085,10 @@ const LANG: Record<string, Record<string, string>> = {
     saved_board: "Zapsáno do žebříčku! 🥇",
     player_default: "Hráč",
     board_note: "Žebříček top 10 se ukládá v tomto prohlížeči.",
+    board_global: "Sdílený žebříček – rekordy hráčů z celého světa",
+    board_global_note: "🌍 Žebříček je sdílený online – vidí ho všichni hráči na všech zařízeních.",
+    board_loading: "Načítám světové rekordy…",
+    board_offline: "Server nedostupný – ukazuji jen záznamy z tohoto prohlížeče",
     board_clear: "🧹 Smazat žebříček",
     board_confirm: "Opravdu smazat? Klikni znovu!",
     start: "Spustit run",
@@ -2106,6 +2171,10 @@ const LANG: Record<string, Record<string, string>> = {
     saved_board: "Saved to the leaderboard! 🥇",
     player_default: "Player",
     board_note: "Top 10 board is saved in this browser.",
+    board_global: "Shared leaderboard – records from players worldwide",
+    board_global_note: "🌍 The leaderboard is shared online – every player sees it on every device.",
+    board_loading: "Loading world records…",
+    board_offline: "Server unreachable – showing only this browser's records",
     board_clear: "🧹 Clear board",
     board_confirm: "Really clear it? Click again!",
     start: "Start run",
@@ -2188,6 +2257,10 @@ const LANG: Record<string, Record<string, string>> = {
     saved_board: "Zapisano na tablicy! 🥇",
     player_default: "Gracz",
     board_note: "Tablica top 10 zapisuje się w tej przeglądarce.",
+    board_global: "Wspólna tablica – rekordy graczy z całego świata",
+    board_global_note: "🌍 Tablica jest współdzielona online – widzą ją wszyscy gracze na wszystkich urządzeniach.",
+    board_loading: "Ładuję światowe rekordy…",
+    board_offline: "Serwer niedostępny – pokazuję tylko zapisy z tej przeglądarki",
     board_clear: "🧹 Wyczyść tablicę",
     board_confirm: "Na pewno? Kliknij ponownie!",
     start: "Start runu",
@@ -8941,6 +9014,9 @@ function LoukaTisicePriser() {
   const [nameVal, setNameVal] = useState("");
   const [nameSaved, setNameSaved] = useState(false);
   const [boardClearConfirm, setBoardClearConfirm] = useState(false);
+  // 🌍 online žebříček - řádky ze serveru + stav (local = bez serveru, loading, online, offline)
+  const [lbRows, setLbRows] = useState<ScoreEntry[] | null>(null);
+  const [lbStatus, setLbStatus] = useState<"local" | "loading" | "online" | "offline">(LB_API ? "loading" : "local");
   const [sbx, setSbx] = useState<Upgrade[] | null>(null);
   const [sbxMsg, setSbxMsg] = useState("");
   const [meta, setMeta] = useState<Meta>(() => loadMeta());
@@ -9158,6 +9234,8 @@ function LoukaTisicePriser() {
       saveMeta(nm);
       return nm;
     });
+    // 🌍 rekord na server - ať ho vidí ostatní i tvůj mobil; lokální zápis platí vždy
+    lbSubmit(entry);
     playSfx(g, "buy");
     setNameSaved(true);
     setAskName(false);
@@ -9200,6 +9278,36 @@ function LoukaTisicePriser() {
     addText(g0, g0.hero.x, g0.hero.y - 60, intro, 120, 18);
     if (dailyRun) addText(g0, g0.hero.x, g0.hero.y - 84, `🎭 ${CLASSES.find((c) => c.id === clsSel)?.name ?? "?"} · ${(DIFFS[dd] || DIFFS[1]).name}`, 200, 13);
   };
+
+  // 🌍 online žebříček - při otevření tabu stáhneme globální top ze serveru;
+  // při prvním úspěšném spojení jednorázově nahrajeme staré lokální rekordy, ať se neztratí
+  useEffect(() => {
+    if (menuTab !== "board" || !LB_API) return;
+    let alive = true;
+    (async () => {
+      const rows = await lbTop();
+      if (!alive) return;
+      if (rows) {
+        setLbRows(rows);
+        setLbStatus("online");
+        try {
+          if (!localStorage.getItem(LB_SYNC_KEY) && (meta.board || []).length > 0) {
+            for (const e of meta.board || []) await lbSubmit(e);
+            localStorage.setItem(LB_SYNC_KEY, "1");
+            const rows2 = await lbTop();
+            if (alive && rows2) setLbRows(rows2);
+          }
+        } catch {
+          // localStorage nedostupný - sync prostě přeskočíme
+        }
+      } else {
+        setLbStatus("offline");
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [menuTab, meta.board]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -9997,13 +10105,29 @@ function LoukaTisicePriser() {
                   <h3 className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 bg-clip-text text-sm font-black text-transparent sm:text-base">
                     🥇 {trk("board_title")}
                   </h3>
-                  {(meta.board || []).length === 0 ? (
+                  {/* 🌍 stav spojení se serverovým žebříčkem */}
+                  <div className="text-center text-[10px] font-bold sm:text-[11px]">
+                    {lbStatus === "online" ? (
+                      <span className="text-emerald-300">🌍 {trk("board_global")}</span>
+                    ) : lbStatus === "loading" ? (
+                      <span className="text-white/50">⏳ {trk("board_loading")}</span>
+                    ) : lbStatus === "offline" ? (
+                      <span className="text-amber-200/80">📰 {trk("board_offline")}</span>
+                    ) : (
+                      <span className="text-white/40">💾 {trk("board_note")}</span>
+                    )}
+                  </div>
+                  {(() => {
+                    // 🌍 online = globální rekordy všech hráčů, jinak lokální top 10 z prohlížeče
+                    const show: ScoreEntry[] =
+                      lbStatus === "online" && lbRows ? lbRows.slice(0, LB_SHOW) : (meta.board || []).slice(0, BOARD_MAX);
+                    return show.length === 0 ? (
                     <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/55 sm:text-sm">
                       {trk("board_empty")}
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1">
-                      {(meta.board || []).map((en, i) => {
+                      {show.map((en, i) => {
                         const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
                         const c = CLASSES.find((x) => x.id === en.cls);
                         return (
@@ -10030,6 +10154,7 @@ function LoukaTisicePriser() {
                           </div>
                         );
                       })}
+                      {lbStatus !== "online" && (
                       <button
                         onClick={clearBoard}
                         className={`mt-1 self-center rounded-xl border-2 px-4 py-1.5 text-[11px] font-bold transition active:scale-95 sm:text-xs ${
@@ -10040,9 +10165,13 @@ function LoukaTisicePriser() {
                       >
                         {boardClearConfirm ? `😱 ${trk("board_confirm")}` : trk("board_clear")}
                       </button>
+                      )}
                     </div>
-                  )}
-                  <p className="text-center text-[10px] text-white/40">{trk("board_note")}</p>
+                  );
+                  })()}
+                  <p className="text-center text-[10px] text-white/40">
+                    {lbStatus === "online" ? trk("board_global_note") : trk("board_note")}
+                  </p>
                 </div>
               )}
               {menuTab === "sbx" && (

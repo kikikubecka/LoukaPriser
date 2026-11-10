@@ -1450,8 +1450,12 @@ function musicTick(g: Game): void {
         }
       }
     }
-    // finální fáze bosse (3+) ještě zrychlí tempo - hra se zní jako smršť
-    const stepDur = song === SONG_BOSS && bossPhase >= 3 ? song.step * 0.88 : song.step;
+    // 🌋 BITEVNÍ INTENZITA 0-3: čím víc nepřátel na louce, tím víc válečných vrstev hudby
+    // (10+ brass staby, 20+ marš + zdvojený lead, 40+ plná vřava a zrychlení) - boss řve vždy naplno
+    const bossOn = song === SONG_BOSS || song === SONG_FINAL;
+    const fury = bossOn ? 3 : g.opts.surp ? 0 : g.enemies.length >= 40 ? 3 : g.enemies.length >= 20 ? 2 : g.enemies.length >= 10 ? 1 : 0;
+    // finální fáze bosse (3+) ještě zrychlí tempo - hra se zní jako smršť; dav 40+ přidá spěch
+    const stepDur = song === SONG_BOSS && bossPhase >= 3 ? song.step * 0.88 : song.step * (fury >= 3 && !bossOn ? 0.94 : 1);
     musStepDur = stepDur;
     // 💀 DANGER - čím blíž smrti (pod 45 % HP), tím větší děs: 0 = v pohodě, 1 = skoro mrtvý
     // 👹 a když je na mapě boss, běží děs na 45 % i při plném HP - „teď už to máš spočítaný"
@@ -1482,7 +1486,12 @@ function musicTick(g: Game): void {
       const b = song.bass[s];
       if (b) musicNote(song.bassWave, (b / 2) * detune, t, stepDur * 0.95, epic ? 0.062 : 0.05);
       const l = song.lead[s];
-      if (l) musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028, song.oompah ? 0.007 : 0);
+      if (l) {
+        musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028, song.oompah ? 0.007 : 0);
+        // 🌋 od davu 20+ melodie zdvojí oktávu a při 40+ přibude rozladěný sborový hlas - fortissimo
+        if (fury >= 2 && !song.oompah) musicNote(song.leadWave, l * 2 * detune, t, stepDur * 0.9, 0.013);
+        if (fury >= 3 && !song.oompah) musicNote(song.leadWave, l * 1.008 * detune, t, stepDur * 0.9, 0.014);
+      }
       // 🕊 OOM-PAH - armádní kapela: na lichých krocích brass staby root+kvinta (PAH!),
       // pod kopákem zaduní hluboká tuba (OOM) - Rimmerova noční můra v plné parádě
       if (song.oompah) {
@@ -1516,6 +1525,29 @@ function musicTick(g: Game): void {
           musicNote("sawtooth", ch * detune, t, stepDur * 7.6, 0.019);
           musicNote("sawtooth", ch * 1.19 * detune, t, stepDur * 7.6, 0.015);
           musicNote("sawtooth", ch * 2 * detune, t, stepDur * 7.6, 0.013);
+        }
+      }
+      // 🎺 BITEVNÍ STABY - od davu 10+ zahouká brass power akord (root+kvinta+oktáva) každý takt
+      if (fury >= 1 && !song.oompah) {
+        const st = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
+        if (s % 4 === 0) {
+          musicNote("sawtooth", st, t, stepDur * 0.9, 0.02);
+          musicNote("sawtooth", st * 1.5, t, stepDur * 0.9, 0.016);
+          musicNote("sawtooth", st * 2, t, stepDur * 0.9, 0.012);
+        }
+        // 🥁 VOJENSKÝ MARŠ - od davu 20+ bije bojový buben v osminách, jízda se řítí do útoku
+        if (fury >= 2 && s % 2 === 0 && !song.kick.includes(s)) musicDrum(t, 0.02, 0.05, 1800);
+      }
+      // 👹 BOSS ULTRA - válečné tomy, orchestrální crash a brass war staby navíc, boss = pořádná vřava
+      if (bossOn) {
+        if (s % 4 === 2) musicThump(t, 0.05);
+        if (s % 4 === 3) musicThump(t, 0.035);
+        if (s === 8) musicDrum(t, 0.018, 0.5, 7000);
+        if (s % 8 === 4) {
+          const wch = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
+          musicNote("sawtooth", wch, t, stepDur * 1.2, 0.026);
+          musicNote("sawtooth", wch * 1.5, t, stepDur * 1.2, 0.02);
+          musicNote("sawtooth", wch * 2, t, stepDur * 1.2, 0.016);
         }
       }
       // 🎸 arp vrstva - u rave a finálního bosse vždy, u bosse ve fázi 3 taky, jinde jen ve fever kombu

@@ -1896,10 +1896,11 @@ function saveMeta(m: Meta): void {
   }
 }
 
-// 🌍 ONLINE ŽEBŘÍČEK - rekordy se ukládají na server (Google Apps Script + Tabulky),
-// takže je vidíš mezi zařízeními a i ostatní hráči. Návod: leaderboard/README.md.
-// Nech prázdné, dokud URL nevložíš - hra pak použije lokální žebříček jako dřív.
-const LB_API = ""; // 👉 sem vlož URL webové aplikace z Apps Scriptu (končí na /exec)
+// 🌍 ONLINE ŽEBŘÍČEK - rekordy se ukládají přes ntfy.sh (veřejné kanálové téma bez registrace),
+// takže je vidíš mezi zařízeními a i ostatní hráči. Téma je vlastně heslo k žebříčku:
+// kdokoli, kdo ho zná, může záznamy číst i psát (hodí se pro přátelské skóre).
+const LB_SERVER = "https://ntfy.sh"; // bezplatný veřejný backend - nic se nikde neregistruje
+const LB_TOPIC = "louka-priser-lb-x7k9m2q4"; // kanál s tajným sufixem, ať ho nikdo neuhodne
 const LB_SHOW = 20; // kolik globálních rekordů ukázat v tabulce
 const LB_SYNC_KEY = "louka_lb_sync_v1"; // poznámka "staré lokální rekordy už jsou na serveru"
 
@@ -1916,15 +1917,15 @@ function pushBoard(m: Meta, e: ScoreEntry): Meta {
   return { ...m, board: b, lastName: e.name };
 }
 
-// 📡 JSON ze serveru s bezpečným timeoutem - při výpadku prostě použijeme lokální data
-async function lbFetch(url: string): Promise<{ ok?: boolean; rows?: unknown[] } | null> {
+// 📡 text ze serveru s bezpečným timeoutem - při výpadku prostě použijeme lokální data
+async function lbTxt(url: string): Promise<string | null> {
   try {
     const ctrl = new AbortController();
     const to = setTimeout(() => ctrl.abort(), 6000);
     try {
       const r = await fetch(url, { signal: ctrl.signal });
       if (!r.ok) return null;
-      return await r.json();
+      return await r.text();
     } finally {
       clearTimeout(to);
     }
@@ -1932,6 +1933,11 @@ async function lbFetch(url: string): Promise<{ ok?: boolean; rows?: unknown[] } 
     // server nedostupný / zablokovaný - nevadí, máme lokální zálohu
     return null;
   }
+}
+// 📤 zapsat zprávu do kanálu - GET = simple request, žádný CORS preflight ani POST
+async function lbPublish(payload: string): Promise<boolean> {
+  const t = await lbTxt(LB_SERVER + "/" + LB_TOPIC + "/publish?message=" + encodeURIComponent(payload));
+  return !!(t && t.indexOf("message") >= 0); // odpověď serveru potvrdí přijetí
 }
 // 🦟 normalizace řádku ze serveru - nikdy nevěř vstupu, čísla musí být čísla
 function lbRow(r: Record<string, unknown>): ScoreEntry {
@@ -1951,23 +1957,55 @@ function lbRow(r: Record<string, unknown>): ScoreEntry {
     combo: nn(r.combo),
   };
 }
-// 🌍 stažení globálního top listu ze serveru
+// 🌍 stažení globálního top listu z kanálu - přečteme celou cache (posledních 12 h),
+// sloučíme běžné záznamy se SNAPSHOTem, každému necháme jen jeho nejlepší skóre
 async function lbTop(): Promise<ScoreEntry[] | null> {
-  if (!LB_API) return null;
-  const d = await lbFetch(LB_API + (LB_API.indexOf("?") >= 0 ? "&" : "?") + "op=top");
-  if (!d || d.ok !== true || !Array.isArray(d.rows)) return null;
-  return (d.rows as Record<string, unknown>[]).map(lbRow).filter((e) => e.score > 0);
+  const txt = await lbTxt(LB_SERVER + "/" + LB_TOPIC + "/json?poll=1&since=all");
+  if (txt === null) return null;
+  const best = new Map<string, ScoreEntry>();
+  for (const line of txt.split("\n")) {
+    let m: string | null = null;
+    try {
+      const j = JSON.parse(line);
+      if (j && j.event === "message" && typeof j.message === "string") m = j.message;
+    } catch {
+      // prázdný řádek na konci streamu
+    }
+    if (!m) continue;
+    for (const e of lbParse(m)) {
+      const old = best.get(e.name);
+      if (!old || e.score > old.score || (e.score === old.score && e.time > old.time)) best.set(e.name, e);
+    }
+  }
+  const rows = [...best.values()].sort((x, y) => y.score - x.score || x.time - y.time).slice(0, LB_SHOW);
+  // ⏰ cache na serveru vyprší po 12 h - proto každým otevřením tabu přepíšeme SNAPSHOT
+  // s celým top listem: žebříček tak přežije, dokud se na něj aspoň jednou za 12 h někdo podívá
+  if (rows.length > 0) lbPublish("SNAP:" + JSON.stringify(rows.map(lbPack)));
+  return rows;
 }
-// 📤 upload skóre na server - GET = simple request, žádný CORS preflight
+// 📦 záznam na drátu = krátké pole [jméno, skóre, level, zabité, čas, postava, obtížnost, datum, combo]
+type LbPack = [string, number, number, number, number, string, number, string, number];
+function lbPack(e: ScoreEntry): LbPack {
+  return [e.name, e.score, e.level, e.kills, e.time, e.cls, e.diff, e.date, e.combo];
+}
+// 🦟 zpráva z kanálu rozbalená do řádků - nikdy nevěř vstupu, vše zkontrolujeme
+function lbParse(m: string): ScoreEntry[] {
+  try {
+    const isSnap = m.indexOf("SNAP:") === 0;
+    if (!isSnap && m.indexOf("ROW:") !== 0) return []; // cizí zpráva v kanálu - ignorujeme
+    const arr = JSON.parse(isSnap ? m.slice(5) : m.slice(4));
+    const rowsIn = isSnap && Array.isArray(arr) ? arr : [arr];
+    return (rowsIn as unknown[][])
+      .map((a) => lbRow({ name: a[0], score: a[1], level: a[2], kills: a[3], time: a[4], cls: a[5], diff: a[6], date: a[7], combo: a[8] }))
+      .filter((e) => e.score > 0);
+  } catch {
+    return [];
+  }
+}
+// 📤 upload skóre do kanálu - GET = simple request, žádný CORS preflight ani POST
 async function lbSubmit(e: ScoreEntry): Promise<boolean> {
-  if (!LB_API) return false;
-  const q =
-    "op=submit&name=" + encodeURIComponent(e.name) +
-    "&score=" + e.score + "&level=" + e.level + "&kills=" + e.kills +
-    "&time=" + e.time + "&cls=" + encodeURIComponent(e.cls) +
-    "&diff=" + e.diff + "&date=" + encodeURIComponent(e.date) + "&combo=" + e.combo;
-  const d = await lbFetch(LB_API + (LB_API.indexOf("?") >= 0 ? "&" : "?") + q);
-  return !!(d && d.ok === true);
+  if (e.score <= 0) return false;
+  return await lbPublish("ROW:" + JSON.stringify(lbPack(e)));
 }
 
 type MetaUp = {
@@ -8963,7 +9001,7 @@ function LoukaTisicePriser() {
   const [boardClearConfirm, setBoardClearConfirm] = useState(false);
   // 🌍 online žebříček - řádky ze serveru + stav (local = bez serveru, loading, online, offline)
   const [lbRows, setLbRows] = useState<ScoreEntry[] | null>(null);
-  const [lbStatus, setLbStatus] = useState<"local" | "loading" | "online" | "offline">(LB_API ? "loading" : "local");
+  const [lbStatus, setLbStatus] = useState<"local" | "loading" | "online" | "offline">("loading");
   const [sbx, setSbx] = useState<Upgrade[] | null>(null);
   const [sbxMsg, setSbxMsg] = useState("");
   const [meta, setMeta] = useState<Meta>(() => loadMeta());
@@ -9229,7 +9267,7 @@ function LoukaTisicePriser() {
   // 🌍 online žebříček - při otevření tabu stáhneme globální top ze serveru;
   // při prvním úspěšném spojení jednorázově nahrajeme staré lokální rekordy, ať se neztratí
   useEffect(() => {
-    if (menuTab !== "board" || !LB_API) return;
+    if (menuTab !== "board") return;
     let alive = true;
     (async () => {
       const rows = await lbTop();
@@ -10604,3 +10642,4 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+

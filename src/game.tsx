@@ -1,7 +1,12 @@
+successfully downloaded text file (SHA: 1d6c7e0923e7cadc0c36e83dd67322e7c1ae62ec)
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
 const ARENA = 6000;
+
+// 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
+const GAME_VERSION = "1.0.0";
+const GAME_BUILD = "15. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -9875,6 +9880,7 @@ function LoukaTisicePriser() {
               <h2 className="ltp-title">
                 🌾 {trk("title")}
               </h2>
+              <div className="text-[10px] font-semibold tracking-wide text-white/40">v{GAME_VERSION} · {GAME_BUILD}</div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="ltp-chip">🏆 {trk("menu_best")}: 🌱{Math.max(best, ...Object.values(meta.best || {}))}</span>
                 <span className="ltp-chip">🌱 {meta.pts} {trk("seeds")}</span>

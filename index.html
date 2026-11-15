@@ -1,3 +1,4 @@
+successfully downloaded text file (SHA: 76b9803537ec934606c8e2635179fa8ca0b0eced)
 <!doctype html>
 <html lang="cs">
 <head>
@@ -7,7 +8,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b2818">
-<title>🌾 Louka příšer</title>
+<title>🌾 Louka příšer v1.0.0</title>
 <style>
   html, body { margin: 0; padding: 0; background: #08150a; height: 100%; overscroll-behavior: none; }
   #root { position: fixed; inset: 0; }
@@ -72,6 +73,7 @@
           ]
         }).code;
         ltpStatus("🌱 Louka roste…");
+        try { console.log("🌾 Louka příšer v1.0.0 (15. 11. 2026)"); } catch (e) {}
         var s = document.createElement("script");
         s.textContent = out;
         document.body.appendChild(s);
@@ -87,6 +89,10 @@ const { useCallback, useEffect, useRef, useState } = React;
 
 // 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
 const ARENA = 6000;
+
+// 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
+const GAME_VERSION = "1.0.0";
+const GAME_BUILD = "15. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -9960,6 +9966,7 @@ function LoukaTisicePriser() {
               <h2 className="ltp-title">
                 🌾 {trk("title")}
               </h2>
+              <div className="text-[10px] font-semibold tracking-wide text-white/40">v{GAME_VERSION} · {GAME_BUILD}</div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
                 <span className="ltp-chip">🏆 {trk("menu_best")}: 🌱{Math.max(best, ...Object.values(meta.best || {}))}</span>
                 <span className="ltp-chip">🌱 {meta.pts} {trk("seeds")}</span>

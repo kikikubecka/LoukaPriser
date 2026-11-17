@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useRef, useState } from "react";
 
 // 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.1.0";
+const GAME_VERSION = "1.2.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -184,7 +183,7 @@ type Enemy = {
   dmgAccCrit?: boolean;
 };
 type Arrow = { x: number; y: number; vx: number; vy: number; dmg: number; pierce: number; crit: boolean; life: number; hits: number[]; kind: number; knock: number; chain: number; expl: boolean; frost: boolean; lvl: number; src?: string };
-type Bolt = { x: number; y: number; vx: number; vy: number; life: number; dmg: number; home?: boolean; boom?: number; oid?: number; slow?: boolean };
+type Bolt = { x: number; y: number; vx: number; vy: number; life: number; dmg: number; home?: number; boom?: number; oid?: number; slow?: boolean };
 // ⚙️ turetka inženýra - položená na zem, střílí sama na nepřátele
 type Turret = { x: number; y: number; cd: number; windCd: number; t: number; aim: number; id: number; hp: number; maxHp: number; type: string };
 type Slash = { x: number; y: number; a: number; r: number; t: number; dur: number };
@@ -316,6 +315,7 @@ type Stats = {
   magnetMul: number;
   armor: number;
   lifesteal: number;
+  home: number;
 };
 
 // --- rarity upgradů ---
@@ -2056,7 +2056,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_hold: " TAP = 1× · PODRŽ = dokola 🔄",
     sbx_hint: "Klikni na kartu = okamžitě se aplikuje · PODRŽ kartu = aplikuje se dokola 🔄 · panel lze otevřít znovu · B = náhodný boss · zbraně: ∞ slotů",
     applied: "✅ Aplikováno:",
-    dmg: "dmg", kadence: "kadence", rychlost: "rychlost", crit: "crit", zbroj: "zbroje", projektil: "projektilů",
+    dmg: "dmg", kadence: "kadence", rychlost: "rychlost", crit: "crit", zbroj: "zbroje", projektil: "projektilů", navad: "navádění",
     pause: "⏸ Pauza",
     kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
@@ -2136,7 +2136,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_hold: " TAP = 1× · HOLD = repeats 🔄",
     sbx_hint: "Click a card = applies instantly · HOLD = applies repeatedly 🔄 · panel can be reopened · B = random boss · weapons: ∞ slots",
     applied: "✅ Applied:",
-    dmg: "dmg", kadence: "fire rate", rychlost: "speed", crit: "crit", zbroj: "armor", projektil: "projectiles",
+    dmg: "dmg", kadence: "fire rate", rychlost: "speed", crit: "crit", zbroj: "armor", projektil: "projectiles", navad: "homing",
     pause: "⏸ Paused",
     kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo",
     boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
@@ -2216,7 +2216,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_hold: " TAP = 1× · PRZYTRZYMAJ = powtarza 🔄",
     sbx_hint: "Kliknięcie karty = działa od razu · PRZYTRZYMAJ = stosuje w kółko 🔄 · panel można otworzyć ponownie · B = losowy boss · bronie: ∞ slotów",
     applied: "✅ Zastosowano:",
-    dmg: "obr.", kadence: "kadencja", rychlost: "szybkość", crit: "kryt.", zbroj: "pancerza", projektil: "pocisków",
+    dmg: "obr.", kadence: "kadencja", rychlost: "szybkość", crit: "kryt.", zbroj: "pancerza", projektil: "pocisków", navad: "naprowadzanie",
     pause: "⏸ Pauza",
     kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
@@ -2360,6 +2360,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
       magnetMul: 0,
       armor: cls.armor,
       lifesteal: cls.ls ?? 0,
+      home: 0,
     },
     kills: 0,
     nightKills: 0,
@@ -2538,6 +2539,17 @@ const UPGRADE_POOL: Upgrade[] = [
     rarity: 1,
     apply: (g) => {
       g.stats.crit += 0.1;
+    },
+  },
+  {
+    id: "home",
+    emoji: "🧿",
+    name: "Naváděcí runa",
+    desc: "Projektily se samy přitáčí k nepřátelům (+10 % navádění)",
+    rarity: 2,
+    avail: (g) => g.stats.home < 1,
+    apply: (g) => {
+      g.stats.home = Math.min(1, g.stats.home + 0.1);
     },
   },
   {
@@ -3997,6 +4009,30 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     const ppy = a.y;
     a.x += a.vx * dt;
     a.y += a.vy * dt;
+    // 🧿 naváděcí runa - střela se přitáčí k nejbližšímu nepříteli v dohledu
+    if (g.stats.home > 0 && Math.hypot(a.vx, a.vy) > 1) {
+      let htgt: Enemy | null = null;
+      let hbest = 260 * 260;
+      gridEach(a.x, a.y, 260, (e) => {
+        if (e.dead) return;
+        const hd2 = dist2(a.x, a.y, e.x, e.y);
+        if (hd2 < hbest) {
+          hbest = hd2;
+          htgt = e;
+        }
+      });
+      if (htgt) {
+        const hsp = Math.hypot(a.vx, a.vy) || 1;
+        const hcA = Math.atan2(a.vy, a.vx);
+        const htA = Math.atan2(htgt.y - a.y, htgt.x - a.x);
+        let hdA = htA - hcA;
+        while (hdA > Math.PI) hdA -= Math.PI * 2;
+        while (hdA < -Math.PI) hdA += Math.PI * 2;
+        const hturn = Math.max(-2.2 * g.stats.home * dt, Math.min(2.2 * g.stats.home * dt, hdA));
+        a.vx = Math.cos(hcA + hturn) * hsp;
+        a.vy = Math.sin(hcA + hturn) * hsp;
+      }
+    }
     // 🌬️ vítr žene i projektil
     if (g.weather === "wind") {
       a.x += Math.cos(g.windA) * 60 * dt;
@@ -4375,7 +4411,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           const ba = Math.atan2(dy, dx);
           const cnt = e.final ? (e.phase >= 4 ? 12 : e.phase >= 3 ? 8 : 5) : e.phase >= 3 ? 5 : 3;
           for (let s = -(cnt - 1) / 2; s <= (cnt - 1) / 2; s++) {
-            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(ba + s * 0.22) * 300, vy: Math.sin(ba + s * 0.22) * 300, life: 4, dmg: Math.round(e.dmg * 0.4), home: e.final });
+            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(ba + s * 0.22) * 300, vy: Math.sin(ba + s * 0.22) * 300, life: 4, dmg: Math.round(e.dmg * 0.4), home: e.final ? 0.4 : 0 });
           }
         }
         // fáze 3 (finální zúřilost): kruhová sprška projektilů
@@ -4384,7 +4420,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           const off = Math.random() * Math.PI;
           for (let s = 0; s < n2; s++) {
             const sa = off + (s / n2) * Math.PI * 2;
-            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(sa) * 220, vy: Math.sin(sa) * 220, life: 3.5, dmg: Math.round(e.dmg * 0.35), home: e.final && s % 2 === 0 });
+            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(sa) * 220, vy: Math.sin(sa) * 220, life: 3.5, dmg: Math.round(e.dmg * 0.35), home: e.final && s % 2 === 0 ? 0.4 : 0 });
           }
         }
         burst(g, e.x, e.y, 5, e.hue, 120);
@@ -4700,7 +4736,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       let dA = tA - cA;
       while (dA > Math.PI) dA -= Math.PI * 2;
       while (dA < -Math.PI) dA += Math.PI * 2;
-      const turn = Math.max(-2.2 * dt, Math.min(2.2 * dt, dA));
+      // 🧭 síla navádění: finální bossové 40 % (dřív 100 % - uhýbat má být zábava, ne povinnost)
+      const turn = Math.max(-2.2 * (b.home || 0) * dt, Math.min(2.2 * (b.home || 0) * dt, dA));
       b.vx = Math.cos(cA + turn) * sp;
       b.vy = Math.sin(cA + turn) * sp;
     }
@@ -8758,6 +8795,7 @@ function LoukaTisicePriser() {
     fire: 1,
     spd: 1,
     crit: 0,
+    home: 0,
     arm: 0,
     ls: 0,
     ms: 0,
@@ -9266,6 +9304,7 @@ function LoukaTisicePriser() {
           fire: g.stats.fireMul,
           spd: g.stats.speedMul,
           crit: g.stats.crit,
+          home: g.stats.home,
           arm: g.stats.armor,
           ls: g.stats.lifesteal,
           ms: g.stats.multishot,
@@ -10031,6 +10070,7 @@ function LoukaTisicePriser() {
               <span className="ltp-chip border-yellow-400/40 bg-yellow-500/20 text-yellow-200">⚡ +{Math.round(gameRef.current.stats.fireMul * 100)}% {trk("kadence")}</span>
               <span className="ltp-chip border-emerald-400/40 bg-emerald-500/20 text-emerald-200">👟 +{Math.round(gameRef.current.stats.speedMul * 100)}% {trk("rychlost")}</span>
               <span className="ltp-chip border-orange-400/40 bg-orange-500/20 text-orange-200">🎯 {Math.round(gameRef.current.stats.crit * 100)}% {trk("crit")}</span>
+              <span className="ltp-chip border-fuchsia-400/40 bg-fuchsia-500/20 text-fuchsia-200">🧿 {Math.round(gameRef.current.stats.home * 100)}% {trk("navad")}</span>
               <span className="ltp-chip border-sky-400/40 bg-sky-500/20 text-sky-200">🛡️ {Math.round(gameRef.current.stats.armor * 100)}% {trk("zbroj")}</span>
               <span className="ltp-chip border-violet-400/40 bg-violet-500/20 text-violet-200">🏹 {Math.round(gameRef.current.stats.multishot)}× {trk("projektil")}</span>
             </div>
@@ -10120,6 +10160,7 @@ function LoukaTisicePriser() {
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🌀 +{Math.round((ui.fire - 1) * 100)} % {trk("kadence")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">👟 +{Math.round((ui.spd - 1) * 100)} % {trk("rychlost")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🎯 {Math.round(ui.crit * 100)} % {trk("crit")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🧿 {Math.round(ui.home * 100)} % {trk("navad")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🛡️ {Math.round(ui.arm * 100)} % {trk("zbroj")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🩸 {ui.ls} {trk("hp_kill")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">✳️ +{Math.round(ui.ms)} {trk("projektil")}</div>
@@ -10415,5 +10456,6 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 

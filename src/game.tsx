@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.4.0";
+const GAME_VERSION = "1.5.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -2272,18 +2272,18 @@ const LANG: Record<string, Record<string, string>> = {
 
 // 🏆 TROFEJE - trvalé úspěchy s odměnou do semínek (kontrolují se v průběhu i na konci runu)
 const ACHIEVEMENTS: { id: string; emoji: string; name: string; desc: string; reward: number; cond: (g: Game) => boolean }[] = [
-  { id: "first_blood", emoji: "🗡️", name: "První krev", desc: "Zabij 25 nepřátel v jednom runu", reward: 50, cond: (g) => g.kills >= 25 },
-  { id: "slayer", emoji: "💀", name: "Pobití louky", desc: "Zabij 300 nepřátel v jednom runu", reward: 250, cond: (g) => g.kills >= 300 },
-  { id: "boss1", emoji: "👑", name: "Královrah", desc: "Zabij prvního bosse", reward: 150, cond: (g) => g.bossKills >= 1 },
-  { id: "boss5", emoji: "☠️", name: "Kat bosů", desc: "Zabij 5 bossů v jednom runu", reward: 400, cond: (g) => g.bossKills >= 5 },
-  { id: "lv20", emoji: "⭐", name: "Dvouciferný", desc: "Dosáhni 20. levelu", reward: 200, cond: (g) => g.level >= 20 },
-  { id: "survive10", emoji: "⏱️", name: "Maratónec", desc: "Přežij 10 minut", reward: 300, cond: (g) => g.time >= 600 },
-  { id: "combo20", emoji: "🔥", name: "Nepřetržitý řetěz", desc: "Dosáhni kombo 20", reward: 150, cond: (g) => g.comboBest >= 20 },
-  { id: "nightowl", emoji: "🌙", name: "Dítě noci", desc: "Zabij 100 nepřátel v noci (v jednom runu)", reward: 200, cond: (g) => g.nightKills >= 100 },
-  { id: "plasma", emoji: "💥", name: "Plazmový architekt", desc: "Odemkni plazmovou turetku", reward: 300, cond: (g) => g.tKinds.includes("plasma") },
-  { id: "hellrun", emoji: "😈", name: "Pekelník", desc: "Zabij bosse v Pekle", reward: 500, cond: (g) => g.bossKills >= 1 && g.diff === 2 },
-  { id: "pact3", emoji: "📜", name: "Sběratel kleteb", desc: "Uzavři 3 pakty v jednom runu", reward: 200, cond: (g) => g.pactTaken.length >= 3 },
-  { id: "turret10", emoji: "⚙️", name: "Zámečník", desc: "Polož 10 turetek v jednom runu", reward: 100, cond: (g) => g.nextTid >= 11 },
+  { id: "first_blood", emoji: "🗡️", name: "První krev", desc: "Zabij 25 nepřátel v jednom runu", reward: 25, cond: (g) => g.kills >= 25 },
+  { id: "slayer", emoji: "💀", name: "Pobití louky", desc: "Zabij 300 nepřátel v jednom runu", reward: 125, cond: (g) => g.kills >= 300 },
+  { id: "boss1", emoji: "👑", name: "Královrah", desc: "Zabij prvního bosse", reward: 75, cond: (g) => g.bossKills >= 1 },
+  { id: "boss5", emoji: "☠️", name: "Kat bosů", desc: "Zabij 5 bossů v jednom runu", reward: 200, cond: (g) => g.bossKills >= 5 },
+  { id: "lv20", emoji: "⭐", name: "Dvouciferný", desc: "Dosáhni 20. levelu", reward: 100, cond: (g) => g.level >= 20 },
+  { id: "survive10", emoji: "⏱️", name: "Maratónec", desc: "Přežij 10 minut", reward: 150, cond: (g) => g.time >= 600 },
+  { id: "combo20", emoji: "🔥", name: "Nepřetržitý řetěz", desc: "Dosáhni kombo 20", reward: 75, cond: (g) => g.comboBest >= 20 },
+  { id: "nightowl", emoji: "🌙", name: "Dítě noci", desc: "Zabij 100 nepřátel v noci (v jednom runu)", reward: 100, cond: (g) => g.nightKills >= 100 },
+  { id: "plasma", emoji: "💥", name: "Plazmový architekt", desc: "Odemkni plazmovou turetku", reward: 150, cond: (g) => g.tKinds.includes("plasma") },
+  { id: "hellrun", emoji: "😈", name: "Pekelník", desc: "Zabij bosse v Pekle", reward: 250, cond: (g) => g.bossKills >= 1 && g.diff === 2 },
+  { id: "pact3", emoji: "📜", name: "Sběratel kleteb", desc: "Uzavři 3 pakty v jednom runu", reward: 100, cond: (g) => g.pactTaken.length >= 3 },
+  { id: "turret10", emoji: "⚙️", name: "Zámečník", desc: "Polož 10 turetek v jednom runu", reward: 50, cond: (g) => g.nextTid >= 11 },
 ];
 
 // 🌦️ POČASÍ - náhodné epizody se zvláštními pravidly
@@ -9255,9 +9255,9 @@ function LoukaTisicePriser() {
 
       if (g.over && !prevOver) {
         prevOver = true;
-        // 🌱 semínka za run - zabití, přežitý čas i levely; ⚖️ obtížnost násobí výnos
+        // 🌱 semínka za run jsou vzácnější (přes polovinu méně) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
         const seedMul = (DIFFS[g.diff] || DIFFS[1]).seed;
-        const earned = Math.floor((Math.floor(g.time) + g.kills * 15 + g.level * 40) * (g.sandbox ? 0 : seedMul));
+        const earned = Math.floor((Math.floor(g.time * 0.5) + g.kills * 7 + g.level * 18) * (g.sandbox ? 0 : seedMul));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
         // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
@@ -10459,6 +10459,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

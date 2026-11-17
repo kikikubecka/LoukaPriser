@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.5.0";
+const GAME_VERSION = "1.6.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -422,6 +422,8 @@ type Game = {
   tcfg: { fire: number; dmg: number; flame: boolean; wind: boolean; frost: boolean };
   crateOpen: boolean;
   bossKills: number;
+  crownsEarned: number; // 👑 koruny připsané během runu (čekají na zápis do mety)
+  seedBonus?: number;   // 👑 Koruna louky - násobitel výdělku semínek
   nextBoss: number;
   bossWarned: boolean;
   minibKills: number;
@@ -1828,6 +1830,9 @@ type Meta = {
   // 🥇 žebříček top 10 + naposledy použité jméno hráče
   board?: ScoreEntry[];
   lastName?: string;
+  // 🌳 strom dovedností: { id uzlu: úroveň } + 👑 koruny za finální bosse
+  tree?: Record<string, number>;
+  crowns?: number;
 };
 
 function loadMeta(): Meta {
@@ -1850,13 +1855,15 @@ function loadMeta(): Meta {
           daily: p.daily || { key: "", best: 0 },
           board: p.board || [],
           lastName: p.lastName || "",
+          tree: p.tree || {},
+          crowns: p.crowns || 0,
         };
       }
     }
   } catch {
     // localStorage nedostupný - hrajeme bez uložení
   }
-  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true, surp: false }, daily: { key: "", best: 0 }, board: [], lastName: "" };
+  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true, surp: false }, daily: { key: "", best: 0 }, board: [], lastName: "", tree: {}, crowns: 0 };
 }
 
 function saveMeta(m: Meta): void {
@@ -2005,6 +2012,39 @@ const META_UPGRADES: MetaUp[] = [
 // 💰 trvalá vylepšení jsou náročnější: ceny ×1,7 (každý další level pořád dražší)
 const metaCost = (mu: MetaUp, lvl: number) => Math.round((mu.base + mu.growth * lvl) * 1.7);
 
+// 🌳 STROM DOVEDNOSTÍ - začíná u Síly, každý normální uzel se dá koupit 5×,
+// speciální uzly (až po dokoupení předchůdce) stojí 👑 korunu a jen 1×.
+// 👑 korunu dostaneš za každého zabitého FINÁLNÍHO bosse (každý třetí boss).
+type TreeNode = {
+  id: string;
+  emoji: string;
+  name: string;
+  per: string;
+  max: number;
+  parent?: string;   // odkud vede čára - musí být aspoň Lv 1
+  special?: boolean; // true = stojí 👑 korunu místo semínek, jen 1×
+  base: number;      // cena v semíncích (první level), každý další + growth
+  growth: number;
+  pos: [number, number]; // pozice ve stromu v % (x, y), střed boxu
+  apply: (g: Game, lvl: number) => void;
+};
+
+const TREE_NODES: TreeNode[] = [
+  { id: "t_str", emoji: "💪", name: "Síla", per: "+3 % dmg", max: 5, base: 180, growth: 120, pos: [50, 6], apply: (g, l) => { g.stats.dmgMul += 0.03 * l; } },
+  { id: "t_spd", emoji: "👟", name: "Rychlost", per: "+2 % rychlost", max: 5, parent: "t_str", base: 220, growth: 140, pos: [50, 33], apply: (g, l) => { g.stats.speedMul += 0.02 * l; } },
+  // tři větve z Rychlosti
+  { id: "t_cad", emoji: "🌀", name: "Kadence", per: "+2 % kadence", max: 5, parent: "t_spd", base: 260, growth: 160, pos: [17, 61], apply: (g, l) => { g.stats.fireMul += 0.02 * l; } },
+  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+3 % HP", max: 5, parent: "t_spd", base: 260, growth: 160, pos: [50, 61], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.03 * l)); g.hero.hp = g.hero.maxHp; } },
+  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+4 % dosah sběru", max: 5, parent: "t_spd", base: 260, growth: 160, pos: [83, 61], apply: (g, l) => { g.stats.magnetMul += 0.04 * l; } },
+  // speciální uzly za 👑 korunu (jen 1×), na konci každé větve
+  { id: "t_home", emoji: "🧿", name: "Vládce střel", per: "+30 % navádění", max: 1, parent: "t_cad", special: true, base: 0, growth: 0, pos: [17, 89], apply: (g) => { g.stats.home = Math.min(1, g.stats.home + 0.3); } },
+  { id: "t_phoenix", emoji: "🕊️", name: "Fénixovo srdce", per: "1× oživení za run", max: 1, parent: "t_hp", special: true, base: 0, growth: 0, pos: [50, 89], apply: (g) => { g.revive = true; } },
+  { id: "t_crown", emoji: "👑", name: "Koruna louky", per: "+15 % semínek za run", max: 1, parent: "t_mag", special: true, base: 0, growth: 0, pos: [83, 89], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
+];
+
+// 🌱 cena normálního uzlu stromu (semínka); speciály stojí 1 👑 korunu
+const treeCost = (tn: TreeNode, lvl: number) => Math.round(tn.base + tn.growth * lvl);
+
 // ⚡ ULTIMÁTNÍ SCHOPNOSTI - každá classa má jednu (klávesa E), cooldown 26-38 s
 const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: number }> = {
   archer: { emoji: "🏹", name: "Déšť šípů", desc: "~20 šípů padá z nebe na netvory kolem tebe", cd: 30 },
@@ -2030,7 +2070,7 @@ function trk(k: string): string {
 const LANG: Record<string, Record<string, string>> = {
   cs: {
     title: "Louka příšer",
-    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček", menu_best: "Rekord",
+    tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček", tab_tree: "Strom", menu_best: "Rekord",
     sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: "👑 Bossové", sbx_sec_mini: "🌟 Mini-bossové", sbx_sec_enemies: "👾 Nepřátelé",
     board_title: "Žebříček nejlepších runů",
     board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 🥇",
@@ -2096,6 +2136,8 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
+    tree_note: "🌳 Strom začíná u Síly: kup uzly za semínka (každý max 5×), čára se rozzáří, až má předchůdce aspoň Lv 1. ✨ Zlaté uzly stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
+    tree_max: "✅ hotovo",
     locked: "chybí 🌱",
     diff_0: "Procházka", diff_1: "Normál", diff_2: "Peklo",
     w_rain: "Déšť", w_storm: "Bouřka", w_wind: "Silný vítr",
@@ -2110,7 +2152,7 @@ const LANG: Record<string, Record<string, string>> = {
   },
   en: {
     title: "Meadow of Monsters",
-    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard", menu_best: "Best",
+    tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard", tab_tree: "Tree", menu_best: "Best",
     sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: "👑 Bosses", sbx_sec_mini: "🌟 Mini-bosses", sbx_sec_enemies: "👾 Enemies",
     board_title: "Best runs leaderboard",
     board_empty: "Nothing here yet. Start a run, sign in and win 🥇",
@@ -2176,6 +2218,8 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
+    tree_note: "🌳 The tree starts at Strength: buy nodes with seeds (each max 5×), a line lights up once its parent is Lv 1+. ✨ Golden nodes cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
+    tree_max: "✅ done",
     locked: "need 🌱",
     diff_0: "Walk", diff_1: "Normal", diff_2: "Hell",
     w_rain: "Rain", w_storm: "Storm", w_wind: "Strong wind",
@@ -2190,7 +2234,7 @@ const LANG: Record<string, Record<string, string>> = {
   },
   pl: {
     title: "Łąka potworów",
-    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica", menu_best: "Rekord",
+    tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica", tab_tree: "Drzewko", menu_best: "Rekord",
     sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: "👑 Bossowie", sbx_sec_mini: "🌟 Mini-bossowie", sbx_sec_enemies: "👾 Wrogowie",
     board_title: "Tablica najlepszych runów",
     board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 🥇",
@@ -2256,6 +2300,8 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
+    tree_note: "🌳 Drzewko zaczyna się od Siły: kupuj węzły za nasiona (każdy max 5×), linia rozświetli się, gdy poprzednik ma min. poziom 1. ✨ Złote węzły kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
+    tree_max: "✅ gotowe",
     locked: "brak 🌱",
     diff_0: "Spacer", diff_1: "Norma", diff_2: "Piekło",
     w_rain: "Deszcz", w_storm: "Burza", w_wind: "Silny wiatr",
@@ -2369,6 +2415,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     spawnT: 0.5,
     nextId: 1,
     bossKills: 0,
+    crownsEarned: 0,
     nextBoss: 75,
     bossWarned: false,
     minibKills: 0,
@@ -2443,6 +2490,11 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     for (const mu of META_UPGRADES) {
       const l = meta.lvl[mu.id] || 0;
       if (l > 0) mu.apply(g, l);
+    }
+    // 🌳 strom dovedností - bonusy se aplikují jako meta upgrady
+    for (const tn of TREE_NODES) {
+      const tl = meta.tree?.[tn.id] || 0;
+      if (tl > 0) tn.apply(g, tl);
     }
     if (meta.ach) g.achToast = Object.keys(meta.ach);
   }
@@ -3227,6 +3279,11 @@ function killEnemy(g: Game, e: Enemy): void {
     g.crates.push({ x: e.x, y: e.y, t: 0 });
     if (e.final) g.crates.push({ x: e.x + 40, y: e.y + 24, t: 0 });
     if (g.pactTaken.includes("pact_hunter")) g.crates.push({ x: e.x - 40, y: e.y - 20, t: 0 });
+    // 👑 finální boss padl = koruna do stromu dovedností
+    if (e.final && !g.sandbox) {
+      g.crownsEarned += 1;
+      addText(g, e.x, e.y - 78, "👑 +1 KORUNA!", 52, 24);
+    }
     addText(g, e.x, e.y - 44, e.final ? "☠️ FINÁLNÍ BOSS PADL! 2× 📦" : "📦 BEDNA!", 48, e.final ? 24 : 20);
     for (let i = 0; i < (e.final ? 12 : 8); i++) {
       spawnOrb(g, e.x + (Math.random() - 0.5) * 70, e.y + (Math.random() - 0.5) * 70, 3 + Math.floor(e.maxHp / 500));
@@ -8776,6 +8833,93 @@ function MetaShop(props: { meta: Meta; onBuy: (id: string) => void }) {
   );
 }
 
+// 🌳 strom dovedností - vizuální strom: boxy spojené čarami, klik = koupě
+function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
+  const meta = props.meta;
+  const lvl = (id: string) => meta.tree?.[id] || 0;
+  return (
+    <>
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <span className="rounded-xl border border-lime-400/40 bg-lime-500/20 px-4 py-1.5 text-sm font-bold text-lime-200 sm:text-base">
+          🌱 {meta.pts} {trk("seeds")}
+        </span>
+        <span className="rounded-xl border border-amber-300/40 bg-amber-400/20 px-4 py-1.5 text-sm font-bold text-amber-200 sm:text-base">
+          👑 {meta.crowns || 0}
+        </span>
+      </div>
+      <div className="relative mx-auto h-[330px] w-full max-w-[380px]">
+        {/* čáry mezi předchůdcem a potomkem */}
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
+          {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
+            const p = TREE_NODES.find((x) => x.id === tn.parent);
+            if (!p) return null;
+            const bought = lvl(p.id) > 0;
+            return (
+              <line
+                key={"ln_" + tn.id}
+                x1={p.pos[0]}
+                y1={p.pos[1]}
+                x2={tn.pos[0]}
+                y2={tn.pos[1]}
+                stroke={bought ? "rgba(110,231,183,.8)" : "rgba(255,255,255,.2)"}
+                strokeWidth={bought ? 2.5 : 1.5}
+                strokeDasharray={bought ? undefined : "3 3"}
+                vectorEffect="non-scaling-stroke"
+              />
+            );
+          })}
+        </svg>
+        {TREE_NODES.map((tn) => {
+          const l = lvl(tn.id);
+          const maxed = l >= tn.max;
+          const parOk = !tn.parent || lvl(tn.parent) > 0;
+          const canBuy = parOk && !maxed && (tn.special ? (meta.crowns || 0) >= 1 : meta.pts >= treeCost(tn, l));
+          return (
+            <div
+              key={tn.id}
+              className="absolute flex w-[86px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-0.5 rounded-xl border-2 p-1.5 text-center"
+              style={{
+                left: `${tn.pos[0]}%`,
+                top: `${tn.pos[1]}%`,
+                borderColor: maxed ? "rgba(253,224,71,.7)" : parOk ? "rgba(110,231,183,.5)" : "rgba(255,255,255,.15)",
+                background: maxed
+                  ? "linear-gradient(180deg, rgba(250,204,21,.18), rgba(120,53,15,.25))"
+                  : parOk
+                    ? "rgba(16,185,129,.14)"
+                    : "rgba(255,255,255,.05)",
+                boxShadow: maxed ? "0 0 16px rgba(250,204,21,.35)" : undefined,
+              }}
+            >
+              <span className="text-xl leading-none">{maxed ? "✨" : ""}{tn.emoji}</span>
+              <p className="text-[9px] font-bold leading-tight text-white/90">{tn.name}</p>
+              <p className="text-[8px] leading-tight text-white/55">{tn.per}</p>
+              <span className={`rounded px-1 py-0.5 text-[8px] font-bold ${maxed ? "bg-yellow-400/25 text-yellow-200" : "bg-lime-500/20 text-lime-300"}`}>
+                {trk("lv")} {l}/{tn.max}
+              </span>
+              <button
+                onClick={() => props.onBuy(tn.id)}
+                disabled={!canBuy}
+                className={`w-full rounded-lg px-1 py-1 text-[9px] font-bold transition active:scale-95 ${
+                  canBuy
+                    ? tn.special
+                      ? "border border-amber-300/60 bg-amber-400/25 text-amber-200 hover:bg-amber-400/40"
+                      : "border border-lime-400/50 bg-lime-500/25 text-lime-200 hover:bg-lime-500/35"
+                    : "border border-white/10 bg-white/5 text-white/30"
+                }`}
+              >
+                {maxed ? trk("tree_max") : !parOk ? "🔒" : tn.special ? "👑 1" : `🌱 ${treeCost(tn, l)}`}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+      <p className="max-w-md text-center text-[10px] leading-snug text-white/55 sm:text-[11px]">
+        {trk("tree_note")}
+      </p>
+    </>
+  );
+}
+
 function LoukaTisicePriser() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gameRef = useRef<Game>(initGame());
@@ -8820,7 +8964,7 @@ function LoukaTisicePriser() {
   const [isTouch, setIsTouch] = useState(false);
   const [clsSel, setClsSel] = useState("archer");
   const [sandboxSel, setSandboxSel] = useState(false);
-  const [menuTab, setMenuTab] = useState<"cls" | "trophy" | "board" | "sbx" | "meta">("cls");
+  const [menuTab, setMenuTab] = useState<"cls" | "trophy" | "board" | "sbx" | "meta" | "tree">("cls");
   // 🏆 zápis do žebříčku: modal se jménem, uložená hodnota a příznak „už zapsáno"
   const [askName, setAskName] = useState(false);
   const [nameVal, setNameVal] = useState("");
@@ -9007,6 +9151,34 @@ function LoukaTisicePriser() {
     playSfx(gameRef.current, "buy");
     setMeta((m) => {
       const nm = { pts: m.pts - cost, lvl: { ...m.lvl, [id]: (m.lvl[id] || 0) + 1 } };
+      saveMeta(nm);
+      return nm;
+    });
+  };
+
+  // 🌳 nákup ve stromu dovedností - normální uzly za semínka (max 5 levelů),
+  // speciální za 👑 korunu (jen 1×); předchůdce musí mít aspoň Lv 1
+  const buyTree = (id: string) => {
+    const tn = TREE_NODES.find((n) => n.id === id);
+    if (!tn) return;
+    const l = meta.tree?.[id] || 0;
+    if (l >= tn.max) return;
+    if (tn.parent && (meta.tree?.[tn.parent] || 0) < 1) return;
+    if (tn.special) {
+      if ((meta.crowns || 0) < 1) return;
+      playSfx(gameRef.current, "buy");
+      setMeta((m) => {
+        const nm = { ...m, crowns: (m.crowns || 0) - 1, tree: { ...(m.tree || {}), [id]: 1 } };
+        saveMeta(nm);
+        return nm;
+      });
+      return;
+    }
+    const cost = treeCost(tn, l);
+    if (meta.pts < cost) return;
+    playSfx(gameRef.current, "buy");
+    setMeta((m) => {
+      const nm = { ...m, pts: m.pts - cost, tree: { ...(m.tree || {}), [id]: (m.tree?.[id] || 0) + 1 } };
       saveMeta(nm);
       return nm;
     });
@@ -9248,6 +9420,17 @@ function LoukaTisicePriser() {
         }
       }
 
+      // 👑 koruna za finálního bosse - hned připsaná do mety (i kdyby ses hned potom zabil)
+      if (g.running && !g.over && g.crownsEarned > 0) {
+        const c = g.crownsEarned;
+        g.crownsEarned = 0;
+        setMeta((m) => {
+          const nm = { ...m, crowns: (m.crowns || 0) + c };
+          saveMeta(nm);
+          return nm;
+        });
+      }
+
       if (g.running && !g.over && g.pending > 0 && !g.paused) {
         g.paused = true;
         setUpgrades(pickUpgrades(g));
@@ -9257,7 +9440,7 @@ function LoukaTisicePriser() {
         prevOver = true;
         // 🌱 semínka za run jsou vzácnější (přes polovinu méně) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
         const seedMul = (DIFFS[g.diff] || DIFFS[1]).seed;
-        const earned = Math.floor((Math.floor(g.time * 0.5) + g.kills * 7 + g.level * 18) * (g.sandbox ? 0 : seedMul));
+        const earned = Math.floor((Math.floor(g.time * 0.5) + g.kills * 7 + g.level * 18) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
         // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
@@ -9744,6 +9927,7 @@ function LoukaTisicePriser() {
                   { id: "board", emoji: "🥇", label: "Žebříček" },
                   { id: "sbx", emoji: "🧪", label: "Sandbox" },
                   { id: "meta", emoji: "🌱", label: "Semínka" },
+                  { id: "tree", emoji: "🌳", label: "Strom" },
                 ] as const
               ).map((tb) => (
                 <button
@@ -10011,6 +10195,7 @@ function LoukaTisicePriser() {
                 </div>
               )}
               {menuTab === "meta" && <MetaShop meta={meta} onBuy={buyMeta} />}
+              {menuTab === "tree" && <SkillTree meta={meta} onBuy={buyTree} />}
             </div>
 
             {sandboxSel && menuTab !== "sbx" && (
@@ -10459,6 +10644,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

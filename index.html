@@ -1,5 +1,3 @@
-successfully downloaded text file (SHA: 4834b9435bd54896787e1bcb53516c8f6bfe8ac0)
-successfully downloaded text file (SHA: 76b9803537ec934606c8e2635179fa8ca0b0eced)
 <!doctype html>
 <html lang="cs">
 <head>
@@ -9,7 +7,7 @@ successfully downloaded text file (SHA: 76b9803537ec934606c8e2635179fa8ca0b0eced
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b2818">
-<title>🌾 Louka příšer v1.0.0</title>
+<title>🌾 Louka příšer v1.1.0</title>
 <style>
   html, body { margin: 0; padding: 0; background: #08150a; height: 100%; overscroll-behavior: none; }
   #root { position: fixed; inset: 0; }
@@ -74,7 +72,7 @@ successfully downloaded text file (SHA: 76b9803537ec934606c8e2635179fa8ca0b0eced
           ]
         }).code;
         ltpStatus("🌱 Louka roste…");
-        try { console.log("🌾 Louka příšer v1.0.0 (15. 11. 2026)"); } catch (e) {}
+        try { console.log("🌾 Louka příšer v1.1.0 (17. 11. 2026)"); } catch (e) {}
         var s = document.createElement("script");
         s.textContent = out;
         document.body.appendChild(s);
@@ -92,8 +90,8 @@ const { useCallback, useEffect, useRef, useState } = React;
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.0.0";
-const GAME_BUILD = "15. 11. 2026";
+const GAME_VERSION = "1.1.0";
+const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -372,35 +370,6 @@ const CLASSES: HeroClass[] = [
     magic: true,
   },
   {
-    id: "vampire",
-    emoji: "🧛",
-    name: "Upír",
-    desc: "🔪 Nože od startu, +15 % dmg, +1 HP za každý kill",
-    weapon: "knives",
-    hp: 80,
-    speedMul: 0.15,
-    fireMul: 0,
-    dmgMul: 0.15,
-    armor: 0,
-    color: "#dc2626",
-    magic: false,
-    ls: 1,
-  },
-  {
-    id: "druid",
-    emoji: "🌿",
-    name: "Druid",
-    desc: "🌲 8 dřevěných třísek ve vějíru od startu, +10 % kadence i dmg",
-    weapon: "splinters",
-    hp: 95,
-    speedMul: 0,
-    fireMul: 0.1,
-    dmgMul: 0.1,
-    armor: 0,
-    color: "#84cc16",
-    magic: true,
-  },
-  {
     id: "engineer",
     emoji: "⚙️",
     name: "Inženýr",
@@ -545,14 +514,13 @@ type Game = {
   bossT: number;
   growT: number;
   waveT: number;
-  regenT: number;
   running: boolean;
   paused: boolean;
   userPaused: boolean;
   night: boolean;
   over: boolean;
   shake: number;
-  // 🆕 nové systémy: hit-stop, combo, rerolly, ultimáta, počasí, rázové vlny, hudba, obtížnost
+  // 🆕 nové systémy: hit-stop, combo, ultimáta, počasí, rázové vlny, hudba, obtížnost
   hitStop: number;
   // 🏆 zlatý záblesk obrazovky po položení bosse (1 → 0)
   goldFlash: number;
@@ -561,7 +529,6 @@ type Game = {
   combo: number;
   comboT: number;
   comboBest: number;
-  rerolls: number;
   ultCd: number;
   overT: number;
   bossIntroT: number;
@@ -860,7 +827,6 @@ function playSfx(g: Game, name: string): void {
       case "freeze": tone("sine", 1200, 400, 0.18, 0, 0.07); break;
       case "glass": tone("square", 1800, 600, 0.12, 0, 0.08); noise(0.16, 0.06, 2600); break;
       case "click": tone("square", 700, 500, 0.04, 0, 0.05); break;
-      case "reroll": noise(0.18, 0.07, 1600); tone("sine", 500, 900, 0.12, 0, 0.05); break;
       case "buy": tone("sine", 784, 784, 0.08, 0, 0.08); tone("sine", 1175, 1175, 0.14, 0.07, 0.08); break;
       // 🚀 riser - nájezd před tím, než vypadne boss track (sweep nahoru + šum)
       case "riser": noise(0.75, 0.1, 3200); tone("sawtooth", 90, 720, 0.75, 0, 0.09); tone("sine", 55, 110, 0.75, 0, 0.07); break;
@@ -872,8 +838,6 @@ function playSfx(g: Game, name: string): void {
       case "ult_ninja": noise(0.2, 0.09, 2000); break;
       case "ult_knight": tone("square", 520, 180, 0.12, 0, 0.08); tone("square", 660, 220, 0.1, 0.07, 0.06); break;
       case "ult_mage": tone("sine", 70, 28, 0.5, 0, 0.15); break;
-      case "ult_vampire": tone("sine", 440, 110, 0.3, 0, 0.09); break;
-      case "ult_druid": noise(0.25, 0.08, 900); tone("triangle", 300, 120, 0.2, 0.03, 0.06); break;
       case "ult_engineer": tone("square", 240, 240, 0.08, 0, 0.07); tone("square", 360, 360, 0.08, 0.09, 0.07); break;
     }
   } catch {
@@ -2132,8 +2096,6 @@ const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: numb
   ninja: { emoji: "🥷", name: "Stínová záměna", desc: "12 šurikenů do kruhu + mizej", cd: 26 },
   knight: { emoji: "🛡️", name: "Štítová vlna", desc: "odhodí vše živé + 2 s nezranitelnost", cd: 32 },
   mage: { emoji: "☄️", name: "Meteor", desc: "dopadne na netvora: 160 dmg do okolí", cd: 30 },
-  vampire: { emoji: "🩸", name: "Krvavá hostina", desc: "vysaje okolí: +5 HP za cíl a zpomalí je", cd: 30 },
-  druid: { emoji: "🌲", name: "Salvo lesa", desc: "8 mohutných dřevěných kmenů vějírem", cd: 26 },
   engineer: { emoji: "⚙️", name: "Nadstandard", desc: "3 turetky hned + plné výdrže", cd: 38 },
 };
 
@@ -2172,8 +2134,6 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_badge: "🧪 Sandbox je zapnutý",
     lv: "Lv", level: "Level", night: "🌙 NOC ×1.5", day: "☀️ DEN",
     lvlup: "⬆️ Level up! Vyber vylepšení",
-    reroll: "🔄 Reroll",
-    reroll_hint: "🔄 reroll rozdá jiné karty · vybírej moudře, každá volba se počítá",
     keys_pick: "klávesy 1–5 vybírají",
     crate: "📦 Bedna z bosse! Vyber 1 z 5",
     crate_keys: "⌨️ Klávesy 1–5 vybírají z bedny",
@@ -2184,7 +2144,7 @@ const LANG: Record<string, Record<string, string>> = {
     applied: "✅ Aplikováno:",
     dmg: "dmg", kadence: "kadence", rychlost: "rychlost", crit: "crit", zbroj: "zbroje", projektil: "projektilů",
     pause: "⏸ Pauza",
-    kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo", rerolls: "rerollů",
+    kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
     snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎁 Překvapení: ZAP", surp_off: "🎁 Překvapení",
     src_title: "📊 Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
@@ -2192,8 +2152,6 @@ const LANG: Record<string, Record<string, string>> = {
     turret_kinds: "⚙️ Druhy turetek:",
     spec_knight: "🛡️ Železná disciplína: vestoj = −40 % přijímaného zranění",
     spec_ninja: "🌫️ Stínový úhyb: úhyb = 0,55 s nezranitelnost",
-    spec_druid: "🌿 Lesní regenerace: +1 HP každé 3 s",
-    spec_vampire: "🧛 Krvavá žízeň: pod 35 % HP +25 % poškození",
     autopause: "🏚️ Přepneš na jinou kartu? Hra se sama pozastaví (auto-pauza).",
     resume: "▶ Pokračovat", quit: "🏁 Ukončit run", quit_confirm: "😱 Opravdu? Klikni znovu!",
     pause_hint_touch: "Tlačítkem ▶ Pokračovat se vrátíš do hry", pause_hint_kbd: "Nebo stiskni P pro pokračování",
@@ -2225,14 +2183,12 @@ const LANG: Record<string, Record<string, string>> = {
     locked: "chybí 🌱",
     diff_0: "Procházka", diff_1: "Normál", diff_2: "Peklo",
     w_rain: "Déšť", w_storm: "Bouřka", w_wind: "Silný vítr",
-    cls_archer: "Lučištník", cls_soldier: "Voják", cls_ninja: "Ninja", cls_knight: "Rytíř", cls_mage: "Mág", cls_vampire: "Upír", cls_druid: "Druid", cls_engineer: "Inženýr",
+    cls_archer: "Lučištník", cls_soldier: "Voják", cls_ninja: "Ninja", cls_knight: "Rytíř", cls_mage: "Mág", cls_engineer: "Inženýr",
     dsc_archer: "⚔️ Fyzické zbraně, vyšší kadence",
     dsc_soldier: "⚔️ Pistole od startu, +10 % kadence, zbroj",
     dsc_ninja: "⚔️ Šurikeny od startu, +25 % rychlost · 🌫️ Stínový úhyb: úhyb = 0,55 s nezranitelnost",
     dsc_knight: "⚔️ Meč na blízko, velká zbroj · 🛡️ Železná disciplína: vestoj = −40 % zranění",
     dsc_mage: "🪄 Blesk od startu, +15 % rychlosti",
-    dsc_vampire: "🔪 Nože od startu, +15 % dmg, +1 HP za kill · 🧛 Krvavá žízeň: pod 35 % HP +25 % dmg",
-    dsc_druid: "🌲 8 dřevěných třísek ve vějíru od startu, +10 % kadence i dmg · 🌿 Lesní regenerace: +1 HP / 3 s",
     dsc_engineer: "🛡️ Pokládá turetky (max 3), žádné zbraně - bojují za něj. Karty odemykají nové druhy, normální upgrady zlepšují turetky",
     wpn_bow: "Luk", wpn_darts: "Šipky", wpn_knives: "Nože", wpn_shotgun: "Brokovnice", wpn_mg: "Kulomet", wpn_pistol: "Pistole", wpn_fireball: "Ohnivá koule", wpn_frost: "Mrazík", wpn_lightning: "Blesk", wpn_flamethrower: "Plamenomet", wpn_shuriken: "Šurikeny", wpn_sword: "Meč", wpn_splinters: "Třísky", wpn_turret: "Turetka",
   },
@@ -2258,8 +2214,6 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_badge: "🧪 Sandbox is on",
     lv: "Lv", level: "Level", night: "🌙 NIGHT ×1.5", day: "☀️ DAY",
     lvlup: "⬆️ Level up! Pick an upgrade",
-    reroll: "🔄 Reroll",
-    reroll_hint: "🔄 reroll deals different cards · choose wisely, every pick counts",
     keys_pick: "keys 1–5 pick",
     crate: "📦 Boss crate! Pick 1 of 5",
     crate_keys: "⌨️ Keys 1–5 pick from the crate",
@@ -2270,7 +2224,7 @@ const LANG: Record<string, Record<string, string>> = {
     applied: "✅ Applied:",
     dmg: "dmg", kadence: "fire rate", rychlost: "speed", crit: "crit", zbroj: "armor", projektil: "projectiles",
     pause: "⏸ Paused",
-    kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo", rerolls: "rerolls",
+    kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo",
     boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
     snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎁 Surprise: ON", surp_off: "🎁 Surprise",
     src_title: "📊 Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
@@ -2278,8 +2232,6 @@ const LANG: Record<string, Record<string, string>> = {
     turret_kinds: "⚙️ Turret kinds:",
     spec_knight: "🛡️ Iron Discipline: standing still = −40 % incoming damage",
     spec_ninja: "🌫️ Shadow Dodge: dash = 0.55 s invulnerability",
-    spec_druid: "🌿 Forest Regeneration: +1 HP every 3 s",
-    spec_vampire: "🧛 Blood Thirst: below 35 % HP +25 % damage",
     autopause: "🏚️ Switch to another tab? The game auto-pauses.",
     resume: "▶ Resume", quit: "🏁 End run", quit_confirm: "😱 Really? Click again!",
     pause_hint_touch: "Tap ▶ Resume to return to the game", pause_hint_kbd: "Or press P to continue",
@@ -2311,14 +2263,12 @@ const LANG: Record<string, Record<string, string>> = {
     locked: "need 🌱",
     diff_0: "Walk", diff_1: "Normal", diff_2: "Hell",
     w_rain: "Rain", w_storm: "Storm", w_wind: "Strong wind",
-    cls_archer: "Archer", cls_soldier: "Soldier", cls_ninja: "Ninja", cls_knight: "Knight", cls_mage: "Mage", cls_vampire: "Vampire", cls_druid: "Druid", cls_engineer: "Engineer",
+    cls_archer: "Archer", cls_soldier: "Soldier", cls_ninja: "Ninja", cls_knight: "Knight", cls_mage: "Mage", cls_engineer: "Engineer",
     dsc_archer: "⚔️ Physical weapons, higher fire rate",
     dsc_soldier: "⚔️ Pistol from the start, +10 % fire rate, armor",
     dsc_ninja: "⚔️ Shurikens from the start, +25 % speed · 🌫️ Shadow Dodge: dash = 0.55 s invulnerability",
     dsc_knight: "⚔️ Melee sword, heavy armor · 🛡️ Iron Discipline: standing still = −40 % damage taken",
     dsc_mage: "🪄 Lightning from the start, +15 % speed",
-    dsc_vampire: "🔪 Knives from the start, +15 % dmg, +1 HP per kill · 🧛 Blood Thirst: below 35 % HP +25 % dmg",
-    dsc_druid: "🌲 8 wooden splinters in a fan from the start, +10 % fire rate & dmg · 🌿 Forest Regeneration: +1 HP / 3 s",
     dsc_engineer: "🛡️ Deploys turrets (max 3), no weapons — they fight for him. Cards unlock new kinds, regular upgrades power the turrets",
     wpn_bow: "Bow", wpn_darts: "Darts", wpn_knives: "Knives", wpn_shotgun: "Shotgun", wpn_mg: "Machine gun", wpn_pistol: "Pistol", wpn_fireball: "Fireball", wpn_frost: "Frost bolt", wpn_lightning: "Lightning", wpn_flamethrower: "Flamethrower", wpn_shuriken: "Shurikens", wpn_sword: "Sword", wpn_splinters: "Splinters", wpn_turret: "Turret",
   },
@@ -2344,8 +2294,6 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_badge: "🧪 Sandbox jest włączony",
     lv: "Lv", level: "Poziom", night: "🌙 NOC ×1.5", day: "☀️ DZIEŃ",
     lvlup: "⬆️ Nowy poziom! Wybierz ulepszenie",
-    reroll: "🔄 Przerzut",
-    reroll_hint: "🔄 przerzut da inne karty · wybieraj mądrze, każdy wybór się liczy",
     keys_pick: "klawisze 1–5 wybierają",
     crate: "📦 Skrzynia z bossem! Wybierz 1 z 5",
     crate_keys: "⌨️ Klawisze 1–5 wybierają ze skrzyni",
@@ -2356,7 +2304,7 @@ const LANG: Record<string, Record<string, string>> = {
     applied: "✅ Zastosowano:",
     dmg: "obr.", kadence: "kadencja", rychlost: "szybkość", crit: "kryt.", zbroj: "pancerza", projektil: "pocisków",
     pause: "⏸ Pauza",
-    kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo", rerolls: "przerzutów",
+    kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
     snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎁 Niespodzianka: WŁ", surp_off: "🎁 Niespodzianka",
     src_title: "📊 Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
@@ -2364,8 +2312,6 @@ const LANG: Record<string, Record<string, string>> = {
     turret_kinds: "⚙️ Rodzaje wieżyczek:",
     spec_knight: "🛡️ Żelazna dyscyplina: stanie w miejscu = −40 % otrzymywanych obrażeń",
     spec_ninja: "🌫️ Unik w cień: unik = 0,55 s nietykalności",
-    spec_druid: "🌿 Leśna regeneracja: +1 HP co 3 s",
-    spec_vampire: "🧛 Krwawe pragnienie: poniżej 35 % HP +25 % obrażeń",
     autopause: "🏚️ Przełączysz na inną kartę? Gra się sama zatrzyma (auto-pauza).",
     resume: "▶ Kontynuuj", quit: "🏁 Zakończ run", quit_confirm: "😱 Na pewno? Kliknij ponownie!",
     pause_hint_touch: "Przyciskiem ▶ Kontynuuj wrócisz do gry", pause_hint_kbd: "Albo naciśnij P, aby kontynuować",
@@ -2397,14 +2343,12 @@ const LANG: Record<string, Record<string, string>> = {
     locked: "brak 🌱",
     diff_0: "Spacer", diff_1: "Norma", diff_2: "Piekło",
     w_rain: "Deszcz", w_storm: "Burza", w_wind: "Silny wiatr",
-    cls_archer: "Łucznik", cls_soldier: "Żołnierz", cls_ninja: "Ninja", cls_knight: "Rycerz", cls_mage: "Mag", cls_vampire: "Wampir", cls_druid: "Druid", cls_engineer: "Inżynier",
+    cls_archer: "Łucznik", cls_soldier: "Żołnierz", cls_ninja: "Ninja", cls_knight: "Rycerz", cls_mage: "Mag", cls_engineer: "Inżynier",
     dsc_archer: "⚔️ Fizyczne bronie, wyższa kadencja",
     dsc_soldier: "⚔️ Pistolet od startu, +10 % kadencji, pancerz",
     dsc_ninja: "⚔️ Shurikeny od startu, +25 % szybkości · 🌫️ Unik w cień: unik = 0,55 s nietykalności",
     dsc_knight: "⚔️ Miecz w zwarciu, duży pancerz · 🛡️ Żelazna dyscyplina: stanie w miejscu = −40 % obrażeń",
     dsc_mage: "🪄 Błyskawica od startu, +15 % szybkości",
-    dsc_vampire: "🔪 Noże od startu, +15 % obr., +1 HP za zabójstwo · 🧛 Krwawe pragnienie: poniżej 35 % HP +25 % obr.",
-    dsc_druid: "🌲 8 drewnianych drzazg w wachlarzu od startu, +10 % kadencji i obr. · 🌿 Leśna regeneracja: +1 HP / 3 s",
     dsc_engineer: "🛡️ Stawia wieżyczki (maks. 3), bez broni — walczą za niego. Karty odblokowują nowe rodzaje, zwykłe ulepszenia wzmacniają wieżyczki",
     wpn_bow: "Łuk", wpn_darts: "Lotki", wpn_knives: "Noże", wpn_shotgun: "Strzelba", wpn_mg: "Karabin maszynowy", wpn_pistol: "Pistolet", wpn_fireball: "Kula ognia", wpn_frost: "Mroźny pocisk", wpn_lightning: "Błyskawica", wpn_flamethrower: "Miotacz ognia", wpn_shuriken: "Shurikeny", wpn_sword: "Miecz", wpn_splinters: "Drewniane drzazgi", wpn_turret: "Wieżyczka",
   },
@@ -2434,9 +2378,7 @@ const WEATHERS: Record<string, { emoji: string; name: string }> = {
 };
 // 🧮 combo bonusy: dmg i XP rostou s řetězem killů (rozpadá se po 3 s bez zabití)
 function heroDmgMul(g: Game): number {
-  // 🧛 Krvavá žízeň (upír) - pod 35 % HP útočí o 25 % sílněji (riziko za odměnu)
-  const thirst = g.cls === "vampire" && g.hero.hp < g.hero.maxHp * 0.35 ? 0.25 : 0;
-  return 1 + g.stats.dmgMul + Math.min(0.5, g.combo * 0.01) + thirst;
+  return 1 + g.stats.dmgMul + Math.min(0.5, g.combo * 0.01);
 }
 function comboXpMul(g: Game): number {
   return 1 + Math.min(1, g.combo * 0.03);
@@ -2517,7 +2459,6 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     bossT: 200,
     growT: 10,
     waveT: 30,
-    regenT: 3,
     time: 0,
     gtime: 0,
     xp: 0,
@@ -2545,7 +2486,6 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     combo: 0,
     comboT: 0,
     comboBest: 0,
-    rerolls: 1,
     ultCd: 0,
     overT: 0,
     bossIntroT: 0,
@@ -3693,45 +3633,6 @@ function castUlt(g: Game): void {
       }
       break;
     }
-    case "vampire": {
-      // 🧛 Krvavá hostina - za každého vysátého netvora kapka života, těžká krev je zpomalí
-      let drank = 0;
-      for (const e of g.enemies) {
-        if (e.dead || (e.immT ?? 0) > 0 || (e.subT ?? 0) > 0) continue;
-        const dd = dist2(h.x, h.y, e.x, e.y);
-        if (dd < 260 * 260) {
-          e.hp -= 40 * dm;
-          e.flash = 0.1;
-          e.slow = Math.max(e.slow, 1.6);
-          drank += 1;
-          if (e.hp <= 0) killEnemy(g, e);
-        }
-      }
-      const heal = Math.min(45, drank * 5);
-      if (heal > 0) {
-        h.hp = Math.min(h.maxHp, h.hp + heal);
-        addText(g, h.x, h.y - 30, `🩸 +${heal}`, 350, 15);
-      }
-      // 🧛 krvavá essence - rudý prstenec + stoupající kapky krve
-      shock(g, h.x, h.y, 300, 350, 0.55, 8, 0.24);
-      burst(g, h.x, h.y, 20, 350, 230);
-      shock(g, h.x, h.y, 140, 0, 0.35, 5, 0.18);
-      break;
-    }
-    case "druid": {
-      // 🌲 Salvo lesa - 8 mohutných dřevěných kmenů vějířem vpřed
-      const base = h.angle;
-      for (let i = -3.5; i <= 3.5; i++) {
-        const a = base + i * 0.14;
-        g.arrows.push(Object.assign(arrowNew(), { x: h.x + Math.cos(a) * 14, y: h.y + Math.sin(a) * 14, vx: Math.cos(a) * 620, vy: Math.sin(a) * 620, dmg: 30 * dm, pierce: 3, crit: true, life: 1.2, hits: [], kind: 16, knock: 2.4, chain: 0, expl: false, frost: false, lvl: 5, src: "ult" }));
-      }
-      burst(g, h.x + Math.cos(base) * 20, h.y + Math.sin(base) * 20, 14, 100, 160);
-      // 🌲 zelená vlna života od kořenů + lístková smyčka
-      shock(g, h.x, h.y, 200, 100, 0.5, 8, 0.25);
-      shock(g, h.x + Math.cos(base) * 40, h.y + Math.sin(base) * 40, 130, 140, 0.4, 5, 0.16);
-      burst(g, h.x, h.y, 14, 140, 200);
-      break;
-    }
     case "engineer": {
       for (let i = 0; i < 3; i++) {
         if (g.turrets.length >= 3) g.turrets.shift();
@@ -3838,8 +3739,6 @@ function muzzleLen(g: Game): number {
   if (g.cls === "knight") return 14;
   if (g.cls === "ninja") return 17;
   if (g.cls === "mage") return 20;
-  if (g.cls === "vampire") return 12;
-  if (g.cls === "druid") return 16;
   if (g.cls === "engineer") return 13;
   return 19;
 }
@@ -3996,16 +3895,6 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     h.hp -= 3.5 * dt;
     if (Math.random() < dt * 1.2) addText(g, h.x + (Math.random() - 0.5) * 18, h.y - 16, "🤢", 100, 12);
     if (h.hp <= 0) damageHero(g, 1);
-  }
-
-  // 🌿 Lesní regenerace (druid) - síla ze země: +1 HP každé 3 s
-  g.regenT -= dt;
-  if (g.regenT <= 0) {
-    g.regenT = 3;
-    if (g.cls === "druid" && !g.over && h.hp < h.maxHp) {
-      h.hp = Math.min(h.maxHp, h.hp + 1);
-      addText(g, h.x + 10, h.y - 20, "+1", 130, 10);
-    }
   }
 
   // pohyb / dash
@@ -5106,12 +4995,6 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       burst(g, c.x, c.y, 16, 48, 190);
       shock(g, c.x, c.y, 140, 48, 0.45, 6, 0.18);
       addText(g, c.x, c.y - 30, "📦 +5 upgradů!", 48, 17);
-      // 🔄 bedna má 35% šanci přisít reroll - jinak by byl za celý run jen jeden
-      if (!g.sandbox && Math.random() < 0.35) {
-        g.rerolls += 1;
-        addText(g, c.x, c.y - 48, "🔄 +1 reroll!", 195, 14);
-        playSfx(g, "ding");
-      }
     }
   }
 
@@ -5521,80 +5404,6 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.moveTo(h.x - ex * 2, faceY - 9);
     ctx.quadraticCurveTo(h.x - ex * 7, faceY - 14 + Math.sin(t * 6) * 1.5, h.x - ex * 12, faceY - 11 + Math.sin(t * 6) * 2);
     ctx.stroke();
-  } else if (cls.id === "vampire") {
-    // 🧛 UPÍR - černý plášť s rudou podšívkou, vysoký límec, bílá tvář s tesáky
-    ctx.fillStyle = "#18181b";
-    ctx.beginPath();
-    ctx.moveTo(h.x - 9, y - 2);
-    ctx.lineTo(h.x - 13, y + 15);
-    ctx.lineTo(h.x, y + 12);
-    ctx.lineTo(h.x + 13, y + 15);
-    ctx.lineTo(h.x + 9, y - 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#7f1d1d";
-    ctx.beginPath();
-    ctx.moveTo(h.x - 6, y);
-    ctx.lineTo(h.x - 9, y + 13);
-    ctx.lineTo(h.x, y + 11);
-    ctx.lineTo(h.x + 9, y + 13);
-    ctx.lineTo(h.x + 6, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = "#18181b";
-    ctx.lineWidth = 2.5;
-    ctx.beginPath();
-    ctx.moveTo(h.x - 6, faceY - 4);
-    ctx.lineTo(h.x - 8, faceY - 10);
-    ctx.moveTo(h.x + 6, faceY - 4);
-    ctx.lineTo(h.x + 8, faceY - 10);
-    ctx.stroke();
-    ctx.fillStyle = "#f5f0e8";
-    ctx.beginPath();
-    ctx.arc(h.x, faceY - 2, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#18181b";
-    ctx.beginPath();
-    ctx.arc(h.x, faceY - 6.5, 5.2, Math.PI, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(h.x - 1.6, faceY - 6.5);
-    ctx.lineTo(h.x + 1.6, faceY - 6.5);
-    ctx.lineTo(h.x, faceY - 3.2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#fff";
-    ctx.fillRect(h.x - 2.4, faceY + 1, 1.1, 2.6);
-    ctx.fillRect(h.x + 1.3, faceY + 1, 1.1, 2.6);
-  } else if (cls.id === "druid") {
-    // 🌿 DRUID - zelená kapucovitá róba, lístková spona, plnovous
-    const hem2 = Math.sin(t * 4) * 1.4;
-    ctx.fillStyle = "#3f6212";
-    ctx.beginPath();
-    ctx.moveTo(h.x - 8, y - 2);
-    ctx.quadraticCurveTo(h.x - 12, y + 8, h.x - 10 + hem2, y + 14);
-    ctx.quadraticCurveTo(h.x, y + 18, h.x + 10 - hem2, y + 14);
-    ctx.quadraticCurveTo(h.x + 12, y + 8, h.x + 8, y - 2);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = "#4d7c0f";
-    ctx.beginPath();
-    ctx.moveTo(h.x - 6, faceY - 3);
-    ctx.quadraticCurveTo(h.x, faceY - 12, h.x + 6, faceY - 3);
-    ctx.quadraticCurveTo(h.x, faceY - 6.5, h.x - 6, faceY - 3);
-    ctx.fill();
-    ctx.fillStyle = "#e7d8b9";
-    ctx.beginPath();
-    ctx.arc(h.x, faceY - 1, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#a16207";
-    ctx.beginPath();
-    ctx.ellipse(h.x, faceY + 1.5, 4, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#bef264";
-    ctx.beginPath();
-    ctx.ellipse(h.x, y + 2, 2.4, 1.4, 0.6, 0, Math.PI * 2);
-    ctx.fill();
   } else if (cls.id === "engineer") {
     // ⚙️ INŽENÝR - montérky, žlutá přilba, svářečské brýle a batoh s nářadím
     const hem4 = Math.sin(t * 5) * 1.2;
@@ -5715,7 +5524,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   }
   // svítící oči ve směru míření - barva podle classy, rytíř má vizírové škvíry
   const eyeCol =
-    cls.id === "knight" ? "#93c5fd" : cls.id === "ninja" ? "#f8fafc" : cls.id === "mage" ? "#c4b5fd" : cls.id === "soldier" ? "#1e293b" : cls.id === "vampire" ? "#ef4444" : cls.id === "druid" ? "#bef264" : cls.id === "engineer" ? "#fbbf24" : "#fde68a";
+    cls.id === "knight" ? "#93c5fd" : cls.id === "ninja" ? "#f8fafc" : cls.id === "mage" ? "#c4b5fd" : cls.id === "soldier" ? "#1e293b" : cls.id === "engineer" ? "#fbbf24" : "#fde68a";
   for (const side of [-0.45, 0.45]) {
     const ea = h.angle + side;
     const eX = h.x + Math.cos(ea) * 3.2;
@@ -5862,8 +5671,8 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.arc(h.x, y, 26, h.angle - 1.1 + (1 - kick) * 1.4, h.angle + 0.3 + (1 - kick) * 1.4);
       ctx.stroke();
     }
-  } else if (cls.id === "ninja" || cls.id === "vampire") {
-    // 🥷 ninja / upír - rotující ostří mezi prsty
+  } else if (cls.id === "ninja") {
+    // 🥷 ninja - rotující ostří mezi prsty
     const nsx = bx - ex * kick * 3;
     const nsy = by - ey * kick * 3;
     ctx.save();
@@ -5893,35 +5702,6 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.strokeStyle = col;
     ctx.lineWidth = 1;
     ctx.stroke();
-  } else if (cls.id === "druid") {
-    // 🌿 druid - žádná hůl: hází holou rukou, v dlani se natahuje dřevěné třístí
-    const dhx = bx - ex * kick * 4;
-    const dhy = by - ey * kick * 4;
-    // otevřená dlaň
-    ctx.fillStyle = "#e7d8b9";
-    ctx.beginPath();
-    ctx.arc(dhx, dhy, 3.4, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#a16207";
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    // třístí se před hodem natáhne a po hodu vystřelí ze dlaně
-    if (kick < 0.75) {
-      ctx.save();
-      ctx.translate(dhx + ex * 4, dhy + ey * 4);
-      ctx.rotate(h.angle);
-      ctx.strokeStyle = "#92400e";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, 0);
-      ctx.lineTo(4 + pull * 6, 0);
-      ctx.stroke();
-      ctx.fillStyle = "#84cc16";
-      ctx.beginPath();
-      ctx.ellipse(4 + pull * 6, 0, 1.8, 1, 0.8, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-    }
   } else {
     // 🔮 mág - hůlka s nabíjejícím se krystalem
     const sx = h.x - ex * 6;
@@ -8416,7 +8196,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.arc(a.x + Math.cos(ang) * 4, a.y + Math.sin(ang) * 4, 1.6, 0, Math.PI * 2);
       ctx.fill();
     } else if (a.kind === 16) {
-      // 🌲 dřevěné třístí druida - hnědá špička s listkem, rotuje v letu
+      // 🌲 dřevěné třístí - hnědá špička s listkem, rotuje v letu
       ctx.save();
       ctx.translate(a.x, a.y);
       ctx.rotate(ang + Math.sin((a.vx + a.vy) * 0.02 + a.life * 9) * 0.15);
@@ -10293,26 +10073,13 @@ function LoukaTisicePriser() {
             <h2 className="bg-gradient-to-r from-amber-200 via-yellow-300 to-amber-200 bg-clip-text text-2xl font-black text-transparent drop-shadow-[0_0_14px_rgba(251,191,36,.5)] sm:text-3xl">
               {trk("lvlup")}
             </h2>
-            {gameRef.current.rerolls > 0 && (
-              <button
-                onClick={() => {
-                  const g = gameRef.current;
-                  g.rerolls -= 1;
-                  playSfx(g, "reroll");
-                  setUpgrades(pickUpgrades(g));
-                }}
-                className="rounded-xl border-2 border-cyan-400/50 bg-cyan-500/20 px-4 py-1.5 text-xs font-bold text-cyan-200 transition active:scale-95 sm:text-sm"
-              >
-                {trk("reroll")} ({gameRef.current.rerolls}×)
-              </button>
-            )}
             <div className="flex w-full max-w-2xl flex-1 flex-col justify-center gap-2 sm:grid sm:grid-cols-3 sm:gap-3">
               {upgrades.map((u) => (
                 <UpgradeCard key={u.id} u={u} onPick={applyUpgrade} />
               ))}
             </div>
             <p className="text-[10px] text-white/45">
-              {trk("reroll_hint")}{!isTouch ? " · " + trk("keys_pick") : ""}
+              {!isTouch ? trk("keys_pick") : ""}
             </p>
           </div>
         )}
@@ -10443,7 +10210,6 @@ function LoukaTisicePriser() {
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🩸 {ui.ls} {trk("hp_kill")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">✳️ +{Math.round(ui.ms)} {trk("projektil")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🔥 {trk("kombo")} {ui.combo} (max {gameRef.current.comboBest})</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🔄 {gameRef.current.rerolls} {trk("rerolls")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">{trk("boss_in").replace("{n}", String(Math.max(0, Math.ceil(gameRef.current.nextBoss - gameRef.current.time))))}</div>
               {(() => {
                 const cyc = gameRef.current.time % 600;
@@ -10533,7 +10299,7 @@ function LoukaTisicePriser() {
               </p>
             )}
             {/* 🌟 speciální schopnost aktuální classy */}
-            {["knight", "ninja", "druid", "vampire"].indexOf(gameRef.current.cls) >= 0 && (
+            {["knight", "ninja"].indexOf(gameRef.current.cls) >= 0 && (
               <p className="max-w-xs text-[10px] leading-snug text-white/45 sm:text-[11px]">
                 {trk("spec_" + gameRef.current.cls)}
               </p>
@@ -10736,7 +10502,7 @@ function LoukaTisicePriser() {
   );
 }
 
-// 🚀 start hru - zruš hlídač a připoj komponentu
+
 if (window.ltpWatch) clearTimeout(window.ltpWatch);
 // 🏁 hra stojí na nohou - od teď žádná chybová obrazovka nepřkryje hraní
 window.__ltpOK = true;
@@ -10747,4 +10513,5 @@ ReactDOM.createRoot(ltpRootEl).render(React.createElement(LoukaTisicePriser));
 </script>
 </body>
 </html>
+
 

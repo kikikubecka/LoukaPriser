@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.8.0";
+const GAME_VERSION = "1.9.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -423,6 +423,7 @@ type Game = {
   crateOpen: boolean;
   bossKills: number;
   crownsEarned: number; // 👑 koruny připsané během runu (čekají na zápis do mety)
+  weaponBonus: number; // 🎒 extra sloty zbraní ze stromu dovedností (základ = 1 zbraň)
   seedBonus?: number;   // 👑 Koruna louky - násobitel výdělku semínek
   nextBoss: number;
   bossWarned: boolean;
@@ -2004,7 +2005,10 @@ type TreeNode = {
 };
 
 const TREE_NODES: TreeNode[] = [
-  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 50], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 22], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  // 🎒 větev zbraní - do runu bereš 1 zbraň zdarma, další 2 sloty se kupují tady (celkem max 3 jako dřív)
+  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [30, 78], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [70, 78], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
 ];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -2097,7 +2101,7 @@ const LANG: Record<string, Record<string, string>> = {
     shop_close: "✖ Zavřít",
     hint_touch: "👇 Táhni prstem = pohyb · 💨 = úhyb · ⚡ = ultimátum · zbraně střílí samy",
     hint_kbd: "⌨️ WASD / šipky = pohyb · Mezerník = úhyb · E = ultimátum · zbraně střílí samy · P = pauza",
-    legend: "📜 Legenda praví: louka kdysi patřila slepicím. Pak přišly příšery — a pak přišel ty. Max 3 zbraně · ⭐ 5. tier = ULTIMÁTNÍ FORMA · ⚔️ fyzické classy neberou magii (a 🪄 naopak) · každých 90 s 💀 boss a 📦 bedna",
+    legend: "📜 Legenda praví: louka kdysi patřila slepicím. Pak přišly příšery — a pak přišel ty. 🎒 1 zbraň do runu (další 2 sloty v 🌳 stromu) · ⭐ 5. tier = ULTIMÁTNÍ FORMA · ⚔️ fyzické classy neberou magii (a 🪄 naopak) · každých 90 s 💀 boss a 📦 bedna",
     records: "🏅 Rekordy za classy", daily_best: "📅 Nejlepší denní výzva:",
     daily_btn: "📅 Denní výzva", daily_on: "ZAP",
     daily_note: "📅 Dnes {d} — obtížnost vylosovaná podle data, denní rekord se ukládá zvlášť. Kdo přístroj nepodvádí, ten má čistý měsíc!",
@@ -2110,7 +2114,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
-    tree_note: "🌳 Strom má jedinou větev: Síla 💪. Každý z 5 levelů dává +20 % poškození (dohromady +100 %). Kup za semínka, platí navždy do všech runů.",
+    tree_note: "🌳 Do runu bereš jen 1 zbraň. Síla 💪 (5× +20 % dmg) a sloty na další zbraně 🎒 kupuješ tady za semínka. ✨ Zlaté upgrady stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
     specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
@@ -2184,7 +2188,7 @@ const LANG: Record<string, Record<string, string>> = {
     shop_close: "✖ Close",
     hint_touch: "👇 Drag your finger = move · 💨 = dash · ⚡ = ultimate · weapons fire on their own",
     hint_kbd: "⌨️ WASD / arrows = move · Space = dash · E = ultimate · weapons fire on their own · P = pause",
-    legend: "📜 Legend says: the meadow once belonged to hens. Then the monsters came — and then you came. Max 3 weapons · ⭐ tier 5 = ULTIMATE FORM · ⚔️ physical classes take no magic (and 🪄 vice versa) · every 90 s a 💀 boss and a 📦 crate",
+    legend: "📜 Legend says: the meadow once belonged to hens. Then the monsters came — and then you came. 🎒 1 weapon per run (2 more slots in the 🌳 tree) · ⭐ tier 5 = ULTIMATE FORM · ⚔️ physical classes take no magic (and 🪄 vice versa) · every 90 s a 💀 boss and a 📦 crate",
     records: "🏅 Records per class", daily_best: "📅 Best daily challenge:",
     daily_btn: "📅 Daily challenge", daily_on: "ON",
     daily_note: "📅 Today {d} — difficulty drawn from the date, the daily record is stored separately. Who doesn't cheat has a clean month!",
@@ -2197,7 +2201,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
-    tree_note: "🌳 The tree has a single branch: Strength 💪. Each of the 5 levels gives +20 % damage (+100 % total). Buy with seeds, applies forever to all runs.",
+    tree_note: "🌳 You take only 1 weapon per run. Strength 💪 (5× +20 % dmg) and slots for extra weapons 🎒 are bought here with seeds. ✨ Golden upgrades cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
     tree_max: "✅ done",
     specials_note: "✨ Golden upgrades are one-time and permanent. They cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
     reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
@@ -2271,7 +2275,7 @@ const LANG: Record<string, Record<string, string>> = {
     shop_close: "✖ Zamknij",
     hint_touch: "👇 Przeciągnij palcem = ruch · 💨 = unik · ⚡ = ultimatum · bronie strzelają same",
     hint_kbd: "⌨️ WASD / strzałki = ruch · Spacja = unik · E = ultimatum · bronie strzelają same · P = pauza",
-    legend: "📜 Legenda głosi: łąka niegdyś należała do kur. Potem przyszły potwory — a potem przyszedłeś ty. Maks. 3 bronie · ⭐ 5. poziom = FORMA OSTATECZNA · ⚔️ fizyczne klasy nie biorą magii (i 🪄 odwrotnie) · co 90 s 💀 boss i 📦 skrzynia",
+    legend: "📜 Legenda głosi: łąka niegdyś należała do kur. Potem przyszły potwory — a potem przyszedłeś ty. 🎒 1 broń na run (2 kolejne sloty w 🌳 drzewku) · ⭐ 5. poziom = FORMA OSTATECZNA · ⚔️ fizyczne klasy nie biorą magii (i 🪄 odwrotnie) · co 90 s 💀 boss i 📦 skrzynia",
     records: "🏅 Rekordy według klas", daily_best: "📅 Najlepsze dzienne wyzwanie:",
     daily_btn: "📅 Dzienne wyzwanie", daily_on: "WŁ.",
     daily_note: "📅 Dziś {d} — trudność losowana z daty, dzienny rekord zapisuje się osobno. Kto nie oszukuje, ma czysty miesiąc!",
@@ -2284,7 +2288,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
-    tree_note: "🌳 Drzewko ma jedną gałąź: Siła 💪. Każdy z 5 poziomów daje +20 % obrażeń (łącznie +100 %). Kupuj za nasiona, działa na zawsze we wszystkich runach.",
+    tree_note: "🌳 Na run bierzesz tylko 1 broń. Siła 💪 (5× +20 % obrażeń) i sloty na dodatkowe bronie 🎒 kupujesz tutaj za nasiona. ✨ Złote ulepszenia kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
     specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
@@ -2405,6 +2409,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     nextId: 1,
     bossKills: 0,
     crownsEarned: 0,
+    weaponBonus: 0,
     nextBoss: 75,
     bossWarned: false,
     minibKills: 0,
@@ -3623,11 +3628,16 @@ function weaponLvl(g: Game, id: string): number {
   return 0;
 }
 
-// zbraň lze vzít, jen když je nevlastněná (místo < 3) nebo levelovaná (< 5)
+// 🎒 kolik zbraní smíš nést: 1 základní + extra sloty ze stromu dovedností (sandbox = neomezeně)
+function maxWeapons(g: Game): number {
+  return g.sandbox ? 99 : 1 + (g.weaponBonus || 0);
+}
+
+// zbraň lze vzít, jen když je nevlastněná (volný slot) nebo levelovaná (< 5)
 // v sandboxu je slotů neomezeně - poskládej si všech zbraní najednou
 function weaponAvail(g: Game, id: string): boolean {
   if (hasWeapon(g, id)) return weaponLvl(g, id) < 5;
-  return g.weapons.length < (g.sandbox ? 99 : 3);
+  return g.weapons.length < maxWeapons(g);
 }
 
 // classa povoluje jen své karty - fyzické classy neberou magii a naopak
@@ -3674,7 +3684,7 @@ function addWeapon(g: Game, id: string): void {
     }
     return;
   }
-  if (g.weapons.length >= (g.sandbox ? 99 : 3)) return;
+  if (g.weapons.length >= maxWeapons(g)) return;
   g.weapons.push({ id, cd: 0.3, lvl: 1 });
   addText(g, g.hero.x, g.hero.y - 30, `${def.emoji} ${def.name}!`, 48, 17);
   burst(g, g.hero.x, g.hero.y, 14, 48, 160);
@@ -3683,7 +3693,7 @@ function addWeapon(g: Game, id: string): void {
 // dynamický popis karty zbraně podle současné úrovně
 function describeWeapon(g: Game, id: string, u: Upgrade): Upgrade {
   if (!hasWeapon(g, id)) {
-    return { ...u, desc: g.sandbox ? `Nová zbraň: ${WEAPONS[id].name} (sandbox: ∞ slotů)` : `Nová zbraň: ${WEAPONS[id].name} (zbývá ${3 - g.weapons.length} slotů)` };
+    return { ...u, desc: g.sandbox ? `Nová zbraň: ${WEAPONS[id].name} (sandbox: ∞ slotů)` : `Nová zbraň: ${WEAPONS[id].name} (zbývá ${maxWeapons(g) - g.weapons.length} slotů)` };
   }
   const lvl = weaponLvl(g, id);
   if (lvl >= 4) {
@@ -8786,7 +8796,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           👑 {meta.crowns || 0}
         </span>
       </div>
-      <div className="relative mx-auto h-[170px] w-full max-w-[380px]">
+      <div className="relative mx-auto h-[260px] w-full max-w-[380px]">
         {/* čáry mezi předchůdcem a potomkem */}
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
@@ -10659,6 +10669,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

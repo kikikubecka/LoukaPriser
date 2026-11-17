@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.10.0";
+const GAME_VERSION = "1.11.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -188,6 +188,10 @@ type Bolt = { x: number; y: number; vx: number; vy: number; life: number; dmg: n
 // ⚙️ turetka inženýra - položená na zem, střílí sama na nepřátele
 type Turret = { x: number; y: number; cd: number; windCd: number; t: number; aim: number; id: number; hp: number; maxHp: number; type: string };
 type Slash = { x: number; y: number; a: number; r: number; t: number; dur: number };
+// ☄️ létající vrstva: meteor mága, bombardér a bomby vojákova náletku
+type Meteor = { sx: number; sy: number; x: number; y: number; tx: number; ty: number; t: number; dur: number; dmg: number };
+type Plane = { x: number; y: number; vx: number; t: number; dur: number };
+type Bomb = { sx: number; sy: number; x: number; y: number; tx: number; ty: number; t: number; dur: number };
 type Crate = { x: number; y: number; t: number };
 type Telegraph = { x: number; y: number; r: number; t: number; dur: number; dmg: number; dyn?: boolean; friendly?: boolean };
 type Arena = { x: number; y: number; r: number; active: boolean };
@@ -392,6 +396,9 @@ type Game = {
   arrows: Arrow[];
   eBolts: Bolt[];
   slashes: Slash[];
+  meteors: Meteor[];
+  planes: Plane[];
+  bombs: Bomb[];
   crates: Crate[];
   telegraphs: Telegraph[];
   arena: Arena;
@@ -672,7 +679,7 @@ function playSfx(g: Game, name: string): void {
     if (!AC) AC = new AudioContext();
     if (AC.state === "suspended") void AC.resume();
     // frekventované zvuky se tlumí per název (výstřely, zásahy, exploze, kombo...)
-    const gateMs: Record<string, number> = { shoot: 70, hit: 70, crit: 90, swing: 110, freeze: 130, boom: 190, combo: 140, elite: 260, orb: 60, hurt: 90 };
+    const gateMs: Record<string, number> = { shoot: 70, hit: 70, crit: 90, swing: 110, freeze: 130, boom: 190, combo: 140, elite: 260, orb: 60, hurt: 90, whistle: 110, plane: 500, meteor: 250, meteor_hit: 220 };
     const gm = gateMs[name];
     const nw = performance.now();
     if (gm !== undefined) {
@@ -730,6 +737,10 @@ function playSfx(g: Game, name: string): void {
       case "ding": tone("sine", 1046, 1046, 0.09, 0, 0.09); tone("sine", 1568, 1568, 0.12, 0.07, 0.07); break;
       case "ult": tone("sawtooth", 130, 520, 0.3, 0, 0.12); noise(0.25, 0.08, 900); break;
       case "boom": noise(0.4, 0.16, 420); tone("sine", 120, 40, 0.35, 0, 0.12); break;
+      case "meteor": noise(0.75, 0.1, 320); tone("sawtooth", 430, 55, 0.75, 0, 0.05); break;
+      case "meteor_hit": noise(0.55, 0.2, 280); tone("sine", 95, 26, 0.55, 0, 0.2); tone("sine", 55, 20, 0.75, 0.05, 0.14); break;
+      case "plane": tone("square", 96, 96, 1.5, 0, 0.05); tone("square", 192, 192, 1.5, 0, 0.028); noise(1.5, 0.035, 260); break;
+      case "whistle": tone("sine", 2100, 620, 0.5, 0, 0.035); break;
       case "turret": tone("square", 330, 330, 0.06, 0, 0.05); tone("square", 494, 494, 0.08, 0.06, 0.05); break;
       case "weather": tone("sine", 233, 466, 0.4, 0, 0.08); break;
       case "dash": noise(0.14, 0.07, 1400); tone("sine", 300, 700, 0.1, 0, 0.05); break;
@@ -2029,7 +2040,7 @@ const treeCost = (tn: TreeNode, lvl: number) => Math.round(tn.base + tn.growth *
 // ⚡ ULTIMÁTNÍ SCHOPNOSTI - každá classa má jednu (klávesa E), cooldown 26-38 s
 const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: number }> = {
   archer: { emoji: "🏹", name: "Déšť šípů", desc: "~20 šípů padá z nebe na netvory kolem tebe", cd: 30 },
-  soldier: { emoji: "🎖️", name: "Náletek", desc: "6 bomb postupně vybuchne v kruhu kolem tebe", cd: 30 },
+  soldier: { emoji: "🎖️", name: "Náletek", desc: "bombardér přeletí louku a shodí 6 bomb kolem tebe", cd: 30 },
   ninja: { emoji: "🥷", name: "Stínová záměna", desc: "12 šurikenů do kruhu + mizej", cd: 26 },
   knight: { emoji: "🛡️", name: "Štítová vlna", desc: "odhodí vše živé + 2 s nezranitelnost", cd: 32 },
   mage: { emoji: "☄️", name: "Meteor", desc: "dopadne na netvora: 160 dmg do okolí", cd: 30 },
@@ -2385,6 +2396,9 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     arrows: [],
     eBolts: [],
     slashes: [],
+    meteors: [],
+    planes: [],
+    bombs: [],
     crates: [],
     telegraphs: [],
     arena: { x: 0, y: 0, r: 0, active: false },
@@ -3526,26 +3540,35 @@ function castUlt(g: Game): void {
       break;
     }
     case "soldier": {
-      // 💥 Náletek - 6 bomb postupně dopadne do širokého kruhu kolem tebe
-      // (telegrafované jantarové zóny - vidíš, kam co padá, bolí to jen netvory)
+      // ✈️ Náletek - bombardér skutečně přeletí louku a shodne 6 bomb
+      // (telegrafované jantarové zóny udělují damage netvorům; bomby padají ve směru letu
+      //  zleva doprava a každá dopadne přesně v okamžiku, kdy její zóna vybuchne)
+      const startX = h.x - VW / 2 - 80;
+      const planeY = h.y - VH / 2 + 70;
+      const pvx = 560;
+      const tgts: { x: number; y: number }[] = [];
       for (let i = 0; i < 6; i++) {
         const a2 = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
         const dd2 = 140 + Math.random() * 110;
-        g.telegraphs.push({
+        tgts.push({
           x: Math.max(30, Math.min(ARENA - 30, h.x + Math.cos(a2) * dd2)),
           y: Math.max(30, Math.min(ARENA - 30, h.y + Math.sin(a2) * dd2)),
-          r: 115,
-          t: -i * 0.16,
-          dur: 0.7,
-          dmg: Math.round(48 * dm),
-          friendly: true,
         });
       }
+      tgts.sort((p, q) => p.x - q.x); // shazuje je za sebou, jak pod nimi letí
+      for (const tgp of tgts) {
+        const dropT = Math.max(0, (tgp.x - startX) / pvx); // kdy je letadlo nad cílem
+        const fallT = 0.55;
+        const fireT = dropT + fallT; // kdy zóna vybuchne
+        g.telegraphs.push({ x: tgp.x, y: tgp.y, r: 115, t: 0.7 - fireT, dur: 0.7, dmg: Math.round(48 * dm), friendly: true });
+        g.bombs.push({ sx: startX + pvx * dropT, sy: planeY + 16, x: startX + pvx * dropT, y: planeY + 16, tx: tgp.x, ty: tgp.y, t: -dropT, dur: fallT });
+      }
+      g.planes.push({ x: startX, y: planeY, vx: pvx, t: 0, dur: (VW + 160) / pvx });
+      playSfx(g, "plane");
       // 💥 dvojitá výbušná vlna - tlumená oranžová + jiskřivá jantarová
       shock(g, h.x, h.y, 340, 25, 0.55, 11, 0.28);
       shock(g, h.x, h.y, 220, 40, 0.4, 7, 0.18);
       burst(g, h.x, h.y, 16, 40, 380);
-      playSfx(g, "boom");
       break;
     }
     case "ninja":
@@ -3593,22 +3616,10 @@ function castUlt(g: Game): void {
       }
       const tx = mt ? mt.x : h.x;
       const ty = mt ? mt.y : h.y;
-      burst(g, tx, ty, 34, 25, 320);
-      // ☄️ ohnivá stopa meteoru padá z nebe + dvojitý dopadový kráter
-      burst(g, tx, ty - 230, 14, 25, 340);
-      shock(g, tx, ty, 280, 25, 0.6, 13, 0.3);
-      shock(g, tx, ty, 170, 45, 0.45, 8, 0.2);
-      shock(g, tx, ty, 90, 15, 0.3, 5, 0.25);
-      g.shake = 16;
-      playSfx(g, "boom");
-      for (const e of g.enemies) {
-        if (e.dead || (e.immT ?? 0) > 0) continue;
-        if (dist2(tx, ty, e.x, e.y) < 280 * 280) {
-          e.hp -= 160 * dm;
-          e.flash = 0.12;
-          if (e.hp <= 0) killEnemy(g, e);
-        }
-      }
+      // ☄️ meteor se vyvolá z nebe - přiletí šikmo zleva nahoře a dopadne až za ~0,8 s
+      // (anticipace = cíl vidí, kam padá; výbuch + damage až při dopadu ve updateFx)
+      g.meteors.push({ sx: tx - 260, sy: ty - (VH / 2 + 140), x: tx - 260, y: ty - (VH / 2 + 140), tx, ty, t: 0, dur: 0.8, dmg: Math.round(160 * dm) });
+      playSfx(g, "meteor");
       break;
     }
     case "engineer": {
@@ -5069,6 +5080,73 @@ function updateFx(g: Game, dt: number): void {
     sl.t += dt;
     if (sl.t >= sl.dur) g.slashes.splice(i, 1);
   }
+  // ☄️ meteory - zrychlují k zemi, za sebou plápolají ohnivou stopu, dopad = velký výbuch
+  for (let i = g.meteors.length - 1; i >= 0; i--) {
+    const m = g.meteors[i];
+    m.t += dt;
+    const f = Math.min(1, Math.max(0, m.t / m.dur));
+    const f2 = f * f; // gravitační zrychlení
+    m.x = m.sx + (m.tx - m.sx) * f2;
+    m.y = m.sy + (m.ty - m.sy) * f2;
+    if (g.particles.length < 150) {
+      for (let k = 0; k < 2; k++) {
+        const p = PART_POOL.pop() || { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, r: 0, hue: 0 };
+        p.x = m.x + (Math.random() - 0.5) * 10;
+        p.y = m.y + (Math.random() - 0.5) * 10;
+        p.vx = -70 + (Math.random() - 0.5) * 90;
+        p.vy = -50 + (Math.random() - 0.5) * 90;
+        p.life = 0.28 + Math.random() * 0.3;
+        p.maxLife = p.life;
+        p.r = 2.5 + Math.random() * 3;
+        p.hue = 14 + Math.random() * 26;
+        g.particles.push(p);
+      }
+    }
+    if (f >= 1) {
+      // 💥 dopad - kráter, dvojitá rázová vlna a hořící trosky
+      burst(g, m.tx, m.ty, 34, 25, 320);
+      burst(g, m.tx, m.ty, 14, 12, 260);
+      burst(g, m.tx, m.ty - 50, 10, 30, 200);
+      shock(g, m.tx, m.ty, 280, 25, 0.6, 13, 0.3);
+      shock(g, m.tx, m.ty, 170, 45, 0.45, 8, 0.2);
+      shock(g, m.tx, m.ty, 90, 15, 0.3, 5, 0.25);
+      g.shake = Math.max(g.shake, 16);
+      g.hitStop = Math.max(g.hitStop ?? 0, 0.05);
+      playSfx(g, "meteor_hit");
+      addText(g, m.tx, m.ty - 40, "☄️ BOOM!", 14, 22);
+      for (const e of g.enemies) {
+        if (e.dead || (e.immT ?? 0) > 0) continue;
+        if (dist2(m.tx, m.ty, e.x, e.y) < 280 * 280) {
+          e.hp -= m.dmg;
+          e.flash = 0.12;
+          const kd = Math.hypot(e.x - m.tx, e.y - m.ty) || 1;
+          e.kbx += ((e.x - m.tx) / kd) * 260;
+          e.kby += ((e.y - m.ty) / kd) * 260;
+          if (e.hp <= 0) killEnemy(g, e);
+        }
+      }
+      g.meteors.splice(i, 1);
+    }
+  }
+  // ✈️ bombardér náletku - poletí rovnoběžně nad obrazovkou a zase zmizí
+  for (let i = g.planes.length - 1; i >= 0; i--) {
+    const pl = g.planes[i];
+    pl.t += dt;
+    pl.x += pl.vx * dt;
+    if (pl.t >= pl.dur) g.planes.splice(i, 1);
+  }
+  // 💣 bomby náletku - padají z letadla, pískají a dopadnou se svou zónou
+  for (let i = g.bombs.length - 1; i >= 0; i--) {
+    const b = g.bombs[i];
+    const wasT = b.t;
+    b.t += dt;
+    if (wasT < 0 && b.t >= 0) playSfx(g, "whistle"); // písknutí při odhození
+    const f = Math.min(1, Math.max(0, b.t / b.dur));
+    const f2 = f * f;
+    b.x = b.sx + (b.tx - b.sx) * f2;
+    b.y = b.sy + (b.ty - b.sy) * f2;
+    if (f >= 1) g.bombs.splice(i, 1); // výbuch a damage udělá telegraf
+  }
   // 💥 rázové vlny - expandují a doznívají
   for (let i = g.shocks.length - 1; i >= 0; i--) {
     const sk = g.shocks[i];
@@ -5794,101 +5872,6 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   }
 }
 
-// 🖼️ AI vygenerované sprity nepřátel - dva sheety 3×2, kruhový výřez, animace, fallback na vektor
-type SpriteCell = { col: number; row: number };
-type SpriteSheet = { img: HTMLImageElement; ready: boolean; cells: Partial<Record<number, SpriteCell>>; cols: number; rows: number; cw: number; ch: number };
-function makeSheet(url: string, cells: Partial<Record<number, SpriteCell>>): SpriteSheet {
-  const s: SpriteSheet = { img: new Image(), ready: false, cells, cols: 3, rows: 2, cw: 0, ch: 0 };
-  s.img.onload = () => {
-    // 🚀 rozměry buňky spočítáme jednou po nahrání, ne při každém vykreslení
-    s.cw = s.img.naturalWidth / s.cols;
-    s.ch = s.img.naturalHeight / s.rows;
-    s.ready = true;
-  };
-  s.img.src = url;
-  return s;
-}
-const SHEET_A = makeSheet(
-  "https://mistralaichatupprodswe.blob.core.windows.net/chat-images/assistant/1a/5a/2a/1a5a2a77-194f-4263-ae5d-4760397c2cbe/527fd503-9e7e-44ba-90e4-5747d0c87764/9849c6c5-b68b-4940-9ef7-44986b68caac/b0da3646-c4f1-47d2-be10-b0cbc180d9fd.jpg",
-  { 0: { col: 0, row: 0 }, 1: { col: 1, row: 0 }, 2: { col: 2, row: 0 }, 3: { col: 0, row: 1 }, 4: { col: 1, row: 1 }, 5: { col: 2, row: 1 } }
-);
-const SHEET_B = makeSheet(
-  "https://mistralaichatupprodswe.blob.core.windows.net/chat-images/assistant/1a/5a/2a/1a5a2a77-194f-4263-ae5d-4760397c2cbe/527fd503-9e7e-44ba-90e4-5747d0c87764/409cc80e-eb67-4e90-a0fb-59879c048912/a5320a62-c20e-45cb-bd8f-ebdac7b2ba5b.jpg",
-  { 6: { col: 0, row: 0 }, 7: { col: 1, row: 0 }, 8: { col: 2, row: 0 }, 9: { col: 0, row: 1 }, 10: { col: 1, row: 1 } }
-);
-// každý druh má svůj rytmus animace - jiné houpání, squish a třepot
-const ANIM: Record<number, { bobA: number; bobF: number; sqA: number; sqF: number }> = {
-  0: { bobA: 0.04, bobF: 5, sqA: 0.11, sqF: 5 },    // sliz dýchá
-  1: { bobA: 0.22, bobF: 13, sqA: 0.05, sqF: 13 },  // netopýr třepotá ve vzduchu
-  2: { bobA: 0.05, bobF: 3, sqA: 0.03, sqF: 3 },    // mumie se potácí
-  3: { bobA: 0.12, bobF: 11, sqA: 0.05, sqF: 11 },  // štvanec kluše
-  4: { bobA: 0.08, bobF: 4, sqA: 0.07, sqF: 4 },    // brut dupá
-  5: { bobA: 0.07, bobF: 6, sqA: 0.03, sqF: 6 },    // šaman se houpé
-  6: { bobA: 0.14, bobF: 2.5, sqA: 0.02, sqF: 2 },  // duch vznáší
-  7: { bobA: 0.1, bobF: 3, sqA: 0.09, sqF: 3 },     // kamenáč rázuje
-  8: { bobA: 0.1, bobF: 9, sqA: 0.05, sqF: 9 },     // rozpulc poskakuje
-  9: { bobA: 0.05, bobF: 7, sqA: 0.04, sqF: 7 },    // elita si jde
-  10: { bobA: 0.07, bobF: 8, sqA: 0.05, sqF: 8 },   // dynamiter nervózně kouká
-  11: { bobA: 0.06, bobF: 8, sqA: 0.05, sqF: 8 },   // miner šlape krumpáčem
-  12: { bobA: 0.18, bobF: 16, sqA: 0.12, sqF: 16 }, // vosa bzučí ve vzduchu
-  13: { bobA: 0.05, bobF: 6, sqA: 0.03, sqF: 6 },   // jezevec se plíží
-  14: { bobA: 0.07, bobF: 4, sqA: 0.04, sqF: 4 },   // kostlivec chrastí kostmi
-  15: { bobA: 0.1, bobF: 12, sqA: 0.06, sqF: 12 },  // sopkaš jiskří
-  16: { bobA: 0.08, bobF: 5, sqA: 0.04, sqF: 5 },   // ledovec tuhne
-};
-function drawEnemySprite(ctx: CanvasRenderingContext2D, e: Enemy, t: number, s: SpriteSheet, c: SpriteCell): void {
-  const img = s.img;
-  // 🚀 používají se předpočítané rozměry z makeSheet (ne naturalWidth při každém spritu)
-  const cw = s.cw || img.naturalWidth / s.cols;
-  const chh = s.ch || img.naturalHeight / s.rows;
-  const cs = Math.min(cw, chh);
-  const sx = c.col * cw + (cw - cs) / 2;
-  const sy = c.row * chh + (chh - cs) / 2;
-  const a = ANIM[e.kind] || { bobA: 0.05, bobF: 6, sqA: 0.04, sqF: 6 };
-  const bob = Math.sin(t * a.bobF + e.id) * e.r * a.bobA;
-  const sq = 1 + Math.sin(t * a.sqF + e.id) * a.sqA;
-  const size = e.r * 3.1;
-  // stín pod postavou
-  ctx.fillStyle = "rgba(0,0,0,0.25)";
-  ctx.beginPath();
-  ctx.ellipse(e.x, e.y + e.r * 0.85, e.r * 0.85, e.r * 0.3, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.save();
-  // 👻 duch je vždy průsvitný; flash se řeší dvojím překreslením (levnější než ctx.filter)
-  const baseA = e.kind === 6 ? (e.lungeT > 0 && !e.boss ? 0.35 : 0.82 + 0.12 * Math.sin(t * 3 + e.id)) : 1;
-  ctx.globalAlpha = baseA;
-  ctx.translate(e.x, e.y - e.r * 0.15 + bob);
-  ctx.rotate(Math.sin(t * a.bobF * 0.7 + e.id) * 0.03);
-  ctx.scale(sq, 1 / sq);
-  // kruhový výřez - sprite jako herní žeton ladící s podkladem
-  ctx.beginPath();
-  ctx.arc(0, 0, e.r * 1.42, 0, Math.PI * 2);
-  ctx.save();
-  ctx.clip();
-  ctx.drawImage(img, sx, sy, cs, cs, -size / 2, -size / 2, size, size);
-  // ⚡ zásah = sprite se přisvítí (additivní překreslení místo drahého filtru)
-  if (e.flash > 0) {
-    ctx.globalCompositeOperation = "lighter";
-    ctx.globalAlpha = 0.55;
-    ctx.drawImage(img, sx, sy, cs, cs, -size / 2, -size / 2, size, size);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = baseA;
-  }
-  // ❄️ zpomalený - ledový nádech stejným trikem (mrazivý kroužek kreslí vector větev)
-  if (e.flash <= 0 && e.slow > 0) {
-    ctx.globalCompositeOperation = "lighter";
-    ctx.globalAlpha = 0.3;
-    ctx.drawImage(img, sx, sy, cs, cs, -size / 2, -size / 2, size, size);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = baseA;
-  }
-  ctx.restore();
-  ctx.strokeStyle = "rgba(12,26,12,0.72)";
-  ctx.lineWidth = 3;
-  ctx.stroke();
-  ctx.restore();
-}
-
 // reálné barevné paleti podle druhu - netopýr hnědý srst, mumie plátno, vlk šedohnědý,
 // brut zelenkavá kůže, kamenáč šedá skála, rozpulc červený ďáblem, elita tmavý krunýř
 const KIND_COLORS: Record<number, { base: string; shade: string; line: string }> = {
@@ -5944,12 +5927,6 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     }
     return;
   }
-  // 🖼️ AI sprite, pokud je nahraný - jinak fallback na vektorový model
-  const sheet = e.kind <= 5 ? SHEET_A : SHEET_B;
-  const cell = sheet.cells[e.kind];
-  if (sheet.ready && cell) {
-    drawEnemySprite(ctx, e, t, sheet, cell);
-  } else {
   // tělo - netopýr drží kulaté tělo, všichni ostatní (i bossové a mini) mají vlastní siluetu z více tvarů
   const pal = !e.boss && !e.minib ? KIND_COLORS[e.kind] : undefined;
   const dark = pal ? pal.line : hsla(e.hue, 80, 18, 1);
@@ -6708,7 +6685,6 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
       ctx.stroke();
       ctx.lineCap = "butt";
     }
-  }
   }
   // 🌟 elitní korunka - barva podle vlastnosti (⚡ rychlá / 💥 výbuch / 🩸 léčivá / 🛡️ štít)
   if (e.elite) {
@@ -8252,6 +8228,188 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.lineTo(a.x - Math.cos(ang + 0.7) * 13, a.y - Math.sin(ang + 0.7) * 13);
       ctx.stroke();
     }
+  }
+
+  // ✈️💣☄️ létající vrstva - bombardér, padající bomby a meteor (nad hrdinou)
+  for (const pl of g.planes) {
+    ctx.save();
+    ctx.translate(pl.x, pl.y + Math.sin(pl.t * 2.2) * 5);
+    ctx.scale(Math.sign(pl.vx) || 1, 1);
+    // kouřová stopa za křídly
+    const tr = ctx.createLinearGradient(-170, 0, -46, 0);
+    tr.addColorStop(0, "rgba(255,255,255,0)");
+    tr.addColorStop(1, "rgba(255,255,255,0.25)");
+    ctx.fillStyle = tr;
+    ctx.beginPath();
+    ctx.moveTo(-46, -4);
+    ctx.lineTo(-170, -9);
+    ctx.lineTo(-170, 9);
+    ctx.lineTo(-46, 4);
+    ctx.closePath();
+    ctx.fill();
+    // ocasní plochy
+    ctx.fillStyle = "#3a472a";
+    ctx.beginPath();
+    ctx.moveTo(-42, -2);
+    ctx.lineTo(-56, -20);
+    ctx.lineTo(-44, -20);
+    ctx.lineTo(-30, -4);
+    ctx.closePath();
+    ctx.fill();
+    // trup
+    ctx.fillStyle = "#4d5d38";
+    ctx.beginPath();
+    ctx.moveTo(-48, 0);
+    ctx.quadraticCurveTo(-42, -9, -8, -8);
+    ctx.quadraticCurveTo(30, -7, 54, -3);
+    ctx.quadraticCurveTo(60, 0, 54, 3);
+    ctx.quadraticCurveTo(30, 7, -8, 8);
+    ctx.quadraticCurveTo(-42, 9, -48, 0);
+    ctx.closePath();
+    ctx.fill();
+    // spodní křídlo (viděné z horní půlky)
+    ctx.fillStyle = "#3a472a";
+    ctx.beginPath();
+    ctx.moveTo(-8, 2);
+    ctx.lineTo(12, 24);
+    ctx.lineTo(26, 24);
+    ctx.lineTo(8, 2);
+    ctx.closePath();
+    ctx.fill();
+    // horní křídlo
+    ctx.fillStyle = "#5c6d44";
+    ctx.beginPath();
+    ctx.moveTo(-10, -2);
+    ctx.lineTo(6, -22);
+    ctx.lineTo(20, -22);
+    ctx.lineTo(6, -2);
+    ctx.closePath();
+    ctx.fill();
+    // kokpit
+    ctx.fillStyle = "#9fd6e8";
+    ctx.beginPath();
+    ctx.ellipse(28, -4, 10, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // vrtule - točený blur
+    const pr = Math.sin(g.gtime * 46) * 11;
+    ctx.strokeStyle = "rgba(28,32,22,0.8)";
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(54, -pr);
+    ctx.lineTo(54, pr);
+    ctx.stroke();
+    // blikající navigační světýlko
+    ctx.fillStyle = `rgba(248,180,60,${0.45 + 0.5 * Math.sin(g.gtime * 7)})`;
+    ctx.beginPath();
+    ctx.arc(10, 3, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  for (const b of g.bombs) {
+    if (b.t < 0) continue;
+    const dir = Math.atan2(b.ty - b.sy, b.tx - b.sx);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(dir - Math.PI / 2); // dlouhá osa bomby ve směru letu
+    // šedý motion streak nad bombou
+    ctx.fillStyle = "rgba(120,113,100,0.32)";
+    ctx.beginPath();
+    ctx.moveTo(-3.2, -9);
+    ctx.lineTo(3.2, -9);
+    ctx.lineTo(1.6, -36);
+    ctx.lineTo(-1.6, -36);
+    ctx.closePath();
+    ctx.fill();
+    // tělo bomby
+    ctx.fillStyle = "#3f3f2e";
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 4.6, 8.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // ocasní plůtky
+    ctx.fillStyle = "#57533a";
+    ctx.beginPath();
+    ctx.moveTo(-4.2, -6.5);
+    ctx.lineTo(-7.4, -13);
+    ctx.lineTo(-1.4, -8);
+    ctx.closePath();
+    ctx.moveTo(4.2, -6.5);
+    ctx.lineTo(7.4, -13);
+    ctx.lineTo(1.4, -8);
+    ctx.closePath();
+    ctx.fill();
+    // odlesk na boku
+    ctx.fillStyle = "rgba(255,255,255,0.32)";
+    ctx.beginPath();
+    ctx.ellipse(-1.5, 2.5, 1.4, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  for (const m of g.meteors) {
+    const f = Math.min(1, Math.max(0, m.t / m.dur));
+    // terč na zemi - pulzující ohnivý kruh, kam meteor dopadne
+    const ir = 70 + f * 30 + 3 * Math.sin(g.gtime * 9);
+    ctx.fillStyle = `rgba(251,146,60,${0.1 + f * 0.2})`;
+    ctx.beginPath();
+    ctx.arc(m.tx, m.ty, ir, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(251,146,60,0.9)";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([14, 10]);
+    ctx.lineDashOffset = -g.gtime * 60;
+    ctx.beginPath();
+    ctx.arc(m.tx, m.ty, ir, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+    // letící balvan
+    const dir = Math.atan2(m.ty - m.sy, m.tx - m.sx);
+    ctx.save();
+    ctx.translate(m.x, m.y);
+    ctx.rotate(dir);
+    // vnější záře
+    const gr = ctx.createRadialGradient(0, 0, 2, 0, 0, 36);
+    gr.addColorStop(0, "rgba(255,190,80,0.85)");
+    gr.addColorStop(0.5, "rgba(255,120,30,0.35)");
+    gr.addColorStop(1, "rgba(255,80,10,0)");
+    ctx.fillStyle = gr;
+    ctx.beginPath();
+    ctx.arc(0, 0, 36, 0, Math.PI * 2);
+    ctx.fill();
+    // plamenová aura tryskající za balvanem
+    ctx.fillStyle = "rgba(255,140,40,0.5)";
+    const fl = 8 * Math.sin(g.gtime * 30);
+    ctx.beginPath();
+    ctx.moveTo(10, 0);
+    ctx.quadraticCurveTo(-6, -14, -34 - fl, -4);
+    ctx.quadraticCurveTo(-20, 0, -34 + fl, 5);
+    ctx.quadraticCurveTo(-6, 14, 10, 0);
+    ctx.closePath();
+    ctx.fill();
+    // kamenné tělo - nepravidelný balvan
+    ctx.fillStyle = "#44302a";
+    ctx.beginPath();
+    ctx.moveTo(12, 0);
+    ctx.quadraticCurveTo(10, -10, 1, -12);
+    ctx.quadraticCurveTo(-8, -13, -11, -4);
+    ctx.quadraticCurveTo(-13, 5, -6, 11);
+    ctx.quadraticCurveTo(2, 14, 9, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#2b1d19";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    // rozžhavené trhliny v kameni
+    ctx.strokeStyle = `rgba(255,${Math.round(120 + 60 * Math.sin(g.gtime * 18))},30,0.95)`;
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(9, 4);
+    ctx.lineTo(1, 0);
+    ctx.lineTo(4, -7);
+    ctx.moveTo(-4, 8);
+    ctx.lineTo(-7, 0);
+    ctx.lineTo(-10, 5);
+    ctx.stroke();
+    ctx.restore();
   }
 
   // hrdina
@@ -10675,6 +10833,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

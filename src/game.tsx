@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.9.0";
+const GAME_VERSION = "1.10.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -424,6 +424,7 @@ type Game = {
   bossKills: number;
   crownsEarned: number; // 👑 koruny připsané během runu (čekají na zápis do mety)
   weaponBonus: number; // 🎒 extra sloty zbraní ze stromu dovedností (základ = 1 zbraň)
+  allWeapons: boolean; // 🔓 speciál stromu: zrušené třídní omezení zbraní (fyz vs. magie)
   seedBonus?: number;   // 👑 Koruna louky - násobitel výdělku semínek
   nextBoss: number;
   bossWarned: boolean;
@@ -1998,6 +1999,7 @@ type TreeNode = {
   max: number;
   parent?: string;   // odkud vede čára - musí být aspoň Lv 1
   special?: boolean; // true = stojí 👑 korunu místo semínek, jen 1×
+  crownCost?: number; // kolik 👑 korun speciál stojí (výchozí 1)
   base: number;      // cena v semíncích (první level), každý další + growth
   growth: number;
   pos: [number, number]; // pozice ve stromu v % (x, y), střed boxu
@@ -2016,6 +2018,7 @@ const TREE_SPECIALS: TreeNode[] = [
   { id: "t_home", emoji: "🧿", name: "Vládce střel", per: "+30 % navádění", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.stats.home = Math.min(1, g.stats.home + 0.3); } },
   { id: "t_phoenix", emoji: "🕊️", name: "Fénixovo srdce", per: "1× oživení za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.revive = true; } },
   { id: "t_crown", emoji: "👑", name: "Koruna louky", per: "+15 % semínek za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
+  { id: "t_allwpn", emoji: "🔓", name: "Všechny zbraně", per: "zruší třídní omezení zbraní (ne pro inženýra)", max: 1, special: true, crownCost: 3, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.allWeapons = true; } },
 ];
 
 const TREE_ALL: TreeNode[] = [...TREE_NODES, ...TREE_SPECIALS];
@@ -2116,7 +2119,7 @@ const LANG: Record<string, Record<string, string>> = {
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
     tree_note: "🌳 Do runu bereš jen 1 zbraň. Síla 💪 (5× +20 % dmg) a sloty na další zbraně 🎒 kupuješ tady za semínka. ✨ Zlaté upgrady stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
-    specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
+    specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
     reset_w1: "⚠️ OPRAVDU? Smažou se upgrady, semínka i koruny! (potvrď 2×)",
     reset_w2: "😱 POSLEDNÍ ŠANCE — po kliknutí už nic nevrátíš!",
@@ -2203,7 +2206,7 @@ const LANG: Record<string, Record<string, string>> = {
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
     tree_note: "🌳 You take only 1 weapon per run. Strength 💪 (5× +20 % dmg) and slots for extra weapons 🎒 are bought here with seeds. ✨ Golden upgrades cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
     tree_max: "✅ done",
-    specials_note: "✨ Golden upgrades are one-time and permanent. They cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
+    specials_note: "✨ Golden upgrades are one-time and permanent. They cost 👑 crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
     reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
     reset_w1: "⚠️ REALLY? Upgrades, seeds and crowns will be wiped! (confirm 2×)",
     reset_w2: "😱 LAST CHANCE — there is no undo after this!",
@@ -2290,7 +2293,7 @@ const LANG: Record<string, Record<string, string>> = {
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
     tree_note: "🌳 Na run bierzesz tylko 1 broń. Siła 💪 (5× +20 % obrażeń) i sloty na dodatkowe bronie 🎒 kupujesz tutaj za nasiona. ✨ Złote ulepszenia kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
-    specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
+    specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
     reset_w1: "⚠️ NAPRAWDĘ? Skasują się ulepszenia, nasiona i korony! (potwierdź 2×)",
     reset_w2: "😱 OSTATNIA SZANSA — po kliknięciu nie ma odwrotu!",
@@ -2410,6 +2413,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     bossKills: 0,
     crownsEarned: 0,
     weaponBonus: 0,
+    allWeapons: false,
     nextBoss: 75,
     bossWarned: false,
     minibKills: 0,
@@ -3641,13 +3645,14 @@ function weaponAvail(g: Game, id: string): boolean {
 }
 
 // classa povoluje jen své karty - fyzické classy neberou magii a naopak
+// (🔓 speciál "Všechny zbraně" třídní omezení zbraní ruší; inženýr zbraně nebere nikdy)
 function upgradeAllowed(g: Game, u: Upgrade): boolean {
   const cls = CLASSES.find((c) => c.id === g.cls) || CLASSES[0];
   if (u.id.startsWith("w_")) {
     // ⚙️ inženýr si žádné zbraně nebere - bojují za něj turetky (max 3)
     if (g.cls === "engineer") return false;
     const def = WEAPONS[u.id.slice(2)];
-    if (def) {
+    if (def && !g.allWeapons) {
       if (!cls.magic && def.magic) return false;
       if (cls.magic && !def.magic) return false;
     }
@@ -8863,11 +8868,11 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
         })}
       </div>
       {/* ✨ speciální upgrady za 👑 koruny z finálních bossů */}
-      <div className="grid w-full max-w-3xl grid-cols-3 gap-2">
+      <div className="grid w-full max-w-3xl grid-cols-2 gap-2 sm:grid-cols-4">
         {TREE_SPECIALS.map((tn) => {
           const sl = lvl(tn.id);
           const smaxed = sl >= tn.max;
-          const scan = !smaxed && (meta.crowns || 0) >= 1;
+          const scan = !smaxed && (meta.crowns || 0) >= (tn.crownCost || 1);
           return (
             <div
               key={tn.id}
@@ -8887,7 +8892,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
                     : "border border-white/10 bg-white/5 text-white/30"
                 }`}
               >
-                {smaxed ? trk("tree_max") : "👑 1"}
+                {smaxed ? trk("tree_max") : "👑 " + (tn.crownCost || 1)}
               </button>
             </div>
           );
@@ -9135,10 +9140,11 @@ function LoukaTisicePriser() {
     if (l >= tn.max) return;
     if (tn.parent && (meta.tree?.[tn.parent] || 0) < 1) return;
     if (tn.special) {
-      if ((meta.crowns || 0) < 1) return;
+      const cc = tn.crownCost || 1;
+      if ((meta.crowns || 0) < cc) return;
       playSfx(gameRef.current, "buy");
       setMeta((m) => {
-        const nm = { ...m, crowns: (m.crowns || 0) - 1, tree: { ...(m.tree || {}), [id]: 1 } };
+        const nm = { ...m, crowns: (m.crowns || 0) - cc, tree: { ...(m.tree || {}), [id]: 1 } };
         saveMeta(nm);
         return nm;
       });
@@ -10669,6 +10675,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

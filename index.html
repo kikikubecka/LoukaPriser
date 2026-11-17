@@ -2449,7 +2449,7 @@ function musicTick(g) {
         }
       }
     }
-    // 🌋ˠBITEVNÍ INTENZITA 0-3: čím víc nepřátel na louce, tím víc válečných vrstev hudby
+    // 🌋 BITEVNÍ INTENZITA 0-3: čím víc nepřátel na louce, tím víc válečných vrstev hudby
     // (10+ brass staby, 20+ marš + zdvojený lead, 40+ plná vřava a zrychlení) - boss řve vždy naplno
     const bossOn = song === SONG_BOSS || song === SONG_FINAL;
     const fury = bossOn ? 3 : g.opts.surp ? 0 : g.enemies.length >= 40 ? 3 : g.enemies.length >= 20 ? 2 : g.enemies.length >= 10 ? 1 : 0;

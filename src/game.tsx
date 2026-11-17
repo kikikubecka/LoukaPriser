@@ -1,9 +1,8 @@
-
 // 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.2.0";
+const GAME_VERSION = "1.3.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -1620,7 +1619,7 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
   const d = ENEMY_DEFS[kind];
   // endgame křivka: po 5. minutách HP roste výrazně rychleji (obtížnost ji násobí)
   const df = DIFFS[g.diff] || DIFFS[1];
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp;
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5;
   // 🌟 elitní varianta: po minutě 6 % šance na korunku s náhodnou vlastností (3× HP, víc dropů)
   // korunky nedostanou podpůrné druhý (květomil by dvojitě léčil, dravec by byl nezabitelný) a na mapě je jich max 4
   let eliteCount = 0;
@@ -1642,7 +1641,7 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
     hp: d.hp * hpMul * eMul,
     maxHp: d.hp * hpMul * eMul,
     speed: d.speed,
-    dmg: Math.round(d.dmg * (1 + t / 700) * (elite ? 1.3 : 1) * df.dmg),
+    dmg: Math.round(d.dmg * (1 + t / 700) * (elite ? 1.3 : 1) * df.dmg * 1.4),
     hue: d.hue,
     big: d.big,
     flash: 0,
@@ -1667,13 +1666,13 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
 function spawnEliteWave(g: Game): void {
   const t = g.time;
   const df = DIFFS[g.diff] || DIFFS[1];
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp;
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5;
   const a = Math.random() * Math.PI * 2;
   const dd = (Math.hypot(VW, VH) / 2) * 1.1 + 60;
   const cx = Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
   const cy = Math.max(40, Math.min(ARENA - 40, g.hero.y + Math.sin(a) * dd));
   addText(g, cx, cy - 34, "⚠️ ELITNÍ VLNA!", 280, 20);
-  const n = Math.min(8, 3 + Math.floor(t / 240));
+  const n = Math.min(5, 2 + Math.floor(t / 300));
   for (let i = 0; i < n; i++) {
     g.enemies.push({
       id: g.nextId++,
@@ -1683,7 +1682,7 @@ function spawnEliteWave(g: Game): void {
       hp: 190 * hpMul,
       maxHp: 190 * hpMul,
       speed: 85,
-      dmg: Math.round(28 * (1 + t / 700) * df.dmg),
+      dmg: Math.round(28 * (1 + t / 700) * df.dmg * 1.4),
       hue: 265,
       big: true,
       flash: 0,
@@ -4887,12 +4886,13 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
 
   // spawn ředitel (během bosse se běžní nepřátelé nerozmnožují; déšť = rychlejší porod)
   g.spawnT -= dt;
-  const interval = Math.max(0.12, ((1.05 - g.time * 0.005) / 3) * (g.weather === "rain" ? 0.6 : 1));
-  if (g.spawnT <= 0 && g.enemies.length < (g.time > 600 ? 60 : 80) && !g.arena.active) {
+  // 👇 míň nepřátel, ale každý je tvrdší: pomalejší porod + nižší strop + vzácnější dvojité spawny
+  const interval = Math.max(0.12, ((1.05 - g.time * 0.005) / 4.8) * (g.weather === "rain" ? 0.6 : 1));
+  if (g.spawnT <= 0 && g.enemies.length < (g.time > 600 ? 45 : 55) && !g.arena.active) {
     g.spawnT = interval;
     spawnEnemy(g);
-    // od začátku bývá živo - dvojité spawny s rostoucí šancí
-    if (Math.random() < Math.min(0.9, 0.3 + g.time * 0.003)) spawnEnemy(g);
+    // od začátku bývá živo - dvojité spawny s rostoucí šancí (ale řidčeji než dřív)
+    if (Math.random() < Math.min(0.55, 0.12 + g.time * 0.002)) spawnEnemy(g);
   }
 
   // 🌟 elitní vlna - po 3. minutě každých 35 s přibude skupina extra silných nepřátel (pakt lovce častěji)
@@ -10456,6 +10456,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

@@ -1,8 +1,10 @@
+import React, { useCallback, useEffect, useRef, useState } from "react";
+
 // 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.3.0";
+const GAME_VERSION = "1.4.0";
 const GAME_BUILD = "17. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -297,8 +299,8 @@ const CLASSES: HeroClass[] = [
   },
 ];
 
-// 🔓 classy se odemykají za semínka (první tři jsou zadarmo)
-const CLS_FREE = ["archer", "soldier", "mage"];
+// 🔓 classy se odemykají za semínka - všechny jsou teď zadarmo, ať si každou vyzkoušíš hned
+const CLS_FREE = ["archer", "soldier", "ninja", "knight", "mage", "engineer"];
 const CLS_UNLOCK_COST = 600;
 function clsUnlocked(meta: Meta, id: string): boolean {
   return CLS_FREE.includes(id) || !!meta.unlock?.[id];
@@ -2000,7 +2002,8 @@ const META_UPGRADES: MetaUp[] = [
   { id: "arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+0,5 % zbroje", base: 400, growth: 180, now: (l) => `Celkem +${(l * 0.5).toFixed(1)} % zbroje`, apply: (g, l) => { g.stats.armor += 0.005 * l; } },
 ];
 
-const metaCost = (mu: MetaUp, lvl: number) => mu.base + mu.growth * lvl;
+// 💰 trvalá vylepšení jsou náročnější: ceny ×1,7 (každý další level pořád dražší)
+const metaCost = (mu: MetaUp, lvl: number) => Math.round((mu.base + mu.growth * lvl) * 1.7);
 
 // ⚡ ULTIMÁTNÍ SCHOPNOSTI - každá classa má jednu (klávesa E), cooldown 26-38 s
 const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: number }> = {
@@ -10456,6 +10459,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

@@ -4,8 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.11.0";
-const GAME_BUILD = "17. 11. 2026";
+const GAME_VERSION = "1.12.0";
+const GAME_BUILD = "18. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -388,6 +388,8 @@ type Game = {
     angle: number;
     slowT: number;
     poisT: number;
+    invis: number;
+    shieldT: number;
   };
   weapons: WSlot[];
   cls: string;
@@ -1597,7 +1599,7 @@ function spawnOrb(g: Game, x: number, y: number, xp: number, pk = 0): void {
   });
 }
 
-function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
+function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = false): void {
   const t = g.time;
   // výběr typu podle času s váhami - odemykají se dřív, od začátku je živo
   const opts: number[] = [0];
@@ -1635,8 +1637,9 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
   if (forceKind >= 0) kind = forceKind;
   const d = ENEMY_DEFS[kind];
   // endgame křivka: po 5. minutách HP roste výrazně rychleji (obtížnost ji násobí)
+  // 💪 v1.12: nepřátel je na louce polovina, ale každý má 4× HP a 3× dmg
   const df = DIFFS[g.diff] || DIFFS[1];
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5;
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
   // 🌟 elitní varianta: po minutě 6 % šance na korunku s náhodnou vlastností (3× HP, víc dropů)
   // korunky nedostanou podpůrné druhý (květomil by dvojitě léčil, dravec by byl nezabitelný) a na mapě je jich max 4
   let eliteCount = 0;
@@ -1658,7 +1661,7 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
     hp: d.hp * hpMul * eMul,
     maxHp: d.hp * hpMul * eMul,
     speed: d.speed,
-    dmg: Math.round(d.dmg * (1 + t / 700) * (elite ? 1.3 : 1) * df.dmg * 1.4),
+    dmg: Math.round(d.dmg * (1 + t / 700) * (elite ? 1.3 : 1) * df.dmg * 1.4 * 3),
     hue: d.hue,
     big: d.big,
     flash: 0,
@@ -1677,13 +1680,22 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number): void {
     phase: 1,
   });
   if (elite) playSfx(g, "elite");
+  // 🎯 střílející druhy chodí ve skupinkách - k vládci houfu se zblízka připojí 2 kolegové
+  // (elitní vlna má svůj spawner, sandbox a vynucený spawn zůstávají jednotlivé)
+  if (!noPack && forceKind < 0 && !g.sandbox && d.ranged && kind !== 9) {
+    for (let i = 0; i < 2; i++) {
+      spawnEnemy(g, kind, ex + (Math.random() - 0.5) * 80, ey + (Math.random() - 0.5) * 80, true);
+    }
+    addText(g, ex, ey - 34, "🎯", 0, 13);
+  }
 }
 
 // 🌟 elitní vlna - skupina extra silných střílejících nepřátel (kind 9)
 function spawnEliteWave(g: Game): void {
   const t = g.time;
   const df = DIFFS[g.diff] || DIFFS[1];
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5;
+  // 💪 v1.12: elitní vlna drží 4× HP
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
   const a = Math.random() * Math.PI * 2;
   const dd = (Math.hypot(VW, VH) / 2) * 1.1 + 60;
   const cx = Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
@@ -1699,7 +1711,7 @@ function spawnEliteWave(g: Game): void {
       hp: 190 * hpMul,
       maxHp: 190 * hpMul,
       speed: 85,
-      dmg: Math.round(28 * (1 + t / 700) * df.dmg * 1.4),
+      dmg: Math.round(28 * (1 + t / 700) * df.dmg * 1.4 * 3),
       hue: 265,
       big: true,
       flash: 0,
@@ -1725,7 +1737,8 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const t = g.time;
   // druh bosse se střídá podle počtu zabiték (v sandboxu lze vynutit konkrétní druh)
   const isFinal = forceFinal || g.bossKills % 3 === 2;
-  const bt = forceType >= 0 ? BOSS_TYPES[forceType] : BOSS_TYPES[g.bossKills % BOSS_TYPES.length];
+  // 🎲 druh bosse je čistě náhodný (dřív šel pevně v pořadí - první finální boss byla vždy mumie)
+  const bt = forceType >= 0 ? BOSS_TYPES[forceType] : BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
   // 🏟️ boss aréna kolem hrdiny - nikdo neuteče (zvětšená o polovinu: 330 → 495)
   const ar = 495;
   g.arena = { x: g.hero.x, y: g.hero.y, r: ar, active: true };
@@ -1755,7 +1768,8 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const x = Math.max(60, Math.min(ARENA - 60, g.arena.x + Math.cos(a) * (ar - 40)));
   const y = Math.max(60, Math.min(ARENA - 60, g.arena.y + Math.sin(a) * (ar - 40)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
-  const hp = (260 + t * 3 + g.bossKills * 90) * 5 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
+  // 💪 bossové drží krok s ostatními: 4× HP (5→20) a 3× dmg
+  const hp = (260 + t * 3 + g.bossKills * 90) * 20 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
     x,
@@ -1764,7 +1778,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
     hp,
     maxHp: hp,
     speed: bt.speed * (isFinal ? 1.12 : 1),
-    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg),
+    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 3),
     hue: bt.hue,
     big: true,
     flash: 0,
@@ -1791,7 +1805,8 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
 function spawnMini(g: Game, typeIdx = -1): void {
   const t = g.time;
   const mt = MINI_TYPES[typeIdx >= 0 ? typeIdx : Math.floor(Math.random() * MINI_TYPES.length)];
-  const hp = 95 + t * 1.8 + g.bossKills * 40;
+  // 💪 i mini-boss: 4× HP a 3× dmg
+  const hp = (95 + t * 1.8 + g.bossKills * 40) * 4;
   const a = Math.random() * Math.PI * 2;
   const dd = (Math.hypot(VW, VH) / 2) * 1.05 + 40;
   const x = Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
@@ -1804,7 +1819,7 @@ function spawnMini(g: Game, typeIdx = -1): void {
     hp,
     maxHp: hp,
     speed: mt.speed,
-    dmg: 15 + t * 0.04,
+    dmg: Math.round((15 + t * 0.04) * 3),
     hue: mt.hue,
     big: true,
     flash: 0,
@@ -2017,11 +2032,23 @@ type TreeNode = {
   apply: (g: Game, lvl: number) => void;
 };
 
+// 🌳 v1.12: strom se rozlézá do všech stran od Síly 💪 v čele - na každé větvi visí
+// jeden bývalý MetaShop upgrade, všechno jde koupit 5× po +20 % (jen korunové speciály zůstávají 1×)
 const TREE_NODES: TreeNode[] = [
-  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 22], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
-  // 🎒 větev zbraní - do runu bereš 1 zbraň zdarma, další 2 sloty se kupují tady (celkem max 3 jako dřív)
-  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [30, 78], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
-  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [70, 78], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 46], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  // 🌿 horní koruna: houževnatost
+  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 10], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
+  // 🌿 levá koruna: tvrdá kůže → sběrná síla → rychlost nohou
+  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [17, 26], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
+  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [12, 56], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
+  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [17, 84], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
+  // 🌿 pravá koruna: moudrost → střelecké oko → rychlé ruce
+  { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [83, 26], apply: (g, l) => { g.xpMul += 0.2 * l; } },
+  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit šance", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [88, 56], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
+  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [83, 84], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
+  // 🎒 dolní větev: sloty na zbraně
+  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [38, 90], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [62, 90], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
 ];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -2041,10 +2068,10 @@ const treeCost = (tn: TreeNode, lvl: number) => Math.round(tn.base + tn.growth *
 const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: number }> = {
   archer: { emoji: "🏹", name: "Déšť šípů", desc: "~20 šípů padá z nebe na netvory kolem tebe", cd: 30 },
   soldier: { emoji: "🎖️", name: "Náletek", desc: "bombardér přeletí louku a shodí 6 bomb kolem tebe", cd: 30 },
-  ninja: { emoji: "🥷", name: "Stínová záměna", desc: "12 šurikenů do kruhu + mizej", cd: 26 },
-  knight: { emoji: "🛡️", name: "Štítová vlna", desc: "odhodí vše živé + 2 s nezranitelnost", cd: 32 },
+  ninja: { emoji: "🥷", name: "Stínová záměna", desc: "3 s neviditelnosti - nepřátelé tě nenajdou, ale ty útočíš 3× silněji", cd: 26 },
+  knight: { emoji: "🛡️", name: "Štítová zeď", desc: "5 s nesmrtelnosti se štítem, ale pohyb máš poloviční", cd: 32 },
   mage: { emoji: "☄️", name: "Meteor", desc: "dopadne na netvora: 160 dmg do okolí", cd: 30 },
-  engineer: { emoji: "⚙️", name: "Nadstandard", desc: "3 turetky hned + plné výdrže", cd: 38 },
+  engineer: { emoji: "⚙️", name: "Šestiboj", desc: "položí 6 turetek najednou (mimo ult se staví jen do max 3 na mapě)", cd: 38 },
 };
 
 // 🌍 JAZYKY HRY - čeština, angličtina, polština; výběr perzistuje se do mety
@@ -2128,7 +2155,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
-    tree_note: "🌳 Do runu bereš jen 1 zbraň. Síla 💪 (5× +20 % dmg) a sloty na další zbraně 🎒 kupuješ tady za semínka. ✨ Zlaté upgrady stojí 👑 korunu — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
+    tree_note: "🌳 Strom se rozlézá do všech stran od Síly 💪 - každý uzel kupuješ 5× po +20 % (dmg, HP, zbroj, sběr, rychlost, XP, crit, kadence). Sloty na další zbraně 🎒 jsou dole. ✨ Zlaté speciály stojí 👑 korunu z finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
     specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
@@ -2141,10 +2168,10 @@ const LANG: Record<string, Record<string, string>> = {
     cls_archer: "Lučištník", cls_soldier: "Voják", cls_ninja: "Ninja", cls_knight: "Rytíř", cls_mage: "Mág", cls_engineer: "Inženýr",
     dsc_archer: "⚔️ Fyzické zbraně, vyšší kadence",
     dsc_soldier: "⚔️ Pistole od startu, +10 % kadence, zbroj",
-    dsc_ninja: "⚔️ Šurikeny od startu, +25 % rychlost · 🌫️ Stínový úhyb: úhyb = 0,55 s nezranitelnost",
-    dsc_knight: "⚔️ Meč na blízko, velká zbroj · 🛡️ Železná disciplína: vestoj = −40 % zranění",
+    dsc_ninja: "⚔️ Šurikeny od startu, +25 % rychlost · 🌫️ Stínový úhyb · 🥷 Ult: 3 s neviditelnost a 3× dmg",
+    dsc_knight: "⚔️ Meč na blízko, velká zbroj · 🛡️ Ult: 5 s nesmrtelnosti se štítem, ale −50 % rychlost",
     dsc_mage: "🪄 Blesk od startu, +15 % rychlosti",
-    dsc_engineer: "🛡️ Pokládá turetky (max 3), žádné zbraně - bojují za něj. Karty odemykají nové druhy, normální upgrady zlepšují turetky",
+    dsc_engineer: "🛡️ Turetky bojují za něj (běžně max 3 na mapě) - ult jich mimo limit položí 6 najednou. Karty odemykají nové druhy",
     wpn_bow: "Luk", wpn_darts: "Šipky", wpn_knives: "Nože", wpn_shotgun: "Brokovnice", wpn_mg: "Kulomet", wpn_pistol: "Pistole", wpn_fireball: "Ohnivá koule", wpn_frost: "Mrazík", wpn_lightning: "Blesk", wpn_flamethrower: "Plamenomet", wpn_shuriken: "Šurikeny", wpn_sword: "Meč", wpn_splinters: "Třísky", wpn_turret: "Turetka",
   },
   en: {
@@ -2215,7 +2242,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
-    tree_note: "🌳 You take only 1 weapon per run. Strength 💪 (5× +20 % dmg) and slots for extra weapons 🎒 are bought here with seeds. ✨ Golden upgrades cost a 👑 crown — you get one for every FINAL boss you kill (every third boss).",
+    tree_note: "🌳 The tree spreads in all directions from Strength 💪 — every node can be bought 5× for +20 % each (dmg, HP, armor, magnet, speed, XP, crit, fire rate). Extra weapon slots 🎒 sit at the bottom. ✨ Golden upgrades cost a 👑 crown from a FINAL boss (every third boss).",
     tree_max: "✅ done",
     specials_note: "✨ Golden upgrades are one-time and permanent. They cost 👑 crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
     reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
@@ -2228,10 +2255,10 @@ const LANG: Record<string, Record<string, string>> = {
     cls_archer: "Archer", cls_soldier: "Soldier", cls_ninja: "Ninja", cls_knight: "Knight", cls_mage: "Mage", cls_engineer: "Engineer",
     dsc_archer: "⚔️ Physical weapons, higher fire rate",
     dsc_soldier: "⚔️ Pistol from the start, +10 % fire rate, armor",
-    dsc_ninja: "⚔️ Shurikens from the start, +25 % speed · 🌫️ Shadow Dodge: dash = 0.55 s invulnerability",
-    dsc_knight: "⚔️ Melee sword, heavy armor · 🛡️ Iron Discipline: standing still = −40 % damage taken",
+    dsc_ninja: "⚔️ Shurikens from the start, +25 % speed · 🌫️ Shadow Dodge · 🥷 Ult: 3 s invisibility with 3× damage",
+    dsc_knight: "⚔️ Melee sword, heavy armor · 🛡️ Ult: 5 s immortality behind the shield, but −50 % speed",
     dsc_mage: "🪄 Lightning from the start, +15 % speed",
-    dsc_engineer: "🛡️ Deploys turrets (max 3), no weapons — they fight for him. Cards unlock new kinds, regular upgrades power the turrets",
+    dsc_engineer: "🛡️ Turrets fight for him (max 3 on the map) — the ult drops 6 at once. Cards unlock new kinds",
     wpn_bow: "Bow", wpn_darts: "Darts", wpn_knives: "Knives", wpn_shotgun: "Shotgun", wpn_mg: "Machine gun", wpn_pistol: "Pistol", wpn_fireball: "Fireball", wpn_frost: "Frost bolt", wpn_lightning: "Lightning", wpn_flamethrower: "Flamethrower", wpn_shuriken: "Shurikens", wpn_sword: "Sword", wpn_splinters: "Splinters", wpn_turret: "Turret",
   },
   pl: {
@@ -2302,7 +2329,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
-    tree_note: "🌳 Na run bierzesz tylko 1 broń. Siła 💪 (5× +20 % obrażeń) i sloty na dodatkowe bronie 🎒 kupujesz tutaj za nasiona. ✨ Złote ulepszenia kosztują 👑 koronę — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
+    tree_note: "🌳 Drzewo rozchodzi się we wszystkie strony od Siły 💪 — każdy węzeł kupujesz 5× po +20 % (obrażenia, HP, pancerz, magnes, szybkość, XP, crit, kadencja). Sloty na dodatkowe bronie 🎒 są na dole. ✨ Złote ulepszenia kosztują 👑 koronę z FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
     specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
@@ -2315,10 +2342,10 @@ const LANG: Record<string, Record<string, string>> = {
     cls_archer: "Łucznik", cls_soldier: "Żołnierz", cls_ninja: "Ninja", cls_knight: "Rycerz", cls_mage: "Mag", cls_engineer: "Inżynier",
     dsc_archer: "⚔️ Fizyczne bronie, wyższa kadencja",
     dsc_soldier: "⚔️ Pistolet od startu, +10 % kadencji, pancerz",
-    dsc_ninja: "⚔️ Shurikeny od startu, +25 % szybkości · 🌫️ Unik w cień: unik = 0,55 s nietykalności",
-    dsc_knight: "⚔️ Miecz w zwarciu, duży pancerz · 🛡️ Żelazna dyscyplina: stanie w miejscu = −40 % obrażeń",
+    dsc_ninja: "⚔️ Shurikeny od startu, +25 % szybkości · 🌫️ Unik w cień · 🥷 Ult: 3 s niewidzialność i 3× obrażenia",
+    dsc_knight: "⚔️ Miecz w zwarciu, duży pancerz · 🛡️ Ult: 5 s nieśmiertelności za tarczą, ale −50 % szybkości",
     dsc_mage: "🪄 Błyskawica od startu, +15 % szybkości",
-    dsc_engineer: "🛡️ Stawia wieżyczki (maks. 3), bez broni — walczą za niego. Karty odblokowują nowe rodzaje, zwykłe ulepszenia wzmacniają wieżyczki",
+    dsc_engineer: "🛡️ Wieżyczki walczą za niego (maks. 3 na mapie) — ult stawia 6 naraz. Karty odblokowują nowe rodzaje",
     wpn_bow: "Łuk", wpn_darts: "Lotki", wpn_knives: "Noże", wpn_shotgun: "Strzelba", wpn_mg: "Karabin maszynowy", wpn_pistol: "Pistolet", wpn_fireball: "Kula ognia", wpn_frost: "Mroźny pocisk", wpn_lightning: "Błyskawica", wpn_flamethrower: "Miotacz ognia", wpn_shuriken: "Shurikeny", wpn_sword: "Miecz", wpn_splinters: "Drewniane drzazgi", wpn_turret: "Wieżyczka",
   },
 };
@@ -2347,7 +2374,9 @@ const WEATHERS: Record<string, { emoji: string; name: string }> = {
 };
 // 🧮 combo bonusy: dmg i XP rostou s řetězem killů (rozpadá se po 3 s bez zabití)
 function heroDmgMul(g: Game): number {
-  return 1 + g.stats.dmgMul + Math.min(0.5, g.combo * 0.01);
+  // 🥷 stínová záměna: dokud je ninja zneviditelněný, útočí z stínu trojnásobnou silou
+  const shadow = g.cls === "ninja" && g.hero.invis > 0 ? 3 : 1;
+  return (1 + g.stats.dmgMul + Math.min(0.5, g.combo * 0.01)) * shadow;
 }
 function comboXpMul(g: Game): number {
   return 1 + Math.min(1, g.combo * 0.03);
@@ -2388,6 +2417,8 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
       angle: 0,
       slowT: 0,
       poisT: 0,
+      invis: 0,
+      shieldT: 0,
     },
     weapons: [{ id: cls.weapon, cd: 0.3, lvl: 1 }],
     cls: cls.id,
@@ -2428,7 +2459,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     crownsEarned: 0,
     weaponBonus: 0,
     allWeapons: false,
-    nextBoss: 75,
+    nextBoss: 100,
     bossWarned: false,
     minibKills: 0,
     nextMini: 40,
@@ -3545,7 +3576,8 @@ function castUlt(g: Game): void {
       //  zleva doprava a každá dopadne přesně v okamžiku, kdy její zóna vybuchne)
       const startX = h.x - VW / 2 - 80;
       const planeY = h.y - VH / 2 + 70;
-      const pvx = 560;
+      // 🐢 bombardér přeletí louku na půlku rychlosti - nálet trvá půlku déle
+      const pvx = 280;
       const tgts: { x: number; y: number }[] = [];
       for (let i = 0; i < 6; i++) {
         const a2 = (i / 6) * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
@@ -3572,9 +3604,10 @@ function castUlt(g: Game): void {
       break;
     }
     case "ninja":
-      volley(12, 10, 12, 1);
-      h.invuln = Math.max(h.invuln, 1);
-      // 🥷 kouřová bomba - fialovo-černý dým a tichá vlna
+      // 🥷 kouřová bomba: ninja se rozplyne ve stínu - 3 s ho nepřátelé nevidí,
+      // ránou se k němu nedostanou a z stínu útočí trojnásobnou silou (viz heroDmgMul)
+      h.invis = Math.max(h.invis, 3);
+      h.invuln = Math.max(h.invuln, 3);
       shock(g, h.x, h.y, 210, 275, 0.5, 8, 0.3);
       burst(g, h.x, h.y, 22, 270, 190);
       shock(g, h.x, h.y, 110, 290, 0.32, 4, 0.2);
@@ -3595,7 +3628,9 @@ function castUlt(g: Game): void {
           if (e.hp <= 0) killEnemy(g, e);
         }
       }
-      h.invuln = Math.max(h.invuln, 2);
+      // 🛡️ rytíř zvedne štítovou zeď: 5 s je nesmrtelný, ale bez spěchu (−50 % rychlost)
+      h.shieldT = Math.max(h.shieldT, 5);
+      h.invuln = Math.max(h.invuln, 5);
       // 🛡️ svatá aura - modré a blankytné prstence jako štítová bariéra
       shock(g, h.x, h.y, 380, 210, 0.6, 9, 0.2);
       shock(g, h.x, h.y, 250, 190, 0.45, 6, 0.14);
@@ -3616,21 +3651,25 @@ function castUlt(g: Game): void {
       }
       const tx = mt ? mt.x : h.x;
       const ty = mt ? mt.y : h.y;
-      // ☄️ meteor se vyvolá z nebe - přiletí šikmo zleva nahoře a dopadne až za ~0,8 s
+      // ☄️ meteor se vyvolá z nebe - přiletí šikmo zleva nahoře, nově pomalu: dopad až za ~1,6 s
       // (anticipace = cíl vidí, kam padá; výbuch + damage až při dopadu ve updateFx)
-      g.meteors.push({ sx: tx - 260, sy: ty - (VH / 2 + 140), x: tx - 260, y: ty - (VH / 2 + 140), tx, ty, t: 0, dur: 0.8, dmg: Math.round(160 * dm) });
+      g.meteors.push({ sx: tx - 260, sy: ty - (VH / 2 + 140), x: tx - 260, y: ty - (VH / 2 + 140), tx, ty, t: 0, dur: 1.6, dmg: Math.round(160 * dm) });
       playSfx(g, "meteor");
       break;
     }
     case "engineer": {
-      for (let i = 0; i < 3; i++) {
-        if (g.turrets.length >= 3) g.turrets.shift();
+      // ⚙️ Šestiboj: hrdinu obklopí 6 turetek najednou - ult je jediná výjimka z limitu,
+      // běžné pokládání (zbraň) staví jen do max 3 turetek na mapě
+      for (let i = 0; i < 6; i++) {
+        const ta = (i / 6) * Math.PI * 2;
+        const tx2 = Math.max(30, Math.min(ARENA - 30, h.x + Math.cos(ta) * 54));
+        const ty2 = Math.max(30, Math.min(ARENA - 30, h.y + Math.sin(ta) * 54));
         const ttype = g.tKinds[g.nextTid % g.tKinds.length];
         const thp = turretHp(g);
-        g.turrets.push({ x: h.x + (i - 1) * 36, y: h.y + 22, cd: 0.1, windCd: 0.5, t: 0, aim: h.angle, id: g.nextTid++, hp: thp, maxHp: thp, type: ttype });
-        burst(g, h.x + (i - 1) * 36, h.y + 22, 8, 45, 120);
+        g.turrets.push({ x: tx2, y: ty2, cd: 0.1, windCd: 0.5, t: 0, aim: h.angle, id: g.nextTid++, hp: thp, maxHp: thp, type: ttype });
+        burst(g, tx2, ty2, 8, 45, 120);
         // ⚙️ každá turetka se zrodí s jiskrovou vlnou
-        shock(g, h.x + (i - 1) * 36, h.y + 22, 95, 45, 0.4, 5, 0.2);
+        shock(g, tx2, ty2, 95, 45, 0.4, 5, 0.2);
       }
       playSfx(g, "turret");
       break;
@@ -3885,6 +3924,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   }
   // ❄️🤢 statusy hrdiny - zpomalení od ledovce a jed od vosy
   h.slowT = Math.max(0, h.slowT - dt);
+  h.invis = Math.max(0, h.invis - dt);
+  h.shieldT = Math.max(0, h.shieldT - dt);
   if (h.poisT > 0) {
     h.poisT = Math.max(0, h.poisT - dt);
     h.hp -= 3.5 * dt;
@@ -3919,7 +3960,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     vx = h.dashDir.x * HERO.dashSpeed;
     vy = h.dashDir.y * HERO.dashSpeed;
   } else {
-    const sp = HERO.speed * (1 + g.stats.speedMul) * (h.slowT > 0 ? 0.55 : 1);
+    // 🐢 rytíř se vztyčeným štítem se valí jen poloviční rychlostí (dash zůstává plný)
+    const sp = HERO.speed * (1 + g.stats.speedMul) * (h.slowT > 0 ? 0.55 : 1) * (h.shieldT > 0 ? 0.5 : 1);
     vx = move.x * sp;
     vy = move.y * sp;
   }
@@ -3951,7 +3993,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       if (w.cd <= 0) {
         // kadence urychluje i pokládání nových turetek
         w.cd = 7 / (1 + g.stats.fireMul);
-        if (g.turrets.length >= 3) g.turrets.shift();
+        // ⚙️ na mapě smí stát max 3 turetky - další postaví, až nějaká padne
+        if (g.turrets.length >= 3) { w.cd = 1.2; continue; }
         // druhy se střídají v pořadí, v jakém jsi je odemkl
         const ttype = g.tKinds[g.nextTid % g.tKinds.length];
         // ⚙️ výdrž turetek roste s časem - ať je pozdní vlny nesejmou na jeden dotek
@@ -4957,12 +5000,13 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   // spawn ředitel (během bosse se běžní nepřátelé nerozmnožují; déšť = rychlejší porod)
   g.spawnT -= dt;
   // 👇 míň nepřátel, ale každý je tvrdší: pomalejší porod + nižší strop + vzácnější dvojité spawny
-  const interval = Math.max(0.12, ((1.05 - g.time * 0.005) / 4.8) * (g.weather === "rain" ? 0.6 : 1));
-  if (g.spawnT <= 0 && g.enemies.length < (g.time > 600 ? 45 : 55) && !g.arena.active) {
+  // 👇 v1.12: netvorů polovina, ale každý je 4× tvrdší - pomalý porod, nižší strop
+  const interval = Math.max(0.12, ((1.05 - g.time * 0.005) / 9.6) * (g.weather === "rain" ? 0.6 : 1));
+  if (g.spawnT <= 0 && g.enemies.length < (g.time > 600 ? 22 : 28) && !g.arena.active) {
     g.spawnT = interval;
     spawnEnemy(g);
-    // od začátku bývá živo - dvojité spawny s rostoucí šancí (ale řidčeji než dřív)
-    if (Math.random() < Math.min(0.55, 0.12 + g.time * 0.002)) spawnEnemy(g);
+    // dvojité spawny jsou vzácnější - ať si skupinky střílejců vyniknou
+    if (Math.random() < Math.min(0.55, 0.06 + g.time * 0.001)) spawnEnemy(g);
   }
 
   // 🌟 elitní vlna - po 3. minutě každých 35 s přibude skupina extra silných nepřátel (pakt lovce častěji)
@@ -4975,9 +5019,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // boss každých 90 s
+  // boss každých 100 s (v1.12)
   if (g.time >= g.nextBoss) {
-    g.nextBoss += 90;
+    g.nextBoss += 100;
     g.bossWarned = false;
     spawnBoss(g);
   }
@@ -5202,6 +5246,34 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.beginPath();
   ctx.ellipse(h.x, h.y + 13, 12, 5, 0, 0, Math.PI * 2);
   ctx.fill();
+  // 🥷 stínová záměna - ninja v kouři je skoro nevidět
+  if (h.invis > 0) {
+    ctx.globalAlpha = 0.32 + 0.08 * Math.sin(t * 9);
+  }
+  // 🛡️ rytířova štítová zeď - velký kulatý štít se zlatým hrotem
+  if (h.shieldT > 0) {
+    const sr = 27 + Math.sin(t * 8) * 2.5;
+    ctx.save();
+    ctx.fillStyle = "rgba(59,130,246,.14)";
+    ctx.beginPath();
+    ctx.arc(h.x, y, sr + 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(96,165,250,.45)";
+    ctx.lineWidth = 7;
+    ctx.beginPath();
+    ctx.arc(h.x, y, sr + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(147,197,253,.95)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(h.x, y, sr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = "#fbbf24";
+    ctx.beginPath();
+    ctx.arc(h.x + ex * (sr - 6), y + ey * (sr - 6), 3.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   // 🎨 originální vzhled postavy - každá classa má úplně jiné tělo, hlavu i detaily
   const perpX = Math.cos(h.angle + Math.PI / 2);
   const perpY = Math.sin(h.angle + Math.PI / 2);
@@ -5870,6 +5942,8 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.fill();
     }
   }
+  // 🥷 návrat plné viditelnosti (i po vypršení záměny)
+  ctx.globalAlpha = 1;
 }
 
 // reálné barevné paleti podle druhu - netopýr hnědý srst, mumie plátno, vlk šedohnědý,
@@ -8959,7 +9033,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           👑 {meta.crowns || 0}
         </span>
       </div>
-      <div className="relative mx-auto h-[260px] w-full max-w-[380px]">
+      <div className="relative mx-auto h-[440px] w-full max-w-[420px]">
         {/* čáry mezi předchůdcem a potomkem */}
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
@@ -8989,7 +9063,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           return (
             <div
               key={tn.id}
-              className="absolute flex w-[86px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-0.5 rounded-xl border-2 p-1.5 text-center"
+              className="absolute flex w-[76px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-0.5 rounded-xl border-2 p-1.5 text-center"
               style={{
                 left: `${tn.pos[0]}%`,
                 top: `${tn.pos[1]}%`,

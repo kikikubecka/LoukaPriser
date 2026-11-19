@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.13.0";
+const GAME_VERSION = "1.13.1";
 const GAME_BUILD = "19. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -1791,7 +1791,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const x = Math.max(60, Math.min(ARENA - 60, g.arena.x + Math.cos(a) * (ar - 40)));
   const y = Math.max(60, Math.min(ARENA - 60, g.arena.y + Math.sin(a) * (ar - 40)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
-  // 💪 bossové drží krok s ostatními: 8× HP (5→40) a 12× dmg (v1.13: 2× HP a 4× dmg proti v1.12)
+  // 💪 bossové drží krok s ostatními: 8× HP (5→40, v1.13 dvojnásobek v1.12) a 3× dmg (v1.13.x zpět z 12×)
   const hp = (260 + t * 3 + g.bossKills * 90) * 40 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
@@ -1801,7 +1801,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
     hp,
     maxHp: hp,
     speed: bt.speed * (isFinal ? 1.12 : 1),
-    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 12),
+    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 3),
     hue: bt.hue,
     big: true,
     flash: 0,
@@ -1812,7 +1812,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
     slow: 0,
     lungeCd: 0,
     lungeT: 0,
-    shootCd: 0.44,
+    shootCd: 0.29,
     boss: true,
     minib: false,
     final: isFinal,
@@ -4507,7 +4507,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       if (e.shootCd <= 0) {
         // telegrafované zóny - každý druh jinak rychlý a hustý
         if (e.kind === 5) {
-          e.shootCd = 0.42 * (e.final ? 0.75 : 1) * phMul; // v1.13: bossové střílí 5× rychleji
+          e.shootCd = 0.28 * (e.final ? 0.75 : 1) * phMul; // v1.13.x: o 50 % rychleji než v1.13 (×5→×7,5 původní)
           for (let k = 0; k < (e.final ? 5 : 3); k++) {
             const tx = h.x + (Math.random() - 0.5) * 150;
             const ty = h.y + (Math.random() - 0.5) * 150;
@@ -4520,7 +4520,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 6) {
           // král duchů - rychlé drobné zóny
-          e.shootCd = 0.34 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
+          e.shootCd = 0.23 * (e.final ? 0.75 : 1) * phMul; // v1.13.x: o 50 % rychleji než v1.13
           for (let k = 0; k < (e.final ? 7 : 4); k++) {
             const tx = h.x + (Math.random() - 0.5) * 170;
             const ty = h.y + (Math.random() - 0.5) * 170;
@@ -4528,7 +4528,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 7) {
           // kanón obr - obří zóny, ale pomaleji
-          e.shootCd = 0.56 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
+          e.shootCd = 0.37 * (e.final ? 0.75 : 1) * phMul; // v1.13.x: o 50 % rychleji než v1.13
           for (let k = 0; k < (e.final ? 4 : 2); k++) {
             const tx = h.x + (Math.random() - 0.5) * 120;
             const ty = h.y + (Math.random() - 0.5) * 120;
@@ -4536,7 +4536,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 8) {
           // rozpulčák - zóny ve středním tempu
-          e.shootCd = 0.48 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
+          e.shootCd = 0.32 * (e.final ? 0.75 : 1) * phMul; // v1.13.x: o 50 % rychleji než v1.13
           const n = (e.final ? 4 : 2) + (Math.random() < 0.5 ? 1 : 0);
           for (let k = 0; k < n; k++) {
             const tx = h.x + (Math.random() - 0.5) * 150;
@@ -4544,7 +4544,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             g.telegraphs.push({ x: tx, y: ty, r: 55, t: 0, dur: 0.75, dmg: e.dmg * 0.7 });
           }
         } else {
-          e.shootCd = 0.52 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
+          e.shootCd = 0.35 * (e.final ? 0.75 : 1) * phMul; // v1.13.x: o 50 % rychleji než v1.13
           const n = (e.final ? 4 : 2) + (Math.random() < 0.4 ? 1 : 0);
           for (let k = 0; k < n; k++) {
             const tx = h.x + (Math.random() - 0.5) * 140;
@@ -5081,19 +5081,16 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // boss každých 90 s (v1.13: zpět z 100 s) - dokud žije starý boss, nový čeká
+  // boss každých 90 s (v1.13: zpět z 100 s) - vždy, i když žije starý boss
+  // (každý nový boss odročí kill-timer zase na 100 s)
   if (g.time >= g.nextBoss) {
-    if (g.arena.active) {
-      g.nextBoss = g.time + 90;
-    } else {
-      g.nextBoss += 90;
-      g.bossWarned = false;
-      spawnBoss(g);
-    }
+    g.nextBoss += 90;
+    g.bossWarned = false;
+    spawnBoss(g);
   }
 
   // ⚠️ varování 10 s před bossem - ať tě nezaskočí zelený nebe
-  if (!g.bossWarned && !g.arena.active && g.nextBoss - g.time <= 10) {
+  if (!g.bossWarned && g.nextBoss - g.time <= 10) {
     g.bossWarned = true;
     addText(g, h.x, h.y - 70, "⚠️ BOSS SE BLÍŽÍ!", 0, 17);
     playSfx(g, "elite");

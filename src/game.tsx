@@ -4,8 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.12.0";
-const GAME_BUILD = "18. 11. 2026";
+const GAME_VERSION = "1.13.0";
+const GAME_BUILD = "19. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -321,6 +321,10 @@ type Stats = {
   armor: number;
   lifesteal: number;
   home: number;
+  regen: number;
+  critMul: number;
+  dashMul: number;
+  ultCdMul: number;
 };
 
 // --- rarity upgradů ---
@@ -1584,17 +1588,36 @@ function dmgText(g: Game, e: Enemy, dmg: number, crit: boolean, src?: string): v
 }
 
 // pk: 0 = XP koule, 1 = ❤️ srdíčko (heal), 2 = 💣 bomba (AoE), 3 = 🧲 magnet (vysaje koule)
+
+// 🎨 XP orby ve třech barevných řadách (v1.13): 🟡 žlutá < 64 XP < 🔴 červená (64× žlutá)
+// < 🔵 modrá (256× červená = 16 384 XP). V rámci barvy koule roste až na 3× základní velikost
+// (6 → 18) a na hranici se mění na další barvu, kde růst začne od znovu; modrá už nemá
+// kam povyšovat, takže roste dál bez limitu - ať pobere všechna XP, která do ní spadnou
+const ORB_RED_XP = 64;
+const ORB_BLUE_XP = ORB_RED_XP * 256;
+
+// ☀️ tvar XP orbu podle nahromaděných XP - vrátí poloměr + barevný odstín
+function orbStyle(xp: number): { r: number; hue: number } {
+  if (xp < ORB_RED_XP) return { r: 6 + 12 * (Math.min(xp, ORB_RED_XP) / ORB_RED_XP), hue: 55 };
+  if (xp < ORB_BLUE_XP) {
+    // červená roste po třetí odmocnině postupu k modré - ať je růst vidět i u malých červených
+    const fr = Math.cbrt(Math.min(1, (xp - ORB_RED_XP) / (ORB_BLUE_XP - ORB_RED_XP)));
+    return { r: 6 + 12 * fr, hue: 0 };
+  }
+  // modrá navazuje na maximální červenou a roste bez stropu
+  return { r: 18 * Math.cbrt(xp / ORB_BLUE_XP), hue: 215 };
+}
+
 function spawnOrb(g: Game, x: number, y: number, xp: number, pk = 0): void {
+  const st = pk > 0 ? { r: 9, hue: pk === 1 ? 350 : pk === 2 ? 25 : 210 } : orbStyle(xp);
   g.orbs.push({
     x,
     y,
     vx: 0,
     vy: 0,
-    // 🎨 XP koule: čím víc XP, tím červenější (žlutá = nejméně, plná červeň = xp 8+);
-    // velikost znovu roste až od plné červené - čím cennější, tím vzácnější
-    r: pk > 0 ? 9 : 6 + Math.max(0, xp - 8) * 2,
+    r: st.r,
     xp,
-    hue: pk === 1 ? 350 : pk === 2 ? 25 : pk === 3 ? 210 : Math.max(0, 55 - (55 * Math.min(xp, 8)) / 8),
+    hue: st.hue,
     pk,
   });
 }
@@ -1752,8 +1775,8 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
       burst(g, cl.x, cl.y, 6, cl.hue, 120);
     }
   }
-  // ⏱ na bosse máš 3:20, jinak tě rozdrtí
-  g.bossT = 200;
+  // ⏱ na bosse máš 1:40, jinak tě rozdrtí (v1.13 zúžený z 3:20)
+  g.bossT = 100;
   // 📣 intro banner - první vteřiny po spawnu se rozezní jméno bosse
   g.bossIntroT = 2.6;
   g.bossIntroName = bt.name;
@@ -1768,8 +1791,8 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const x = Math.max(60, Math.min(ARENA - 60, g.arena.x + Math.cos(a) * (ar - 40)));
   const y = Math.max(60, Math.min(ARENA - 60, g.arena.y + Math.sin(a) * (ar - 40)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
-  // 💪 bossové drží krok s ostatními: 4× HP (5→20) a 3× dmg
-  const hp = (260 + t * 3 + g.bossKills * 90) * 20 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
+  // 💪 bossové drží krok s ostatními: 8× HP (5→40) a 12× dmg (v1.13: 2× HP a 4× dmg proti v1.12)
+  const hp = (260 + t * 3 + g.bossKills * 90) * 40 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
     x,
@@ -1778,7 +1801,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
     hp,
     maxHp: hp,
     speed: bt.speed * (isFinal ? 1.12 : 1),
-    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 3),
+    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 12),
     hue: bt.hue,
     big: true,
     flash: 0,
@@ -1789,7 +1812,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
     slow: 0,
     lungeCd: 0,
     lungeT: 0,
-    shootCd: 2.2,
+    shootCd: 0.44,
     boss: true,
     minib: false,
     final: isFinal,
@@ -2035,20 +2058,25 @@ type TreeNode = {
 // 🌳 v1.12: strom se rozlézá do všech stran od Síly 💪 v čele - na každé větvi visí
 // jeden bývalý MetaShop upgrade, všechno jde koupit 5× po +20 % (jen korunové speciály zůstávají 1×)
 const TREE_NODES: TreeNode[] = [
-  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 46], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 29], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  { id: "t_dash", emoji: "💨", name: "Rychlý úskok", per: "-20 % cd úskoku", max: 5, parent: "t_str", base: 300, growth: 300, pos: [37, 51], apply: (g, l) => { g.stats.dashMul = Math.pow(0.8, l); } },
   // 🌿 horní koruna: houževnatost
-  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 10], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
+  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 7], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
+  { id: "t_regen", emoji: "🌿", name: "Regenerace", per: "+0.5 HP/s", max: 5, parent: "t_hp", base: 350, growth: 350, pos: [27, 7], apply: (g, l) => { g.stats.regen += 0.5 * l; } },
   // 🌿 levá koruna: tvrdá kůže → sběrná síla → rychlost nohou
-  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [17, 26], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
-  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [12, 56], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
-  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [17, 84], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
+  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [17, 29], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
+  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [12, 51], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
+  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [17, 73], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
+  { id: "t_seed", emoji: "🌱", name: "Bohatá úroda", per: "+10 % semínek", max: 5, parent: "t_foot", base: 400, growth: 400, pos: [17, 95], apply: (g, l) => { g.seedBonus = (g.seedBonus || 1) * (1 + 0.1 * l); } },
   // 🌿 pravá koruna: moudrost → střelecké oko → rychlé ruce
-  { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [83, 26], apply: (g, l) => { g.xpMul += 0.2 * l; } },
-  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit šance", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [88, 56], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
-  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [83, 84], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
+  { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [83, 29], apply: (g, l) => { g.xpMul += 0.2 * l; } },
+  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit šance", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [88, 51], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
+  { id: "t_crd", emoji: "💥", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [63, 51], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
+  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [83, 73], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
+  { id: "t_ult", emoji: "⚡", name: "Ultimátní fokus", per: "-20 % cd ulta", max: 5, parent: "t_cad", base: 500, growth: 500, pos: [83, 95], apply: (g, l) => { g.stats.ultCdMul = Math.pow(0.8, l); } },
   // 🎒 dolní větev: sloty na zbraně
-  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [38, 90], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
-  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [62, 90], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [38, 95], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [62, 95], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
 ];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -2155,7 +2183,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
-    tree_note: "🌳 Strom se rozlézá do všech stran od Síly 💪 - každý uzel kupuješ 5× po +20 % (dmg, HP, zbroj, sběr, rychlost, XP, crit, kadence). Sloty na další zbraně 🎒 jsou dole. ✨ Zlaté speciály stojí 👑 korunu z finálního bosse (každý třetí boss).",
+    tree_note: "🌳 Strom se rozlézá do všech stran od Síly 💪 - 15 upgradů po 5 levelách: dmg, HP, regenerace, zbroj, sběr, rychlost, úskok, semínka, XP, crit, kritická rána, kadence, ult i sloty na zbraně 🎒. ✨ Zlaté speciály stojí 👑 korunu z finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
     specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
@@ -2242,7 +2270,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
-    tree_note: "🌳 The tree spreads in all directions from Strength 💪 — every node can be bought 5× for +20 % each (dmg, HP, armor, magnet, speed, XP, crit, fire rate). Extra weapon slots 🎒 sit at the bottom. ✨ Golden upgrades cost a 👑 crown from a FINAL boss (every third boss).",
+    tree_note: "🌳 The tree spreads in all directions from Strength 💪 - 15 upgrades with 5 levels each: dmg, HP, regen, armor, magnet, speed, dash, seeds, XP, crit, crit damage, fire rate, ult and weapon slots 🎒. ✨ Golden upgrades cost a 👑 crown from a FINAL boss (every third boss).",
     tree_max: "✅ done",
     specials_note: "✨ Golden upgrades are one-time and permanent. They cost 👑 crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
     reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
@@ -2329,7 +2357,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
-    tree_note: "🌳 Drzewo rozchodzi się we wszystkie strony od Siły 💪 — każdy węzeł kupujesz 5× po +20 % (obrażenia, HP, pancerz, magnes, szybkość, XP, crit, kadencja). Sloty na dodatkowe bronie 🎒 są na dole. ✨ Złote ulepszenia kosztują 👑 koronę z FINAŁOWEGO bossa (co trzeci boss).",
+    tree_note: "🌳 Drzewo rozchodzi się we wszystkie strony od Siły 💪 - 15 ulepszeń po 5 poziomów: obrażenia, HP, regeneracja, pancerz, magnes, szybkość, doskok, nasiona, XP, crit, krytyczne obrażenia, kadencja, ult i sloty na bronie 🎒. ✨ Złote ulepszenia kosztują 👑 koronę z FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
     specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
@@ -2450,6 +2478,10 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
       armor: cls.armor,
       lifesteal: cls.ls ?? 0,
       home: 0,
+      regen: 0,
+      critMul: 1,
+      dashMul: 1,
+      ultCdMul: 1,
     },
     kills: 0,
     nightKills: 0,
@@ -2459,11 +2491,11 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     crownsEarned: 0,
     weaponBonus: 0,
     allWeapons: false,
-    nextBoss: 100,
+    nextBoss: 90,
     bossWarned: false,
     minibKills: 0,
     nextMini: 40,
-    bossT: 200,
+    bossT: 100,
     growT: 10,
     waveT: 30,
     time: 0,
@@ -3495,7 +3527,7 @@ function castUlt(g: Game): void {
   const u = ULTS[g.cls];
   if (!u) return;
   const h = g.hero;
-  g.ultCd = u.cd;
+  g.ultCd = u.cd * g.stats.ultCdMul;
   g.hitStop = 0.06;
   g.shake = Math.max(g.shake, 7);
   addText(g, h.x, h.y - 52, `${u.emoji} ${u.name}!`, 290, 20);
@@ -3806,7 +3838,7 @@ function fireWeapon(g: Game, w: WSlot, tgt: Enemy): void {
       while (da < -Math.PI) da += Math.PI * 2;
       if (Math.abs(da) > arc) continue;
       const crit = Math.random() < g.stats.crit;
-      const dmg = def.dmg * (1 + 0.2 * (lvl - 1)) * (lvl >= 5 ? 1.5 : 1) * heroDmgMul(g) * (crit ? 2 : 1);
+      const dmg = def.dmg * (1 + 0.2 * (lvl - 1)) * (lvl >= 5 ? 1.5 : 1) * heroDmgMul(g) * (crit ? 2 * g.stats.critMul : 1); // v1.13: crit dmg ze stromu
       e.hp -= dmg;
       e.flash = 0.09;
       const dd = Math.sqrt(d2v) || 1;
@@ -3878,7 +3910,7 @@ function fireWeapon(g: Game, w: WSlot, tgt: Enemy): void {
       y: h.y + Math.sin(a) * mz + Math.sin(pa) * perp,
       vx: Math.cos(a) * sp,
       vy: Math.sin(a) * sp,
-      dmg: def.dmg * dmgMul * heroDmgMul(g) * (crit ? 2 : 1),
+      dmg: def.dmg * dmgMul * heroDmgMul(g) * (crit ? 2 * g.stats.critMul : 1),
       pierce,
       crit,
       life: def.life,
@@ -3907,6 +3939,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   g.magT = Math.max(0, g.magT - dt);
   h.invuln = Math.max(0, h.invuln - dt);
   h.dashCd = Math.max(0, h.dashCd - dt);
+  // 🌿 regenerace ze stromu dovedností - pomalé doplňování HP každý snímek
+  if (g.stats.regen > 0) h.hp = Math.min(h.maxHp, h.hp + g.stats.regen * dt);
   // ⏱ časovače nových systémů: ultimátum, combo
   g.ultCd = Math.max(0, g.ultCd - dt);
   if (g.comboT > 0) {
@@ -3943,7 +3977,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   h.stillT = mlen > 0.01 || h.dashT > 0 ? 0 : h.stillT + dt;
   if (wantDash && h.dashCd <= 0 && h.dashT <= 0) {
     h.dashT = HERO.dashDur;
-    h.dashCd = HERO.dashCd;
+    h.dashCd = HERO.dashCd * g.stats.dashMul;
     // 🌫️ Stínový úhyb (ninja) - po úhybu zůstaneš půl vteřiny v kouřovém stínu
     h.invuln = Math.max(h.invuln, g.cls === "ninja" ? 0.55 : HERO.dashDur + 0.06);
     playSfx(g, "dash");
@@ -4058,7 +4092,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         for (let i = 0; i < shots; i++) {
           const sa = shots > 1 ? tu.aim + (i - (shots - 1) / 2) * spread : tu.aim;
           const crit = Math.random() < g.stats.crit;
-          const dmg = g.tcfg.dmg * (flameMode ? 0.5 : tdef.dmg) * heroDmgMul(g) * (crit ? 2 : 1);
+          const dmg = g.tcfg.dmg * (flameMode ? 0.5 : tdef.dmg) * heroDmgMul(g) * (crit ? 2 * g.stats.critMul : 1);
           const sp = flameMode ? 300 : tdef.sp;
           g.arrows.push(
             Object.assign(arrowNew(), {
@@ -4140,7 +4174,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         let hdA = htA - hcA;
         while (hdA > Math.PI) hdA -= Math.PI * 2;
         while (hdA < -Math.PI) hdA += Math.PI * 2;
-        const hturn = Math.max(-2.2 * g.stats.home * dt, Math.min(2.2 * g.stats.home * dt, hdA));
+          // v1.13: 100 % navádění točí o polovinu víc (2.2 → 3.3 rad/s)
+        const hturn = Math.max(-3.3 * g.stats.home * dt, Math.min(3.3 * g.stats.home * dt, hdA));
         a.vx = Math.cos(hcA + hturn) * hsp;
         a.vy = Math.sin(hcA + hturn) * hsp;
       }
@@ -4472,7 +4507,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       if (e.shootCd <= 0) {
         // telegrafované zóny - každý druh jinak rychlý a hustý
         if (e.kind === 5) {
-          e.shootCd = 2.1 * (e.final ? 0.75 : 1) * phMul;
+          e.shootCd = 0.42 * (e.final ? 0.75 : 1) * phMul; // v1.13: bossové střílí 5× rychleji
           for (let k = 0; k < (e.final ? 5 : 3); k++) {
             const tx = h.x + (Math.random() - 0.5) * 150;
             const ty = h.y + (Math.random() - 0.5) * 150;
@@ -4485,7 +4520,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 6) {
           // král duchů - rychlé drobné zóny
-          e.shootCd = 1.7 * (e.final ? 0.75 : 1) * phMul;
+          e.shootCd = 0.34 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
           for (let k = 0; k < (e.final ? 7 : 4); k++) {
             const tx = h.x + (Math.random() - 0.5) * 170;
             const ty = h.y + (Math.random() - 0.5) * 170;
@@ -4493,7 +4528,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 7) {
           // kanón obr - obří zóny, ale pomaleji
-          e.shootCd = 2.8 * (e.final ? 0.75 : 1) * phMul;
+          e.shootCd = 0.56 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
           for (let k = 0; k < (e.final ? 4 : 2); k++) {
             const tx = h.x + (Math.random() - 0.5) * 120;
             const ty = h.y + (Math.random() - 0.5) * 120;
@@ -4501,7 +4536,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         } else if (e.kind === 8) {
           // rozpulčák - zóny ve středním tempu
-          e.shootCd = 2.4 * (e.final ? 0.75 : 1) * phMul;
+          e.shootCd = 0.48 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
           const n = (e.final ? 4 : 2) + (Math.random() < 0.5 ? 1 : 0);
           for (let k = 0; k < n; k++) {
             const tx = h.x + (Math.random() - 0.5) * 150;
@@ -4509,7 +4544,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             g.telegraphs.push({ x: tx, y: ty, r: 55, t: 0, dur: 0.75, dmg: e.dmg * 0.7 });
           }
         } else {
-          e.shootCd = 2.6 * (e.final ? 0.75 : 1) * phMul;
+          e.shootCd = 0.52 * (e.final ? 0.75 : 1) * phMul; // v1.13: 5× rychleji
           const n = (e.final ? 4 : 2) + (Math.random() < 0.4 ? 1 : 0);
           for (let k = 0; k < n; k++) {
             const tx = h.x + (Math.random() - 0.5) * 140;
@@ -4523,7 +4558,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           const ba = Math.atan2(dy, dx);
           const cnt = e.final ? (e.phase >= 4 ? 12 : e.phase >= 3 ? 8 : 5) : e.phase >= 3 ? 5 : 3;
           for (let s = -(cnt - 1) / 2; s <= (cnt - 1) / 2; s++) {
-            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(ba + s * 0.22) * 300, vy: Math.sin(ba + s * 0.22) * 300, life: 4, dmg: Math.round(e.dmg * 0.4), home: e.final ? 0.4 : 0 });
+            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(ba + s * 0.22) * 300, vy: Math.sin(ba + s * 0.22) * 300, life: 4, dmg: Math.round(e.dmg * 0.4), home: e.final ? 0.6 : 0 });
           }
         }
         // fáze 3 (finální zúřilost): kruhová sprška projektilů
@@ -4532,7 +4567,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           const off = Math.random() * Math.PI;
           for (let s = 0; s < n2; s++) {
             const sa = off + (s / n2) * Math.PI * 2;
-            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(sa) * 220, vy: Math.sin(sa) * 220, life: 3.5, dmg: Math.round(e.dmg * 0.35), home: e.final && s % 2 === 0 ? 0.4 : 0 });
+            g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(sa) * 220, vy: Math.sin(sa) * 220, life: 3.5, dmg: Math.round(e.dmg * 0.35), home: e.final && s % 2 === 0 ? 0.6 : 0 });
           }
         }
         burst(g, e.x, e.y, 5, e.hue, 120);
@@ -4758,7 +4793,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       }
     }
   }
-  // ⏱ na bosse máš 3:20 - čas vyprší = automatická smrt
+  // ⏱ na bosse máš 1:40 - čas vyprší = automatická smrt
   let bossAlive = false;
   for (const e of g.enemies) {
     if (!e.dead && e.boss) {
@@ -4848,8 +4883,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       let dA = tA - cA;
       while (dA > Math.PI) dA -= Math.PI * 2;
       while (dA < -Math.PI) dA += Math.PI * 2;
-      // 🧭 síla navádění: finální bossové 40 % (dřív 100 % - uhýbat má být zábava, ne povinnost)
-      const turn = Math.max(-2.2 * (b.home || 0) * dt, Math.min(2.2 * (b.home || 0) * dt, dA));
+      // 🧭 síla navádění: finální bossové 60 % (dřív 40 %); samotné navádění točí o půlku víc (2.2 → 3.3)
+      const turn = Math.max(-3.3 * (b.home || 0) * dt, Math.min(3.3 * (b.home || 0) * dt, dA));
       b.vx = Math.cos(cA + turn) * sp;
       b.vy = Math.sin(cA + turn) * sp;
     }
@@ -4904,6 +4939,31 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     if (es[i].dead) es.splice(i, 1);
   }
 
+  // 🔗 slučování XP orbů (v1.13): dotknou-li se jejich barevné zóny, pohltí jedna druhou
+  // a XP se sečtou - koule tak na louce postupně roste 🟡 → 🔴 (64 XP) → 🔵 (16 384 XP)
+  for (let oi = 0; oi < g.orbs.length; oi++) {
+    const a = g.orbs[oi];
+    if (a.pk !== 0) continue;
+    for (let oj = oi + 1; oj < g.orbs.length; oj++) {
+      const b = g.orbs[oj];
+      if (b.pk !== 0) continue;
+      const rr = (a.r + b.r) * 2.2 + 6;
+      if (dist2(a.x, a.y, b.x, b.y) >= rr * rr) continue;
+      // pohltí vždy ta větší koule (obsahy se prohodí, aby indexy zůstaly v pořádku)
+      if (b.xp > a.xp) {
+        const t = { x: a.x, y: a.y, vx: a.vx, vy: a.vy, r: a.r, xp: a.xp, hue: a.hue };
+        a.x = b.x; a.y = b.y; a.vx = b.vx; a.vy = b.vy; a.r = b.r; a.xp = b.xp; a.hue = b.hue;
+        b.x = t.x; b.y = t.y; b.vx = t.vx; b.vy = t.vy; b.r = t.r; b.xp = t.xp; b.hue = t.hue;
+      }
+      a.xp += b.xp;
+      const st = orbStyle(a.xp);
+      a.r = st.r;
+      a.hue = st.hue;
+      g.orbs.splice(oj, 1);
+      oj--; // po splice se zbytek pole posune - další kandidát je na stejném indexu
+    }
+  }
+
   // orby: magnet + sběr
   const magnetR = HERO.magnet * (1 + g.stats.magnetMul);
   const m2 = magnetR * magnetR;
@@ -4922,7 +4982,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     o.y += o.vy * dt;
     o.vx *= 0.94;
     o.vy *= 0.94;
-    if (d2 < 24 * 24) {
+    // 🟠 zóna sběru = celá barevná plocha orbu (halo 2.2× poloměr), ne jen bod v centru
+    const takeR = o.r * 2.2;
+    if (d2 < takeR * takeR) {
       if (o.pk === 1) {
         // ❤️ srdíčko
         h.hp = Math.min(h.maxHp, h.hp + 35);
@@ -5019,11 +5081,15 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // boss každých 100 s (v1.12)
+  // boss každých 90 s (v1.13: zpět z 100 s) - dokud žije starý boss, nový čeká
   if (g.time >= g.nextBoss) {
-    g.nextBoss += 100;
-    g.bossWarned = false;
-    spawnBoss(g);
+    if (g.arena.active) {
+      g.nextBoss = g.time + 90;
+    } else {
+      g.nextBoss += 90;
+      g.bossWarned = false;
+      spawnBoss(g);
+    }
   }
 
   // ⚠️ varování 10 s před bossem - ať tě nezaskočí zelený nebe
@@ -9033,7 +9099,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           👑 {meta.crowns || 0}
         </span>
       </div>
-      <div className="relative mx-auto h-[440px] w-full max-w-[420px]">
+      <div className="relative mx-auto h-[560px] w-full max-w-[420px]">
         {/* čáry mezi předchůdcem a potomkem */}
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
@@ -9730,7 +9796,7 @@ function LoukaTisicePriser() {
           kills: g.kills,
           hp: Math.max(0, Math.ceil(g.hero.hp)),
           maxHp: g.hero.maxHp,
-          dash: 1 - g.hero.dashCd / HERO.dashCd,
+          dash: 1 - g.hero.dashCd / (HERO.dashCd * g.stats.dashMul),
           time: g.time,
           paused: g.userPaused,
           weapons: g.weapons.map((w) => `${WEAPONS[w.id].emoji}${w.lvl >= 5 ? "⭐" : w.lvl > 1 ? w.lvl : ""}`).join(" "),
@@ -9747,7 +9813,7 @@ function LoukaTisicePriser() {
           weather: g.weather,
           combo: g.combo,
           ult: g.ultCd,
-          ultMax: ULTS[g.cls]?.cd ?? 30,
+          ultMax: (ULTS[g.cls]?.cd ?? 30) * g.stats.ultCdMul,
           invuln: g.hero.invuln,
           slowT: g.hero.slowT,
           poisT: g.hero.poisT,
@@ -10907,6 +10973,7 @@ function LoukaTisicePriser() {
     </div>
   );
 }
+
 
 
 

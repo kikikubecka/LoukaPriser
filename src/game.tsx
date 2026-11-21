@@ -4,8 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 const ARENA = 6000;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.13.1";
-const GAME_BUILD = "19. 11. 2026";
+const GAME_VERSION = "1.14.0";
+const GAME_BUILD = "21. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -2055,28 +2055,31 @@ type TreeNode = {
   apply: (g: Game, lvl: number) => void;
 };
 
-// 🌳 v1.12: strom se rozlézá do všech stran od Síly 💪 v čele - na každé větvi visí
-// jeden bývalý MetaShop upgrade, všechno jde koupit 5× po +20 % (jen korunové speciály zůstávají 1×)
+// 🌳 v1.14: strom roste zdola nahoru - ze Síly 💪 vyrůstá kmen a větve,
+// nové uzly: Kalich krve 🩸, Průraznost 🏹, Dvojúder 🔱 (poloha v % = střed orbu)
 const TREE_NODES: TreeNode[] = [
-  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 29], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
-  { id: "t_dash", emoji: "💨", name: "Rychlý úskok", per: "-20 % cd úskoku", max: 5, parent: "t_str", base: 300, growth: 300, pos: [37, 51], apply: (g, l) => { g.stats.dashMul = Math.pow(0.8, l); } },
-  // 🌿 horní koruna: houževnatost
-  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 7], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
-  { id: "t_regen", emoji: "🌿", name: "Regenerace", per: "+0.5 HP/s", max: 5, parent: "t_hp", base: 350, growth: 350, pos: [27, 7], apply: (g, l) => { g.stats.regen += 0.5 * l; } },
-  // 🌿 levá koruna: tvrdá kůže → sběrná síla → rychlost nohou
-  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [17, 29], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
-  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [12, 51], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
-  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [17, 73], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
-  { id: "t_seed", emoji: "🌱", name: "Bohatá úroda", per: "+10 % semínek", max: 5, parent: "t_foot", base: 400, growth: 400, pos: [17, 95], apply: (g, l) => { g.seedBonus = (g.seedBonus || 1) * (1 + 0.1 * l); } },
-  // 🌿 pravá koruna: moudrost → střelecké oko → rychlé ruce
-  { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [83, 29], apply: (g, l) => { g.xpMul += 0.2 * l; } },
-  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit šance", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [88, 51], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
-  { id: "t_crd", emoji: "💥", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [63, 51], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
-  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [83, 73], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
-  { id: "t_ult", emoji: "⚡", name: "Ultimátní fokus", per: "-20 % cd ulta", max: 5, parent: "t_cad", base: 500, growth: 500, pos: [83, 95], apply: (g, l) => { g.stats.ultCdMul = Math.pow(0.8, l); } },
-  // 🎒 dolní větev: sloty na zbraně
-  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, base: 2000, growth: 0, pos: [38, 95], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
-  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [62, 95], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  // kmen a kořenové ratolesti
+  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 80], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [26, 80], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
+  { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [74, 80], apply: (g, l) => { g.xpMul += 0.2 * l; } },
+  { id: "t_dash", emoji: "💨", name: "Rychlý úskok", per: "-20 % cd úskoku", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 62], apply: (g, l) => { g.stats.dashMul = Math.pow(0.8, l); } },
+  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, parent: "t_dash", base: 2000, growth: 0, pos: [28, 62], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [28, 44], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  // větev života (kmen nahoru, pak vlevo k Kalichu krve)
+  { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_dash", base: 300, growth: 300, pos: [50, 44], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
+  { id: "t_regen", emoji: "🌿", name: "Regenerace", per: "+0.5 HP/s", max: 5, parent: "t_hp", base: 350, growth: 350, pos: [30, 26], apply: (g, l) => { g.stats.regen += 0.5 * l; } },
+  { id: "t_blood", emoji: "🩸", name: "Kalich krve", per: "+1 HP/kill", max: 3, parent: "t_regen", base: 600, growth: 600, pos: [10, 8], apply: (g, l) => { g.stats.lifesteal += 1 * l; } },
+  // obranná větev (vlevo)
+  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [10, 62], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
+  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [10, 44], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
+  { id: "t_seed", emoji: "🌱", name: "Bohatá úroda", per: "+10 % semínek", max: 5, parent: "t_foot", base: 400, growth: 400, pos: [10, 26], apply: (g, l) => { g.seedBonus = (g.seedBonus || 1) * (1 + 0.1 * l); } },
+  // útočná větev (vpravo)
+  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [90, 62], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
+  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [90, 44], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
+  { id: "t_ult", emoji: "⚡", name: "Ultimátní fokus", per: "-20 % cd ulta", max: 5, parent: "t_cad", base: 500, growth: 500, pos: [90, 26], apply: (g, l) => { g.stats.ultCdMul = Math.pow(0.8, l); } },
+  { id: "t_crd", emoji: "💥", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [72, 44], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
+  { id: "t_pierce", emoji: "🏹", name: "Průraznost", per: "+1 průraz", max: 3, parent: "t_crd", base: 600, growth: 600, pos: [72, 26], apply: (g, l) => { g.stats.pierce += 1 * l; } },
+  { id: "t_multi", emoji: "🔱", name: "Dvojúder", per: "+1 projektil", max: 2, parent: "t_crd", base: 2500, growth: 2500, pos: [50, 8], apply: (g, l) => { g.stats.multishot += 1 * l; } },
 ];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -2085,6 +2088,7 @@ const TREE_SPECIALS: TreeNode[] = [
   { id: "t_phoenix", emoji: "🕊️", name: "Fénixovo srdce", per: "1× oživení za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.revive = true; } },
   { id: "t_crown", emoji: "👑", name: "Koruna louky", per: "+15 % semínek za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
   { id: "t_allwpn", emoji: "🔓", name: "Všechny zbraně", per: "zruší třídní omezení zbraní (ne pro inženýra)", max: 1, special: true, crownCost: 3, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.allWeapons = true; } },
+  { id: "t_titan", emoji: "❤️‍🔥", name: "Titánské srdce", per: "+30 max HP", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.hero.maxHp += 30; g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + 30); } },
 ];
 
 const TREE_ALL: TreeNode[] = [...TREE_NODES, ...TREE_SPECIALS];
@@ -2183,7 +2187,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
-    tree_note: "🌳 Strom se rozlézá do všech stran od Síly 💪 - 15 upgradů po 5 levelách: dmg, HP, regenerace, zbroj, sběr, rychlost, úskok, semínka, XP, crit, kritická rána, kadence, ult i sloty na zbraně 🎒. ✨ Zlaté speciály stojí 👑 korunu z finálního bosse (každý třetí boss).",
+    tree_note: "🌳 Strom roste zdola nahoru ze Síly 💪 - 18 upgradů na větvích: dmg, HP, regenerace, kalich krve, zbroj, sběr, rychlost, úskok, semínka, XP, crit, kritická rána, průraznost, dvojúder, kadence, ult i sloty na zbraně 🎒. ✨ Zlaté speciály stojí 👑 koruny z finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
     specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
     reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
@@ -2270,7 +2274,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
-    tree_note: "🌳 The tree spreads in all directions from Strength 💪 - 15 upgrades with 5 levels each: dmg, HP, regen, armor, magnet, speed, dash, seeds, XP, crit, crit damage, fire rate, ult and weapon slots 🎒. ✨ Golden upgrades cost a 👑 crown from a FINAL boss (every third boss).",
+    tree_note: "🌳 The tree grows upward from Strength 💪 - 18 upgrades on its branches: dmg, HP, regen, blood chalice, armor, magnet, speed, dash, seeds, XP, crit, crit damage, pierce, double shot, fire rate, ult and weapon slots 🎒. ✨ Golden specials cost 👑 crowns from a FINAL boss (every third boss).",
     tree_max: "✅ done",
     specials_note: "✨ Golden upgrades are one-time and permanent. They cost 👑 crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
     reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
@@ -2357,7 +2361,7 @@ const LANG: Record<string, Record<string, string>> = {
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
-    tree_note: "🌳 Drzewo rozchodzi się we wszystkie strony od Siły 💪 - 15 ulepszeń po 5 poziomów: obrażenia, HP, regeneracja, pancerz, magnes, szybkość, doskok, nasiona, XP, crit, krytyczne obrażenia, kadencja, ult i sloty na bronie 🎒. ✨ Złote ulepszenia kosztują 👑 koronę z FINAŁOWEGO bossa (co trzeci boss).",
+    tree_note: "🌳 Drzewo rośnie w górę od Siły 💪 - 18 ulepszeń na gałęziach: obrażenia, HP, regeneracja, kielich krwi, pancerz, magnes, szybkość, doskok, nasiona, XP, crit, krytyczne obrażenia, przebijanie, podwójny strzał, kadencja, ult i sloty na broń 🎒. ✨ Złote specjały kosztują 👑 korony z FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
     specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
     reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
@@ -9083,36 +9087,39 @@ function SbxCard(props: { u: Upgrade; onPick: (u: Upgrade) => void }) {
 }
 
 // 🌳 strom dovedností - vizuální strom: boxy spojené čarami, klik = koupě
+// 🌳 v1.14: přerenderovaný strom - organické kmenové linky, svítící orby s pipsy,
+// stavy locked/open/affordable/maxed, zlaté speciály jako karty
 function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
   const meta = props.meta;
   const lvl = (id: string) => meta.tree?.[id] || 0;
   return (
     <>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <span className="rounded-xl border border-lime-400/40 bg-lime-500/20 px-4 py-1.5 text-sm font-bold text-lime-200 sm:text-base">
+        <span className="ltp-glass rounded-xl border border-lime-400/40 bg-lime-500/15 px-4 py-1.5 text-sm font-bold text-lime-200 sm:text-base">
           🌱 {meta.pts} {trk("seeds")}
         </span>
-        <span className="rounded-xl border border-amber-300/40 bg-amber-400/20 px-4 py-1.5 text-sm font-bold text-amber-200 sm:text-base">
+        <span className="ltp-glass rounded-xl border border-amber-300/40 bg-amber-400/15 px-4 py-1.5 text-sm font-bold text-amber-200 sm:text-base">
           👑 {meta.crowns || 0}
         </span>
       </div>
-      <div className="relative mx-auto h-[560px] w-full max-w-[420px]">
-        {/* čáry mezi předchůdcem a potomkem */}
+      <div className="ltp-tree relative mx-auto h-[640px] w-full max-w-[480px]">
+        <span className="pointer-events-none absolute left-3 top-3 select-none text-2xl opacity-10">🌿</span>
+        <span className="pointer-events-none absolute bottom-3 right-3 select-none text-2xl opacity-10">🍃</span>
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
             const p = TREE_NODES.find((x) => x.id === tn.parent);
             if (!p) return null;
-            const bought = lvl(p.id) > 0;
+            const cl = lvl(tn.id);
+            const pb = lvl(p.id) > 0;
+            const mx = (p.pos[0] + tn.pos[0]) / 2 + (tn.pos[1] - p.pos[1]) * 0.1;
+            const my = (p.pos[1] + tn.pos[1]) / 2 - (tn.pos[0] - p.pos[0]) * 0.1;
+            const d =
+              "M " + p.pos[0] + " " + p.pos[1] + " Q " + mx.toFixed(1) + " " + my.toFixed(1) + " " + tn.pos[0] + " " + tn.pos[1];
             return (
-              <line
+              <path
                 key={"ln_" + tn.id}
-                x1={p.pos[0]}
-                y1={p.pos[1]}
-                x2={tn.pos[0]}
-                y2={tn.pos[1]}
-                stroke={bought ? "rgba(110,231,183,.8)" : "rgba(255,255,255,.2)"}
-                strokeWidth={bought ? 2.5 : 1.5}
-                strokeDasharray={bought ? undefined : "3 3"}
+                d={d}
+                className={cl > 0 ? "ltp-tline is-on" : pb ? "ltp-tline is-ready" : "ltp-tline"}
                 vectorEffect="non-scaling-stroke"
               />
             );
@@ -9122,72 +9129,51 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           const l = lvl(tn.id);
           const maxed = l >= tn.max;
           const parOk = !tn.parent || lvl(tn.parent) > 0;
-          const canBuy = parOk && !maxed && (tn.special ? (meta.crowns || 0) >= 1 : meta.pts >= treeCost(tn, l));
+          const cost = treeCost(tn, l);
+          const canBuy = parOk && !maxed && meta.pts >= cost;
+          const state = maxed ? "is-max" : canBuy ? "is-buy" : parOk ? "is-open" : "is-lock";
           return (
-            <div
-              key={tn.id}
-              className="absolute flex w-[76px] -translate-x-1/2 -translate-y-1/2 flex-col items-center gap-0.5 rounded-xl border-2 p-1.5 text-center"
-              style={{
-                left: `${tn.pos[0]}%`,
-                top: `${tn.pos[1]}%`,
-                borderColor: maxed ? "rgba(253,224,71,.7)" : parOk ? "rgba(110,231,183,.5)" : "rgba(255,255,255,.15)",
-                background: maxed
-                  ? "linear-gradient(180deg, rgba(250,204,21,.18), rgba(120,53,15,.25))"
-                  : parOk
-                    ? "rgba(16,185,129,.14)"
-                    : "rgba(255,255,255,.05)",
-                boxShadow: maxed ? "0 0 16px rgba(250,204,21,.35)" : undefined,
-              }}
-            >
-              <span className="text-xl leading-none">{maxed ? "✨" : ""}{tn.emoji}</span>
-              <p className="text-[9px] font-bold leading-tight text-white/90">{tn.name}</p>
-              <p className="text-[8px] leading-tight text-white/55">{tn.per}</p>
-              <span className={`rounded px-1 py-0.5 text-[8px] font-bold ${maxed ? "bg-yellow-400/25 text-yellow-200" : "bg-lime-500/20 text-lime-300"}`}>
-                {trk("lv")} {l}/{tn.max}
-              </span>
+            <div key={tn.id} className={"ltp-tnode " + state} style={{ left: `${tn.pos[0]}%`, top: `${tn.pos[1]}%` }}>
+              <div className={"ltp-torb" + (tn.id === "t_str" ? " ltp-troot" : "")}>
+                <span className="ltp-temoji">{maxed ? "✨" : tn.emoji}</span>
+                <span className="ltp-tper">{maxed ? "MAX" : tn.per}</span>
+                {!parOk && <span className="ltp-tlock">🔒</span>}
+              </div>
+              <div className="ltp-tpips">
+                {Array.from({ length: tn.max }).map((_, i) => (
+                  <i key={i} className={"ltp-tpip" + (i < l ? " is-on" : "")} />
+                ))}
+              </div>
+              <p className="ltp-tname">{tn.name}</p>
               <button
                 onClick={() => props.onBuy(tn.id)}
                 disabled={!canBuy}
-                className={`w-full rounded-lg px-1 py-1 text-[9px] font-bold transition active:scale-95 ${
-                  canBuy
-                    ? tn.special
-                      ? "border border-amber-300/60 bg-amber-400/25 text-amber-200 hover:bg-amber-400/40"
-                      : "border border-lime-400/50 bg-lime-500/25 text-lime-200 hover:bg-lime-500/35"
-                    : "border border-white/10 bg-white/5 text-white/30"
-                }`}
+                className="ltp-tbuy"
               >
-                {maxed ? trk("tree_max") : !parOk ? "🔒" : tn.special ? "👑 1" : `🌱 ${treeCost(tn, l)}`}
+                {maxed ? "✓" : !parOk ? "🔒" : "🌱 " + cost}
               </button>
             </div>
           );
         })}
       </div>
-      {/* ✨ speciální upgrady za 👑 koruny z finálních bossů */}
-      <div className="grid w-full max-w-3xl grid-cols-2 gap-2 sm:grid-cols-4">
+      {/* ✨ speciální upgrady za 👑 koruny z finálních bossů - zlaté karty */}
+      <div className="grid w-full max-w-3xl grid-cols-2 gap-2 sm:grid-cols-5">
         {TREE_SPECIALS.map((tn) => {
           const sl = lvl(tn.id);
           const smaxed = sl >= tn.max;
-          const scan = !smaxed && (meta.crowns || 0) >= (tn.crownCost || 1);
+          const cc = tn.crownCost || 1;
+          const scan = !smaxed && (meta.crowns || 0) >= cc;
           return (
-            <div
-              key={tn.id}
-              className={`ltp-card flex flex-col items-center gap-1 rounded-xl border-2 p-2 text-center ${
-                smaxed ? "border-yellow-300/60 bg-yellow-400/10" : "border-amber-300/40 bg-amber-400/10"
-              }`}
-            >
-              <span className="text-2xl leading-none">{smaxed ? "✨" : ""}{tn.emoji}</span>
-              <p className="text-[11px] font-bold text-white/90 sm:text-xs">{tn.name}</p>
-              <p className="text-[9px] leading-tight text-white/55">{tn.per}</p>
+            <div key={tn.id} className={"ltp-scard" + (smaxed ? " is-max" : "")}>
+              <span className="text-2xl leading-none">{smaxed ? "✨" : tn.emoji}</span>
+              <p className="ltp-sname">{tn.name}</p>
+              <p className="ltp-sper">{tn.per}</p>
               <button
                 onClick={() => props.onBuy(tn.id)}
                 disabled={!scan}
-                className={`mt-auto w-full rounded-lg px-2 py-1.5 text-[11px] font-bold transition active:scale-95 ${
-                  scan
-                    ? "border border-amber-300/60 bg-amber-400/25 text-amber-200 hover:bg-amber-400/40"
-                    : "border border-white/10 bg-white/5 text-white/30"
-                }`}
+                className={"ltp-sbuy" + (scan ? "" : " is-off")}
               >
-                {smaxed ? trk("tree_max") : "👑 " + (tn.crownCost || 1)}
+                {smaxed ? trk("tree_max") : "👑 " + cc}
               </button>
             </div>
           );
@@ -9749,9 +9735,9 @@ function LoukaTisicePriser() {
 
       if (g.over && !prevOver) {
         prevOver = true;
-        // 🌱 semínka za run jsou vzácnější (přes polovinu méně) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
+        // 🌱 semínka za run jsou VELMI vzácná (v1.14: ~4,5× méně než dřív) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
         const seedMul = (DIFFS[g.diff] || DIFFS[1]).seed;
-        const earned = Math.floor((Math.floor(g.time * 0.5) + g.kills * 7 + g.level * 18) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
+        const earned = Math.floor((Math.floor(g.time * 0.12) + g.kills * 2 + g.level * 5) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
         // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
@@ -9967,6 +9953,51 @@ function LoukaTisicePriser() {
         .ltp-spawn:hover { filter: brightness(1.3); }
         .ltp-spawn:active { transform: scale(.92); }
         @media (min-width: 640px) { .ltp-spawn { font-size: 11px; } }
+        /* 🌳 v1.14 strom dovedností - orby, pipsy, živé linky */
+        .ltp-tree { border-radius: 26px; border: 1px solid rgba(110,231,183,.16);
+          background: radial-gradient(130% 100% at 50% 108%, #14402a 0%, #0b2818 42%, #061410 78%);
+          box-shadow: inset 0 0 90px rgba(0,0,0,.55), 0 22px 50px rgba(0,0,0,.45); overflow: hidden; }
+        .ltp-tline { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 3 5; }
+        .ltp-tline.is-ready { stroke: rgba(110,231,183,.5); animation: ltpTreeFlow 1.4s linear infinite; }
+        .ltp-tline.is-on { stroke: rgba(110,231,183,.9); stroke-width: 2.4; stroke-dasharray: 7 5; animation: ltpTreeFlow 1s linear infinite; filter: drop-shadow(0 0 4px rgba(110,231,183,.55)); }
+        @keyframes ltpTreeFlow { to { stroke-dashoffset: -24; } }
+        .ltp-tnode { position: absolute; width: 84px; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 2; }
+        .ltp-torb { position: relative; width: 60px; height: 60px; border-radius: 9999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+          border: 2px solid rgba(255,255,255,.16); background: radial-gradient(circle at 38% 30%, rgba(255,255,255,.12), rgba(10,26,18,.92) 72%); box-shadow: inset 0 0 14px rgba(0,0,0,.5); transition: transform .16s ease, box-shadow .3s ease; }
+        .ltp-tnode:hover .ltp-torb { transform: translateY(-4px) scale(1.08); }
+        .ltp-temoji { font-size: 21px; line-height: 1; }
+        .ltp-tper { font-size: 7px; font-weight: 700; letter-spacing: .02em; color: rgba(255,255,255,.5); max-width: 54px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+        .ltp-tlock { position: absolute; right: -4px; top: -4px; font-size: 12px; }
+        .ltp-tnode.is-open .ltp-torb { border-color: rgba(110,231,183,.55); box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 16px rgba(52,211,153,.22); }
+        .ltp-tnode.is-open .ltp-tper { color: rgba(167,243,208,.75); }
+        .ltp-tnode.is-buy .ltp-torb { border-color: rgba(253,224,71,.85); box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 20px rgba(250,204,21,.4); animation: ltpTreePulse 1.6s ease-in-out infinite; }
+        @keyframes ltpTreePulse { 0%,100% { box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 12px rgba(250,204,21,.28); } 50% { box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 26px rgba(250,204,21,.55); } }
+        .ltp-tnode.is-max .ltp-torb { border-color: rgba(250,204,21,.9); background: radial-gradient(circle at 38% 30%, rgba(250,204,21,.35), rgba(69,26,3,.9) 75%); box-shadow: inset 0 0 14px rgba(0,0,0,.45), 0 0 22px rgba(250,204,21,.45); }
+        .ltp-tnode.is-lock .ltp-torb { filter: grayscale(.85); opacity: .5; }
+        .ltp-troot { width: 68px; height: 68px; border-width: 3px; border-color: rgba(52,211,153,.75); box-shadow: inset 0 0 16px rgba(0,0,0,.45), 0 0 26px rgba(52,211,153,.35); }
+        .ltp-tnode.is-lock .ltp-troot { filter: none; opacity: 1; }
+        .ltp-tpips { display: flex; gap: 3px; }
+        .ltp-tpip { width: 5px; height: 5px; border-radius: 9999px; background: rgba(255,255,255,.22); box-shadow: 0 0 2px rgba(0,0,0,.6); }
+        .ltp-tpip.is-on { background: #facc15; box-shadow: 0 0 5px rgba(250,204,21,.9); }
+        .ltp-tnode.is-open .ltp-tpip.is-on, .ltp-tnode.is-buy .ltp-tpip.is-on { background: #6ee7b7; box-shadow: 0 0 5px rgba(110,231,183,.9); }
+        .ltp-tnode.is-max .ltp-tpip { background: #fde047; }
+        .ltp-tname { font-size: 8px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.9); letter-spacing: .02em; white-space: nowrap; }
+        .ltp-tnode.is-max .ltp-tname { color: #fde68a; }
+        .ltp-tnode.is-lock .ltp-tname { color: rgba(255,255,255,.4); }
+        .ltp-tbuy { font-size: 8px; font-weight: 800; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(110,231,183,.5); background: rgba(52,211,153,.2); color: #d1fae5; letter-spacing: .03em; transition: transform .12s ease, background .15s ease; }
+        .ltp-tbuy:active { transform: scale(.92); }
+        .ltp-tbuy:disabled { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.3); }
+        .ltp-tnode.is-buy .ltp-tbuy { border-color: rgba(253,224,71,.75); background: rgba(250,204,21,.22); color: #fef9c3; }
+        .ltp-tnode.is-max .ltp-tbuy { border-color: rgba(250,204,21,.55); background: rgba(250,204,21,.15); color: #fde68a; }
+        .ltp-tbuy:disabled, .ltp-tbuy { cursor: pointer; }
+        .ltp-tbuy:disabled { cursor: default; }
+        .ltp-scard { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: .55rem .4rem; border-radius: 16px; text-align: center;
+          border: 1px solid rgba(251,191,36,.35); background: linear-gradient(180deg, rgba(251,191,36,.14), rgba(120,53,15,.16)); box-shadow: 0 6px 18px rgba(0,0,0,.35); animation: ltpGold 3.2s ease-in-out infinite; }
+        .ltp-scard.is-max { border-color: rgba(250,204,21,.8); background: linear-gradient(180deg, rgba(250,204,21,.22), rgba(120,53,15,.3)); }
+        .ltp-sname { font-size: 10px; font-weight: 800; color: rgba(255,255,255,.92); line-height: 1.1; }
+        .ltp-sper { font-size: 8.5px; color: rgba(255,255,255,.55); line-height: 1.15; margin: 0 0 2px; }
+        .ltp-sbuy { font-size: 10px; font-weight: 800; padding: 3px 10px; border-radius: 10px; border: 1px solid rgba(253,224,71,.7); background: rgba(250,204,21,.2); color: #fef9c3; }
+        .ltp-sbuy.is-off { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.3); }
       `}</style>
       <div className="absolute inset-0">
         <canvas

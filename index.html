@@ -12734,6 +12734,14 @@ function LoukaTisicePriser() {
     className: "ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
   }, trk("start"), " ", sandboxSel ? "🧪" : "▶")));
 }
+
+if (window.ltpWatch) clearTimeout(window.ltpWatch);
+// 🏁 hra stojí na nohou - od teď žádná chybová obrazovka nepřekrývá hraní
+window.__ltpOK = true;
+var ltpBootEl = document.getElementById("boot");
+if (ltpBootEl) ltpBootEl.remove();
+var ltpRootEl = document.getElementById("root");
+ReactDOM.createRoot(ltpRootEl).render(React.createElement(LoukaTisicePriser));
 </script>
 </body>
 </html>

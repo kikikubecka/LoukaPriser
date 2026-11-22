@@ -5,12 +5,14 @@ const {
   useState
 } = React;
 
-// 🗺️ velikost čtvercové mapy (6000 × 6000 po zvětšení 3×) - hrdina startuje uprostřed
-const ARENA = 6000;
+// 🗺️ louka je delší a užší: 9000 × 3600 - netvoři táhnou zleva na východ k hradu,
+// hrdina startuje před hradbou a brání příval ze západu
+const ARENA_W = 9000;
+const ARENA_H = 3600;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.14.0";
-const GAME_BUILD = "21. 11. 2026";
+const GAME_VERSION = "1.15.0";
+const GAME_BUILD = "22. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -1034,7 +1036,7 @@ function segHit(x1, y1, x2, y2, cx, cy, r) {
 // 🕸️ PROSTOROVÁ MŘÍŽKA nepřátel - přestavuje se každý snímek; kolize pak běží jen mezi
 // sousedními buňkami místo O(n²) přes všechny příšery (klíčové pro plynulost v endgame)
 const GRID_CELL = 160;
-const GRID_N = Math.ceil(ARENA / GRID_CELL) + 1; // počet buněk na osu
+const GRID_N = Math.ceil(ARENA_W / GRID_CELL) + 1; // počet buněk na osu (šířka pokryje i výšku)
 const GRID_STRIDE = GRID_N + 1;
 const GRID = new Map();
 function gridKey(x, y) {
@@ -1211,7 +1213,8 @@ function playSfx(g, name) {
       whistle: 110,
       plane: 500,
       meteor: 250,
-      meteor_hit: 220
+      meteor_hit: 220,
+      castle: 220
     };
     const gm = gateMs[name];
     const nw = performance.now();
@@ -1335,6 +1338,10 @@ function playSfx(g, name) {
       case "turret":
         tone("square", 330, 330, 0.06, 0, 0.05);
         tone("square", 494, 494, 0.08, 0.06, 0.05);
+        break;
+      case "castle":
+        tone("square", 110, 70, 0.12, 0, 0.06);
+        tone("triangle", 70, 44, 0.1, 0.04, 0.05);
         break;
       case "weather":
         tone("sine", 233, 466, 0.4, 0, 0.08);
@@ -2303,11 +2310,13 @@ function spawnEnemy(g, forceKind = -1, px, py, noPack = false) {
   }
   const elite = !g.sandbox && t > 60 && kind !== 9 && kind !== 17 && kind !== 19 && eliteCount < 4 && Math.random() < 0.06 ? ["swift", "boom", "vamp", "shield"][Math.floor(Math.random() * 4)] : undefined;
   const eMul = elite ? 3 : 1;
-  // spawn kruh kolem hrdiny, těsně mimo obraz (sandbox blízko, ať ho vidíš)
+  // 🏰 pochod na hrad: netvoři přicházejí ZLEVA od hrdiny (těsně mimo obraz)
+  // a valí se na východ k hradu; sandbox nucený druh se rodí na dohled od hrdiny
+  const laneH = Math.min(VH * 1.25, ARENA_H - 80);
   const a = Math.random() * Math.PI * 2;
   const dd = forceKind >= 0 ? 150 : Math.hypot(VW, VH) / 2 * 1.1 + 60;
-  const ex = px !== undefined ? Math.max(40, Math.min(ARENA - 40, px)) : Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
-  const ey = py !== undefined ? Math.max(40, Math.min(ARENA - 40, py)) : Math.max(40, Math.min(ARENA - 40, g.hero.y + Math.sin(a) * dd));
+  const ex = px !== undefined ? Math.max(40, Math.min(ARENA_W - 40, px)) : forceKind >= 0 ? Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd)) : Math.max(40, Math.min(ARENA_W - 40, g.hero.x - dd - Math.random() * 300));
+  const ey = py !== undefined ? Math.max(40, Math.min(ARENA_H - 40, py)) : forceKind >= 0 ? Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd)) : Math.max(40, Math.min(ARENA_H - 40, g.hero.y + (Math.random() - 0.5) * laneH));
   g.enemies.push({
     id: g.nextId++,
     x: ex,
@@ -2351,17 +2360,17 @@ function spawnEliteWave(g) {
   const df = DIFFS[g.diff] || DIFFS[1];
   // 💪 v1.12: elitní vlna drží 4× HP
   const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
-  const a = Math.random() * Math.PI * 2;
   const dd = Math.hypot(VW, VH) / 2 * 1.1 + 60;
-  const cx = Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
-  const cy = Math.max(40, Math.min(ARENA - 40, g.hero.y + Math.sin(a) * dd));
+  // 🏰 elitní vlna vytáhne ze západu jako každý jiný pochod
+  const cx = Math.max(40, Math.min(ARENA_W - 40, g.hero.x - dd - Math.random() * 220));
+  const cy = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + (Math.random() - 0.5) * Math.min(VH * 1.25, ARENA_H - 80)));
   addText(g, cx, cy - 34, "⚠️ ELITNÍ VLNA!", 280, 20);
   const n = Math.min(5, 2 + Math.floor(t / 300));
   for (let i = 0; i < n; i++) {
     g.enemies.push({
       id: g.nextId++,
-      x: Math.max(30, Math.min(ARENA - 30, cx + (Math.random() - 0.5) * 130)),
-      y: Math.max(30, Math.min(ARENA - 30, cy + (Math.random() - 0.5) * 130)),
+      x: Math.max(30, Math.min(ARENA_W - 30, cx + (Math.random() - 0.5) * 130)),
+      y: Math.max(30, Math.min(ARENA_H - 30, cy + (Math.random() - 0.5) * 130)),
       r: 30,
       hp: 190 * hpMul,
       maxHp: 190 * hpMul,
@@ -2425,8 +2434,8 @@ function spawnBoss(g, forceType = -1, forceFinal = false) {
   playSfx(g, "riser");
   // boss se zrodí na okraji arény
   const a = Math.random() * Math.PI * 2;
-  const x = Math.max(60, Math.min(ARENA - 60, g.arena.x + Math.cos(a) * (ar - 40)));
-  const y = Math.max(60, Math.min(ARENA - 60, g.arena.y + Math.sin(a) * (ar - 40)));
+  const x = Math.max(60, Math.min(ARENA_W - 60, g.arena.x + Math.cos(a) * (ar - 40)));
+  const y = Math.max(60, Math.min(ARENA_H - 60, g.arena.y + Math.sin(a) * (ar - 40)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
   // 💪 bossové drží krok s ostatními: 8× HP (5→40, v1.13 dvojnásobek v1.12) a 3× dmg (v1.13.x zpět z 12×)
   const hp = (260 + t * 3 + g.bossKills * 90) * 40 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
@@ -2469,8 +2478,8 @@ function spawnMini(g, typeIdx = -1) {
   const hp = (95 + t * 1.8 + g.bossKills * 40) * 4;
   const a = Math.random() * Math.PI * 2;
   const dd = Math.hypot(VW, VH) / 2 * 1.05 + 40;
-  const x = Math.max(40, Math.min(ARENA - 40, g.hero.x + Math.cos(a) * dd));
-  const y = Math.max(40, Math.min(ARENA - 40, g.hero.y + Math.sin(a) * dd));
+  const x = Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd));
+  const y = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd));
   g.enemies.push({
     id: g.nextId++,
     x,
@@ -2948,6 +2957,35 @@ const TREE_NODES = [
   apply: (g, l) => {
     g.stats.multishot += 1 * l;
   }
+},
+// 🏰 hradní větev stromu - hrad na východě mapy dostane tvrdší hradby a vlastní lučištníky
+{
+  id: "t_cwall",
+  emoji: "🧱",
+  name: "Hradby",
+  per: "+30 % HP hradu",
+  max: 5,
+  parent: "t_arm",
+  base: 300,
+  growth: 300,
+  pos: [50, 26],
+  apply: (g, l) => {
+    g.castle.walls = l;
+    castleMaxHp(g);
+  }
+}, {
+  id: "t_cbow",
+  emoji: "🏹",
+  name: "Střílny",
+  per: "+1 lučištník hradu",
+  max: 3,
+  parent: "t_cwall",
+  base: 450,
+  growth: 450,
+  pos: [30, 8],
+  apply: (g, l) => {
+    g.castle.bows = l;
+  }
 }];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -3019,11 +3057,33 @@ const TREE_SPECIALS = [{
     g.hero.maxHp += 30;
     g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + 30);
   }
+}, {
+  id: "t_keep",
+  emoji: "🏰",
+  name: "Královský donjon",
+  per: "×2 HP hradu a hrad se sám opravuje",
+  max: 1,
+  special: true,
+  crownCost: 2,
+  base: 0,
+  growth: 0,
+  pos: [0, 0],
+  apply: g => {
+    g.castle.keep = true;
+    castleMaxHp(g);
+    g.castle.regen = g.castle.maxHp * 0.01;
+  }
 }];
 const TREE_ALL = [...TREE_NODES, ...TREE_SPECIALS];
 
 // 🌱 cena normálního uzlu stromu (semínka); speciály stojí 1 👑 korunu
 const treeCost = (tn, lvl) => Math.round(tn.base + tn.growth * lvl);
+
+// 🏰 HP hradu podle zakoupených hradeb (Hradby 1-5 = až +150 %) a donjonu (×2)
+function castleMaxHp(g) {
+  g.castle.maxHp = Math.round(1600 * (1 + 0.3 * g.castle.walls) * (g.castle.keep ? 2 : 1));
+  g.castle.hp = g.castle.maxHp;
+}
 
 // ⚡ ULTIMÁTNÍ SCHOPNOSTI - každá classa má jednu (klávesa E), cooldown 26-38 s
 const ULTS = {
@@ -3719,8 +3779,8 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
   const cls = CLASSES.find(c => c.id === clsId) || CLASSES[0];
   const g = {
     hero: {
-      x: ARENA / 2,
-      y: ARENA / 2,
+      x: ARENA_W - 640,
+      y: ARENA_H / 2,
       hp: cls.hp,
       maxHp: cls.hp,
       invuln: 0,
@@ -3758,6 +3818,20 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
       y: 0,
       r: 0,
       active: false
+    },
+    castle: {
+      x: ARENA_W - 340,
+      y: ARENA_H / 2,
+      r: 150,
+      hp: 1600,
+      maxHp: 1600,
+      walls: 0,
+      bows: 0,
+      keep: false,
+      regen: 0,
+      flash: 0,
+      hitT: 0,
+      cd: 0
     },
     trees: [],
     orbs: [],
@@ -3856,8 +3930,8 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
   };
   for (let i = 0; i < 2160; i++) {
     g.stars.push({
-      x: Math.random() * ARENA,
-      y: Math.random() * ARENA,
+      x: Math.random() * ARENA_W,
+      y: Math.random() * ARENA_H,
       r: 0.6 + Math.random() * 1.4
     });
   }
@@ -3865,9 +3939,11 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
   for (let i = 0; i < 740; i++) {
     const kr = Math.random();
     const k = kr < 0.36 ? 0 : kr < 0.62 ? 1 : kr < 0.76 ? 2 : kr < 0.9 ? 3 : 4;
-    const tx = 50 + Math.random() * (ARENA - 100);
-    const ty = 50 + Math.random() * (ARENA - 100);
-    if ((tx - ARENA / 2) * (tx - ARENA / 2) + (ty - ARENA / 2) * (ty - ARENA / 2) < 150 * 150) continue;
+    const tx = 50 + Math.random() * (ARENA_W - 100);
+    const ty = 50 + Math.random() * (ARENA_H - 100);
+    // 🏰 volno kolem startu hrdiny i pod hradbami
+    if ((tx - (ARENA_W - 640)) * (tx - (ARENA_W - 640)) + (ty - ARENA_H / 2) * (ty - ARENA_H / 2) < 150 * 150) continue;
+    if (tx > ARENA_W - 560) continue;
     g.trees.push({
       x: tx,
       y: ty,
@@ -4794,6 +4870,29 @@ function damageHero(g, dmg) {
     }
   }
 }
+
+// 🏰 rána do hradby - hrad drží, dokud jeho HP neklesne na nulu; pak běh končí
+function damageCastle(g, dmg) {
+  const c = g.castle;
+  if (c.hp <= 0) return; // dobořený hrad už necouvá
+  c.hp -= dmg;
+  c.flash = 0.16;
+  c.hitT = Math.max(c.hitT, 3);
+  g.shake = Math.max(g.shake, 2.5);
+  playSfx(g, "castle");
+  if (c.hp <= 0) {
+    c.hp = 0;
+    g.over = true;
+    g.running = false;
+    g.shake = 22;
+    addText(g, c.x, c.y - 210, "🏰 HRAD PADL!", 0, 34);
+    burst(g, c.x, c.y - 60, 42, 25, 260);
+    burst(g, c.x, c.y + 40, 30, 0, 220);
+    playSfx(g, "boss");
+  } else if (Math.random() < 0.04) {
+    addText(g, c.x + (Math.random() - 0.5) * 80, c.y - 170, "⚠️ HRAD POD ÚTOKEM!", 10, 20);
+  }
+}
 function hasWeapon(g, id) {
   for (const w of g.weapons) if (w.id === id) return true;
   return false;
@@ -4891,8 +4990,8 @@ function castUlt(g) {
           const a2 = i / 6 * Math.PI * 2 + (Math.random() - 0.5) * 0.5;
           const dd2 = 140 + Math.random() * 110;
           tgts.push({
-            x: Math.max(30, Math.min(ARENA - 30, h.x + Math.cos(a2) * dd2)),
-            y: Math.max(30, Math.min(ARENA - 30, h.y + Math.sin(a2) * dd2))
+            x: Math.max(30, Math.min(ARENA_W - 30, h.x + Math.cos(a2) * dd2)),
+            y: Math.max(30, Math.min(ARENA_H - 30, h.y + Math.sin(a2) * dd2))
           });
         }
         tgts.sort((p, q) => p.x - q.x); // shazuje je za sebou, jak pod nimi letí
@@ -5006,8 +5105,8 @@ function castUlt(g) {
         // běžné pokládání (zbraň) staví jen do max 3 turetek na mapě
         for (let i = 0; i < 6; i++) {
           const ta = i / 6 * Math.PI * 2;
-          const tx2 = Math.max(30, Math.min(ARENA - 30, h.x + Math.cos(ta) * 54));
-          const ty2 = Math.max(30, Math.min(ARENA - 30, h.y + Math.sin(ta) * 54));
+          const tx2 = Math.max(30, Math.min(ARENA_W - 30, h.x + Math.cos(ta) * 54));
+          const ty2 = Math.max(30, Math.min(ARENA_H - 30, h.y + Math.sin(ta) * 54));
           const ttype = g.tKinds[g.nextTid % g.tKinds.length];
           const thp = turretHp(g);
           g.turrets.push({
@@ -5288,6 +5387,11 @@ function updateGame(g, dt, move, wantDash) {
   h.slowT = Math.max(0, h.slowT - dt);
   h.invis = Math.max(0, h.invis - dt);
   h.shieldT = Math.max(0, h.shieldT - dt);
+
+  // 🏰 hrad: rány do hradeb se zahojí jen s Královským donjonem (regen), indikátor útoku
+  g.castle.flash = Math.max(0, g.castle.flash - dt);
+  g.castle.hitT = Math.max(0, g.castle.hitT - dt);
+  if (g.castle.regen > 0 && g.castle.hp > 0) g.castle.hp = Math.min(g.castle.maxHp, g.castle.hp + g.castle.regen * dt);
   if (h.poisT > 0) {
     h.poisT = Math.max(0, h.poisT - dt);
     h.hp -= 3.5 * dt;
@@ -5330,14 +5434,24 @@ function updateGame(g, dt, move, wantDash) {
     vx = move.x * sp;
     vy = move.y * sp;
   }
-  h.x = Math.max(20, Math.min(ARENA - 20, h.x + vx * dt));
-  h.y = Math.max(20, Math.min(ARENA - 20, h.y + vy * dt));
+  h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + vx * dt));
+  h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + vy * dt));
   // 🌬️ silný vítr postrkuje i tebe
   if (g.weather === "wind") {
-    h.x = Math.max(20, Math.min(ARENA - 20, h.x + Math.cos(g.windA) * 16 * dt));
-    h.y = Math.max(20, Math.min(ARENA - 20, h.y + Math.sin(g.windA) * 16 * dt));
+    h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + Math.cos(g.windA) * 16 * dt));
+    h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + Math.sin(g.windA) * 16 * dt));
   }
   // 🏟️ boss aréna - hrdina nemůže ven
+
+  // 🏰 hrdina nechodí po hradě - zůstává před hradbou jako každý pořádný obránce
+  {
+    const hcd = Math.hypot(h.x - g.castle.x, h.y - g.castle.y);
+    if (hcd < g.castle.r) {
+      const cAng = Math.atan2(h.y - g.castle.y, h.x - g.castle.x);
+      h.x = g.castle.x + Math.cos(cAng) * g.castle.r;
+      h.y = g.castle.y + Math.sin(cAng) * g.castle.r;
+    }
+  }
   if (g.arena.active) {
     const adx = h.x - g.arena.x;
     const ady = h.y - g.arena.y;
@@ -5529,7 +5643,7 @@ function updateGame(g, dt, move, wantDash) {
       a.y += Math.sin(g.windA) * 60 * dt;
     }
     a.life -= dt;
-    let remove = a.life <= 0 || a.x < 0 || a.x > ARENA || a.y < 0 || a.y > ARENA;
+    let remove = a.life <= 0 || a.x < 0 || a.x > ARENA_W || a.y < 0 || a.y > ARENA_H;
     if (!remove) {
       let hit = false;
       gridEach(a.x, a.y, 170, e => {
@@ -5618,6 +5732,45 @@ function updateGame(g, dt, move, wantDash) {
     }
   }
 
+  // 🏰 střílny ze stromu dovedností: lučištníci na hradbách střílí na netvory pod hradbami
+  if (g.castle.bows > 0 && !g.over) {
+    g.castle.cd -= dt;
+    if (g.castle.cd <= 0) {
+      g.castle.cd = 1.15;
+      const tg = [];
+      for (const e of g.enemies) {
+        if (e.dead || (e.subT ?? 0) > 0) continue;
+        if (dist2(e.x, e.y, g.castle.x, g.castle.y) < 780 * 780) tg.push(e);
+        if (tg.length >= g.castle.bows * 2) break;
+      }
+      const bDmg = Math.round((26 + g.time * 0.5) * (1 + 0.35 * (g.castle.bows - 1)) * (g.castle.keep ? 1.4 : 1));
+      let fired = 0;
+      for (const e of tg) {
+        if (fired >= g.castle.bows) break;
+        fired++;
+        const ba = Math.atan2(e.y - (g.castle.y - 46), e.x - g.castle.x);
+        g.arrows.push({
+          x: g.castle.x - 60 + Math.cos(ba) * 30,
+          y: g.castle.y - 46 + Math.sin(ba) * 30,
+          vx: Math.cos(ba) * 820,
+          vy: Math.sin(ba) * 820,
+          dmg: bDmg,
+          pierce: 0,
+          crit: false,
+          life: 1.3,
+          hits: [e.id],
+          kind: 1,
+          knock: 60,
+          chain: 0,
+          expl: false,
+          frost: false,
+          lvl: 1,
+          src: "castle"
+        });
+      }
+      if (fired > 0) playSfx(g, "shoot");
+    }
+  }
   // nepřátelé
   for (const e of g.enemies) {
     if (e.dead) continue;
@@ -5637,10 +5790,28 @@ function updateGame(g, dt, move, wantDash) {
     const dx = h.x - e.x;
     const dy = h.y - e.y;
     const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    // déšť nepřátele zdržuje, pakt sběratele a noční tempo je zrychlují, korunka "swift" dvojnásobně
+    // déšť nepřátel zdržuje, pakt sběratele a noční tempo je zrychlují, korunka "swift" dvojnásobně
     let sp = e.speed * (e.slow > 0 ? 0.45 : 1) * (g.night ? 1.6 : 1) * g.enemySpdMul * (g.weather === "rain" ? 0.85 : 1) * (e.elite === "swift" ? 1.5 : 1);
     let dirx = dx / d;
     let diry = dy / d;
+    // 🏰 pochod na hrad: běžní netvoři míří na východ k hradu, boss a mini jdou po tobě
+    // (jezevec zahrabaný, rozpulec se teleportuje za tebe a dravec číhá - ti zůstávají lovecké)
+    const cdx = g.castle.x - e.x;
+    const cdy = g.castle.y - e.y;
+    const cd = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
+    const marches = !g.sandbox && !e.boss && !e.minib && e.kind !== 8 && e.kind !== 13 && e.kind !== 19;
+    let attackingCastle = false;
+    if (marches) {
+      dirx = cdx / cd;
+      diry = cdy / cd;
+      // daleko od hradu jdou vojenským pochodem, ať loukou neutáhnou celou věčnost
+      if (cd > 2600) sp *= 2.6;else if (cd > 1300) sp *= 1.6;
+      // 🏰 u hradby se zastaví a sekají do brány
+      if (cd < g.castle.r + e.r + 6) {
+        attackingCastle = true;
+        sp = 0;
+      }
+    }
     // ⚙️ běžní nepřátelé v okolí turetek je cíleně napadnou (bossové jdou vždy po tobě)
     if (!e.boss && !e.minib && e.kind !== 19 && g.turrets.length > 0) {
       let tt = null;
@@ -6099,8 +6270,8 @@ function updateGame(g, dt, move, wantDash) {
         burst(g, e.x, e.y, 9, 300, 150);
         const ta = Math.random() * Math.PI * 2;
         const td = 130 + Math.random() * 70;
-        e.x = Math.max(e.r, Math.min(ARENA - e.r, h.x + Math.cos(ta) * td));
-        e.y = Math.max(e.r, Math.min(ARENA - e.r, h.y + Math.sin(ta) * td));
+        e.x = Math.max(e.r, Math.min(ARENA_W - e.r, h.x + Math.cos(ta) * td));
+        e.y = Math.max(e.r, Math.min(ARENA_H - e.r, h.y + Math.sin(ta) * td));
         burst(g, e.x, e.y, 9, 300, 150);
         addText(g, e.x, e.y - e.r - 10, "✨", 60, 15);
       }
@@ -6235,13 +6406,34 @@ function updateGame(g, dt, move, wantDash) {
     e.y += (diry * sp + e.kby) * dt;
     e.kbx *= 0.86;
     e.kby *= 0.86;
+    // 🏰 směr, kterým netvor letí - podle něj se orientují siluety na pochodu
+    if (sp > 1) e.fa = Math.atan2(diry, dirx);
+    // 🏰 útok na hradbu: dokud hrad stojí, buší sekána do brány
+    if (attackingCastle) {
+      e.castleCd = (e.castleCd ?? 0.6) - dt;
+      if (e.castleCd <= 0) {
+        e.castleCd = 1.1;
+        damageCastle(g, Math.max(2, Math.round(e.dmg * 0.45)));
+        addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "🔨", 30, 13);
+      }
+    }
     // 🌬️ silný vítr postrkuje i nepřátele
     if (g.weather === "wind") {
       e.x += Math.cos(g.windA) * 26 * dt;
       e.y += Math.sin(g.windA) * 26 * dt;
     }
-    e.x = Math.max(e.r, Math.min(ARENA - e.r, e.x));
-    e.y = Math.max(e.r, Math.min(ARENA - e.r, e.y));
+    e.x = Math.max(e.r, Math.min(ARENA_W - e.r, e.x));
+    e.y = Math.max(e.r, Math.min(ARENA_H - e.r, e.y));
+    // 🏰 za hradbu nikdo nevleze - posun zpět k vnějšímu okraji
+    if (marches) {
+      const ocx = e.x - g.castle.x;
+      const ocy = e.y - g.castle.y;
+      const ocd = Math.hypot(ocx, ocy) || 1;
+      if (ocd < g.castle.r + e.r) {
+        e.x = g.castle.x + ocx / ocd * (g.castle.r + e.r);
+        e.y = g.castle.y + ocy / ocd * (g.castle.r + e.r);
+      }
+    }
     // kontakt s hrdinou (duch ve fázi prolnul skrz a neubližuje, zahrabaný jezevec taky ne)
     const rr = e.r + 13;
     const phased6 = e.kind === 6 && !e.boss && e.lungeT > 0;
@@ -6368,7 +6560,7 @@ function updateGame(g, dt, move, wantDash) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.life -= dt;
-    let remove = b.life <= 0 || b.x < 0 || b.x > ARENA || b.y < 0 || b.y > ARENA;
+    let remove = b.life <= 0 || b.x < 0 || b.x > ARENA_W || b.y < 0 || b.y > ARENA_H;
     if (!remove && h.invuln <= 0 && dist2(b.x, b.y, h.x, h.y) < 17 * 17) {
       damageHero(g, b.dmg);
       // ❄️ mrazivá koule ledovce - hrdinu na chvíli zpomalí
@@ -6378,6 +6570,12 @@ function updateGame(g, dt, move, wantDash) {
         addText(g, h.x, h.y - 34, "❄️ ZPOMALEN!", 195, 14);
       }
       burst(g, b.x, b.y, 8, 195, 150);
+      remove = true;
+    }
+    // 🏰 koule, které přeletí hrdinu, naráz do hradby
+    if (!remove && dist2(b.x, b.y, g.castle.x, g.castle.y) < 110 * 110) {
+      damageCastle(g, Math.max(2, Math.round(b.dmg * 0.5)));
+      burst(g, b.x, b.y, 6, 30, 130);
       remove = true;
     }
     if (remove) {
@@ -6662,8 +6860,8 @@ function updateGame(g, dt, move, wantDash) {
     g.windT -= dt;
     if (g.windT <= 0) {
       g.windT = 1.3;
-      const bx = Math.max(30, Math.min(ARENA - 30, h.x + (Math.random() - 0.5) * 560));
-      const by = Math.max(30, Math.min(ARENA - 30, h.y + (Math.random() - 0.5) * 560));
+      const bx = Math.max(30, Math.min(ARENA_W - 30, h.x + (Math.random() - 0.5) * 560));
+      const by = Math.max(30, Math.min(ARENA_H - 30, h.y + (Math.random() - 0.5) * 560));
       g.telegraphs.push({
         x: bx,
         y: by,
@@ -6812,6 +7010,306 @@ function updateFx(g, dt) {
     t.life -= dt;
     if (t.life <= 0) g.texts.splice(i, 1);
   }
+}
+
+// 🏰 hrad na východě louky - fiktivní 2.5D fasáda: roste s upgrady ze stromu
+// (Hradby 🧱 = vyšší a širší zdi, Střílny 🏹 = lučištníci, Královský donjon 🏰 = palác + příkop)
+function drawCastle(ctx, g) {
+  const c = g.castle;
+  const t = g.gtime;
+  const cx = c.x;
+  const baseY = c.y + 120;
+  const walls = c.walls; // 0 = dřevěná palisáda, 1..5 = kamenné hradby
+  const bw = 208 + walls * 22; // šířka hradby
+  const wh = 52 + walls * 14; // výška hradeb
+  const lx = cx - bw / 2;
+  const rx = cx + bw / 2;
+  const topY = baseY - wh * 2;
+  const stone = walls === 0 ? "#9a6a3d" : "#cfc7ba";
+  const stoneD = walls === 0 ? "#7a4f2c" : "#a49a89";
+  const dead = c.hp <= 0;
+  // stín pod celou stavbou
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(cx, baseY + 8, bw * 0.62, 26, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // suchý příkop - až s Královským donjonem se napustí vodou
+  if (c.keep) {
+    ctx.fillStyle = "#3f6f9e";
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 46, 96, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(120,190,240,0.85)";
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 46, 96, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#26523a";
+    ctx.beginPath();
+    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 12, 62, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  if (!dead) {
+    // zadní zástavba - s vyššími hradbami vykukují domy za zdí
+    if (walls >= 2) {
+      ctx.fillStyle = stoneD;
+      ctx.fillRect(lx + 26, topY - 10, bw - 52, 84 + walls * 6);
+      ctx.fillStyle = "#4d4434";
+      for (let hx = lx + 40; hx < rx - 30; hx += 64) ctx.fillRect(hx, topY + 2, 14, 12);
+      ctx.fillStyle = "#1c1917";
+      for (let hx = lx + 44; hx < rx - 34; hx += 64) ctx.fillRect(hx, topY + 4, 8, 10);
+    }
+    // Královský donjon - velká hranatá věž uprostřed, viditelná nad hradbami
+    if (c.keep) {
+      const kx = cx - 58;
+      ctx.fillStyle = stone;
+      ctx.fillRect(kx - 46, topY - 104, 92, 180 + wh);
+      ctx.fillStyle = stoneD;
+      ctx.fillRect(kx - 46, topY - 104, 92, 10);
+      ctx.strokeStyle = stoneD;
+      ctx.lineWidth = 2;
+      for (let ky = topY + 12; ky < baseY - 30; ky += 26) {
+        ctx.beginPath();
+        ctx.moveTo(kx - 46, ky);
+        ctx.lineTo(kx + 46, ky);
+        ctx.stroke();
+      }
+      // cimbuří donjonu
+      ctx.fillStyle = stone;
+      for (let i2 = 0; i2 < 5; i2++) ctx.fillRect(kx - 46 + i2 * 19 + 2, topY - 116, 10, 12);
+      // štítová okna
+      ctx.fillStyle = "#1c1917";
+      ctx.fillRect(kx - 14, topY - 72, 8, 16);
+      ctx.fillRect(kx + 4, topY - 72, 8, 16);
+      // královská korouhev na stožáru
+      ctx.strokeStyle = "#57534e";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(kx, topY - 116);
+      ctx.lineTo(kx, topY - 162);
+      ctx.stroke();
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.moveTo(kx, topY - 162);
+      ctx.lineTo(kx + 32 + Math.sin(t * 3) * 4, topY - 153 + Math.sin(t * 3 + 1) * 3);
+      ctx.lineTo(kx, topY - 140);
+      ctx.closePath();
+      ctx.fill();
+    }
+    // věž - válec s cimbuřím, od 3. úrovně hradeb červená kuželová střecha
+    const drawTower = (tpx, thh) => {
+      ctx.fillStyle = stone;
+      ctx.fillRect(tpx - 24, baseY - wh * 2 - thh, 48, thh + wh * 2);
+      ctx.fillStyle = stoneD;
+      ctx.fillRect(tpx - 24, baseY - wh * 2 - thh, 48, 8);
+      ctx.strokeStyle = stoneD;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(tpx - 24, baseY - wh * 2 - thh + 4);
+      ctx.lineTo(tpx + 24, baseY - wh * 2 - thh + 4);
+      ctx.stroke();
+      if (c.keep || walls >= 3) {
+        ctx.fillStyle = "#b91c1c";
+        ctx.beginPath();
+        ctx.moveTo(tpx, baseY - wh * 2 - thh - 44);
+        ctx.lineTo(tpx - 28, baseY - wh * 2 - thh);
+        ctx.lineTo(tpx + 28, baseY - wh * 2 - thh);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "#7f1d1d";
+        ctx.beginPath();
+        ctx.moveTo(tpx, baseY - wh * 2 - thh - 44);
+        ctx.lineTo(tpx + 28, baseY - wh * 2 - thh);
+        ctx.lineTo(tpx, baseY - wh * 2 - thh);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "#57534e";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(tpx, baseY - wh * 2 - thh - 58);
+        ctx.lineTo(tpx, baseY - wh * 2 - thh - 44);
+        ctx.stroke();
+        ctx.fillStyle = "#facc15";
+        ctx.beginPath();
+        ctx.moveTo(tpx, baseY - wh * 2 - thh - 58);
+        ctx.lineTo(tpx - 20 + Math.sin(t * 4 + tpx * 0.05) * 3, baseY - wh * 2 - thh - 52);
+        ctx.lineTo(tpx, baseY - wh * 2 - thh - 46);
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.fillStyle = stone;
+        for (let i2 = 0; i2 < 3; i2++) ctx.fillRect(tpx - 24 + i2 * 17 + 3, baseY - wh * 2 - thh - 10, 10, 10);
+      }
+    };
+    drawTower(lx + 4, 46);
+    drawTower(rx - 4, 46);
+    if (walls >= 4) drawTower(cx, 78);
+    // přední hradba - palisáda (0) nebo kamenná zeď s vlnitými instemi
+    if (walls === 0) {
+      for (let px2 = lx; px2 <= rx - 12; px2 += 14) {
+        ctx.fillStyle = "#9a6a3d";
+        ctx.fillRect(px2, topY + 8, 11, wh * 2 - 8);
+        ctx.fillStyle = "#7a4f2c";
+        ctx.fillRect(px2, topY + 8, 11, 5);
+        ctx.fillStyle = "#b0793f";
+        ctx.beginPath();
+        ctx.moveTo(px2, topY + 10);
+        ctx.lineTo(px2 + 5.5, topY);
+        ctx.lineTo(px2 + 11, topY + 10);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = "#57534e";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(lx, topY + 40);
+      ctx.lineTo(rx, topY + 40);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = stone;
+      ctx.fillRect(lx, topY, bw, wh * 2);
+      // kamenné insty - mřížka spár ve zdi
+      ctx.strokeStyle = stoneD;
+      ctx.lineWidth = 1.6;
+      for (let sx = lx; sx <= rx; sx += 26) {
+        ctx.beginPath();
+        ctx.moveTo(sx, topY);
+        ctx.lineTo(sx, baseY);
+        ctx.stroke();
+      }
+      const off = 13;
+      for (let sy = topY + 14; sy < baseY; sy += 15) {
+        ctx.beginPath();
+        ctx.moveTo(lx, sy);
+        ctx.lineTo(rx, sy);
+        ctx.stroke();
+      }
+      // posun spár v plné cihelné vazbě
+      for (let sy = topY + 14; sy < baseY; sy += 30) {
+        ctx.beginPath();
+        ctx.moveTo(lx + off, sy - 15);
+        ctx.lineTo(lx + off, sy);
+        ctx.stroke();
+      }
+      // cimbuří na hradě
+      ctx.fillStyle = stoneD;
+      for (let sx = lx; sx <= rx - 10; sx += 20) ctx.fillRect(sx, topY - 12, 11, 12);
+    }
+    // brána - hrotitý oblouk s padacím mostem (mříž spuštěná přes vchod)
+    const gy = baseY - wh * 0.28;
+    const gx = cx - 30 - walls * 2;
+    const gw = (60 + walls * 4) / 2;
+    ctx.fillStyle = "#1c1917";
+    ctx.beginPath();
+    ctx.moveTo(gx, gy);
+    ctx.lineTo(gx, baseY - 26);
+    ctx.lineTo(gx + gw * 2, baseY - 26);
+    ctx.lineTo(gx + gw * 2, gy);
+    ctx.quadraticCurveTo(cx, gy - 42, gx, gy);
+    ctx.fill();
+    ctx.strokeStyle = stoneD;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+    // mříž - svislice
+    ctx.strokeStyle = dead ? "#3f3527" : "#57534e";
+    ctx.lineWidth = 2;
+    for (let ix = gx + 6; ix < gx + gw * 2 - 4; ix += 9) {
+      ctx.beginPath();
+      ctx.moveTo(ix, gy - 8);
+      ctx.lineTo(ix, baseY - 28);
+      ctx.stroke();
+    }
+    if (c.keep) {
+      ctx.strokeStyle = "#facc15";
+      ctx.lineWidth = 2.5;
+      ctx.strokeRect(gx - 4, gy - 34, gw * 2 + 8, 12 + wh * 0.28 + 4);
+    }
+    // střílny s lučištníky - dřevěné arkýdy na hradbě, palí na netvory pod hradbami
+    if (c.bows > 0) {
+      for (let b = 0; b < c.bows; b++) {
+        const hx = lx + 34 + b * (bw - 68) / Math.max(1, c.bows - 1);
+        const hy = topY + 16;
+        ctx.fillStyle = "#78716c";
+        ctx.fillRect(hx - 17, hy - 12, 34, 22);
+        ctx.fillStyle = "#57534e";
+        ctx.fillRect(hx - 17, hy - 16, 34, 6);
+        ctx.fillStyle = "#1c1917";
+        ctx.fillRect(hx - 6, hy - 8, 12, 12);
+        // lučištník - helma, luk a vystřelený záblesk
+        ctx.fillStyle = "#bfdbfe";
+        ctx.beginPath();
+        ctx.arc(hx, hy - 2, 3.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#3b82f6";
+        ctx.fillRect(hx - 3, hy + 2, 6, 5);
+        ctx.strokeStyle = "#92400e";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.arc(hx - 12, hy - 4, 6, -1.1, 1.1);
+        ctx.stroke();
+        if (c.cd < 0.12) {
+          ctx.fillStyle = "rgba(254,240,138,0.9)";
+          ctx.beginPath();
+          ctx.arc(hx - 16, hy - 4, 3, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+    // pochodně u brány oživují hrad
+    if (walls >= 1) {
+      for (const tpx of [gx - 14, gx + gw * 2 + 16]) {
+        ctx.strokeStyle = "#57534e";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(tpx, topY + 34);
+        ctx.lineTo(tpx, topY + 24);
+        ctx.stroke();
+        ctx.fillStyle = `rgba(251,146,60,${0.65 + 0.3 * Math.sin(t * 9 + tpx)})`;
+        ctx.beginPath();
+        ctx.arc(tpx, topY + 20 + Math.sin(t * 11 + tpx) * 1.5, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  // dobořený hrad - šedý rubem posypaný troskami
+  if (dead) {
+    ctx.fillStyle = "rgba(28,25,23,0.55)";
+    ctx.fillRect(lx - 6, topY - 60, bw + 12, wh * 2 + 60);
+    ctx.fillStyle = "#57534e";
+    for (let rx2 = lx; rx2 < rx; rx2 += 22) {
+      ctx.beginPath();
+      ctx.arc(rx2, baseY - 10 - rx2 % 3 * 12, 7, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // záblesk rány - bílé přesvětlení zas proběhlo
+  if (c.flash > 0) {
+    ctx.fillStyle = `rgba(255,80,60,${Math.min(0.45, c.flash * 2.4)})`;
+    ctx.fillRect(lx, topY - 60, bw, wh * 2 + 60);
+  }
+  // 🔰 nad hradem HP: 🏰 label + bar
+  const bwid = 244;
+  const by = topY - 118 - (walls > 2 ? 26 : 0) - (c.keep ? 40 : 0);
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(cx - bwid / 2, by, bwid, 14);
+  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - bwid / 2, by, bwid, 14);
+  const frac = Math.max(0, c.hp / c.maxHp);
+  const grad = frac > 0.5 ? "#fbbf24" : frac > 0.25 ? "#fb923c" : "#ef4444";
+  ctx.fillStyle = grad;
+  ctx.fillRect(cx - bwid / 2 + 2, by + 2, (bwid - 4) * frac, 10);
+  ctx.font = "bold 13px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#fff7ed";
+  ctx.fillText("🏰", cx - bwid / 2 + 12, by + 12);
+  ctx.font = "bold 10px system-ui, sans-serif";
+  ctx.fillText(`${Math.ceil(c.hp)} / ${c.maxHp}`, cx, by + 11);
+  if (c.hitT > 0 && c.hp > 0) {
+    ctx.fillStyle = `rgba(248,113,113,${0.6 + 0.4 * Math.sin(t * 8)})`;
+    ctx.font = "bold 13px system-ui, sans-serif";
+    ctx.fillText("⚔️ HRAD POD ÚTOKEM!", cx, by - 8);
+  }
+  ctx.textAlign = "left";
 }
 function drawHero(ctx, g) {
   const h = g.hero;
@@ -7631,7 +8129,7 @@ const KIND_COLORS = {
   }
 };
 function drawEnemy(ctx, e, hx, hy, t) {
-  const ea = Math.atan2(hy - e.y, hx - e.x);
+  const ea = e.fa !== undefined ? e.fa : Math.atan2(hy - e.y, hx - e.x);
   // 🦡 zahrabaný jezevec - vidět je jen hromádka hlíny s odhazovanými hrudkami
   if ((e.subT ?? 0) > 0) {
     ctx.fillStyle = "rgba(70,48,25,0.9)";
@@ -8898,26 +9396,26 @@ function getWorldBg(g) {
   // 🚀 poloviční rozlišení + škálování při kreslení - 6000×6000 px by žralo ~144 MB RAM,
   // v polovině žere čtvrtinu a tráva je stejně jen měkká textura
   const BG_SCALE = 0.5;
-  cv.width = ARENA * BG_SCALE;
-  cv.height = ARENA * BG_SCALE;
+  cv.width = ARENA_W * BG_SCALE;
+  cv.height = ARENA_H * BG_SCALE;
   const c = cv.getContext("2d");
   if (!c) return null;
   c.scale(BG_SCALE, BG_SCALE);
   // posekané pruhy trávníku
   const sgs = 160;
   c.fillStyle = "rgba(190,255,170,0.06)";
-  for (let x = 0; x < ARENA; x += sgs) c.fillRect(x, 0, sgs / 2, ARENA);
+  for (let x = 0; x < ARENA_W; x += sgs) c.fillRect(x, 0, sgs / 2, ARENA_H);
   // mřížka
   c.strokeStyle = "rgba(10,40,10,0.22)";
   c.lineWidth = 1;
   c.beginPath();
-  for (let x = 0; x <= ARENA; x += 80) {
+  for (let x = 0; x <= ARENA_W; x += 80) {
     c.moveTo(x, 0);
-    c.lineTo(x, ARENA);
+    c.lineTo(x, ARENA_H);
   }
-  for (let y = 0; y <= ARENA; y += 80) {
+  for (let y = 0; y <= ARENA_H; y += 80) {
     c.moveTo(0, y);
-    c.lineTo(ARENA, y);
+    c.lineTo(ARENA_W, y);
   }
   c.stroke();
   // trsy trávy a kytičky - stejné rozložení jako dřív, ale nakreslené jen jednou
@@ -9234,10 +9732,10 @@ function render(ctx, g, joy) {
   const halfH = VH / 2 / zoom;
   const inView = (x, y, pad = 60) => x > h.x - halfW - pad && x < h.x + halfW + pad && y > h.y - halfH - pad && y < h.y + halfH + pad;
   if (fxCache.ctx !== ctx || fxCache.w !== VW || fxCache.h !== VH || !fxCache.n1 || !fxCache.n2 || !fxCache.vg || !fxCache.lg || !fxCache.gl) {
-    const n1 = ctx.createRadialGradient(ARENA * 0.3, ARENA * 0.3, 0, ARENA * 0.3, ARENA * 0.3, 800);
+    const n1 = ctx.createRadialGradient(ARENA_W * 0.22, ARENA_H * 0.3, 0, ARENA_W * 0.22, ARENA_H * 0.3, 800);
     n1.addColorStop(0, "rgba(250,240,150,0.12)");
     n1.addColorStop(1, "rgba(250,240,150,0)");
-    const n2 = ctx.createRadialGradient(ARENA * 0.72, ARENA * 0.7, 0, ARENA * 0.72, ARENA * 0.7, 700);
+    const n2 = ctx.createRadialGradient(ARENA_W * 0.6, ARENA_H * 0.7, 0, ARENA_W * 0.6, ARENA_H * 0.7, 700);
     n2.addColorStop(0, "rgba(150,230,120,0.10)");
     n2.addColorStop(1, "rgba(150,230,120,0)");
     const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VW * 0.7);
@@ -9262,13 +9760,13 @@ function render(ctx, g, joy) {
       h: VH
     };
   }
-  if (inView(ARENA * 0.3, ARENA * 0.3, 850)) {
+  if (inView(ARENA_W * 0.22, ARENA_H * 0.3, 850)) {
     ctx.fillStyle = fxCache.n1;
-    ctx.fillRect(ARENA * 0.3 - 800, ARENA * 0.3 - 800, 1600, 1600);
+    ctx.fillRect(ARENA_W * 0.22 - 800, ARENA_H * 0.3 - 800, 1600, 1600);
   }
-  if (inView(ARENA * 0.72, ARENA * 0.7, 750)) {
+  if (inView(ARENA_W * 0.6, ARENA_H * 0.7, 750)) {
     ctx.fillStyle = fxCache.n2;
-    ctx.fillRect(ARENA * 0.72 - 700, ARENA * 0.7 - 700, 1400, 1400);
+    ctx.fillRect(ARENA_W * 0.6 - 700, ARENA_H * 0.7 - 700, 1400, 1400);
   }
 
   // travnatá podlaha - jediný blit z předrenderované cache (tráva, kytičky, pruhy, mřížka)
@@ -9278,8 +9776,8 @@ function render(ctx, g, joy) {
     const bs = 0.5;
     const sx = Math.max(0, h.x - halfW - 60);
     const sy = Math.max(0, h.y - halfH - 60);
-    const sw = Math.min(ARENA - sx, VW + 120);
-    const sh = Math.min(ARENA - sy, VH + 120);
+    const sw = Math.min(ARENA_W - sx, VW + 120);
+    const sh = Math.min(ARENA_H - sy, VH + 120);
     ctx.drawImage(wbg, sx * bs, sy * bs, sw * bs, sh * bs, sx, sy, sw, sh);
   }
   // 🕯️ měkké světlo hrdiny - jako by nesl lampu (Survivor.io focus na postavu)
@@ -9296,10 +9794,10 @@ function render(ctx, g, joy) {
   ctx.restore();
 
   // ✨ světlušky po louce (chvilkové problikávání) - počet škáluje s mapou, ať neztratí
-  const ffN = Math.min(30, Math.max(12, Math.round(ARENA / 280)));
+  const ffN = Math.min(30, Math.max(12, Math.round(ARENA_W / 280)));
   for (let i = 0; i < ffN; i++) {
-    const ffx = i * 473 % ARENA + Math.sin(g.gtime * 0.7 + i * 2.3) * 60;
-    const ffy = i * 887 % ARENA + Math.cos(g.gtime * 0.9 + i * 1.7) * 45;
+    const ffx = i * 473 % ARENA_W + Math.sin(g.gtime * 0.7 + i * 2.3) * 60;
+    const ffy = i * 887 % ARENA_H + Math.cos(g.gtime * 0.9 + i * 1.7) * 45;
     if (!inView(ffx, ffy, 12)) continue;
     const fa = 0.3 + 0.3 * Math.sin(g.gtime * 3 + i * 2.7);
     ctx.fillStyle = `rgba(253,230,138,${fa})`;
@@ -9311,10 +9809,10 @@ function render(ctx, g, joy) {
   // hranice arény - dřevěný plot
   ctx.strokeStyle = "rgba(133,84,44,0.28)";
   ctx.lineWidth = 16;
-  ctx.strokeRect(0, 0, ARENA, ARENA);
+  ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
   ctx.strokeStyle = "#b0793f";
   ctx.lineWidth = 5;
-  ctx.strokeRect(0, 0, ARENA, ARENA);
+  ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
 
   // 🌳 stromy a keře - vrstvené koruny, kmeny s kořeny, houpející se listí
   // 🌳 stromy a keře - předrenderované sprite + lehký výkyv celého stromu (místo stovek cest každý snímek)
@@ -9326,6 +9824,8 @@ function render(ctx, g, joy) {
   }
 
   // 🏟️ boss aréna - červený kruh vězení
+  // 🏰 hrdinův hrad na východě - roste s upgrady stromu (hradby, střílny, donjon)
+  if (inView(g.castle.x, g.castle.y, 520)) drawCastle(ctx, g);
   if (g.arena.active) {
     const a = g.arena;
     ctx.fillStyle = "rgba(120,10,20,0.10)";
@@ -9514,57 +10014,204 @@ function render(ctx, g, joy) {
     if (inView(e.x, e.y, e.r + 26)) drawEnemy(ctx, e, h.x, h.y, g.gtime);
   }
 
-  // ⚙️ turetky inženýra - tripod, rotující hlaveň podle vylepšení, kontrolka
+  // ⚙️ turetky inženýra - každý druh má vlastní model, ať na první pohled vidíš, co střílí
   ctx.font = "9px system-ui";
   ctx.textAlign = "center";
   for (const tu of g.turrets) {
-    if (!inView(tu.x, tu.y, 40)) continue;
+    if (!inView(tu.x, tu.y, 64)) continue;
+    const tdef = TURRET_TYPES[tu.type] || TURRET_TYPES.standard;
+    const barrelCol = tu.type === "standard" ? g.tcfg.flame ? "#ea580c" : g.tcfg.frost ? "#38bdf8" : "#d6d3d1" : tdef.barrel;
+    // stín + železná oktagonová podstava
     ctx.fillStyle = "rgba(0,0,0,0.3)";
     ctx.beginPath();
-    ctx.ellipse(tu.x, tu.y + 8, 11, 4.5, 0, 0, Math.PI * 2);
+    ctx.ellipse(tu.x, tu.y + 9, 13, 5, 0, 0, Math.PI * 2);
     ctx.fill();
-    // trojnožka
-    ctx.strokeStyle = "#57534e";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "#44403c";
     ctx.beginPath();
-    ctx.moveTo(tu.x - 7, tu.y + 7);
-    ctx.lineTo(tu.x, tu.y - 1);
-    ctx.moveTo(tu.x + 7, tu.y + 7);
-    ctx.lineTo(tu.x, tu.y - 1);
-    ctx.moveTo(tu.x, tu.y + 8);
-    ctx.lineTo(tu.x, tu.y - 1);
-    ctx.stroke();
-    // tělo
-    ctx.fillStyle = "#78716c";
-    ctx.beginPath();
-    ctx.arc(tu.x, tu.y - 2, 7.5, 0, Math.PI * 2);
+    for (let k = 0; k < 8; k++) {
+      const ka2 = k / 8 * Math.PI * 2 + Math.PI / 8;
+      const px2 = tu.x + Math.cos(ka2) * 12;
+      const py2 = tu.y + 4 + Math.sin(ka2) * 5;
+      if (k === 0) ctx.moveTo(px2, py2);else ctx.lineTo(px2, py2);
+    }
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle = "#44403c";
+    ctx.strokeStyle = "#1c1917";
     ctx.lineWidth = 1;
     ctx.stroke();
-    // 💥 plazmová turetka - pulzující energetická aura
-    if (tu.type === "plasma") {
+    // právě vystřelila - krátký záblesk na ústí hlavně
+    const justFired = tu.cd > tdef.rate - Math.min(0.09, tdef.rate * 0.45);
+    // rotující hlavňová část podle druhu
+    ctx.save();
+    ctx.translate(tu.x, tu.y - 3);
+    ctx.rotate(tu.aim);
+    const drawBarrel = (len, wid, col, yoff = 0) => {
+      ctx.fillStyle = col;
+      ctx.fillRect(6, -wid / 2 + yoff, len, wid);
+      ctx.fillStyle = "rgba(255,255,255,0.28)";
+      ctx.fillRect(6, -wid / 2 + yoff, len, Math.max(1, wid * 0.26));
+    };
+    if (tu.type === "tesla") {
+      // ⚡ teslová cívka - měděné vinutí, jiskry po výboji
+      ctx.fillStyle = "#292524";
+      ctx.fillRect(-6, -4.5, 11, 9);
+      ctx.strokeStyle = "#d97706";
+      ctx.lineWidth = 2;
+      for (let k = 0; k < 3; k++) {
+        ctx.beginPath();
+        ctx.arc(6, 0, 4 + k * 2.6, -1.2, 1.2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = "#facc15";
+      ctx.beginPath();
+      ctx.arc(6, 0, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      if (justFired) {
+        ctx.strokeStyle = "#fde047";
+        ctx.lineWidth = 1.4;
+        ctx.beginPath();
+        ctx.moveTo(9, 0);
+        ctx.lineTo(13, -3);
+        ctx.lineTo(15, 2);
+        ctx.lineTo(20, -2);
+        ctx.stroke();
+      }
+    } else if (tu.type === "sniper") {
+      // 🎯 dlouhá tenká hlaveň, dalekohled a laserové mířidlo
+      drawBarrel(21, 2, "#94a3b8");
+      ctx.fillStyle = "#334155";
+      ctx.fillRect(2, -5.5, 7, 3);
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(9, -4.5, 2.4, 1.8);
+      ctx.strokeStyle = "rgba(239,68,68,0.32)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(27, 0);
+      ctx.lineTo(tdef.rng - 60, 0);
+      ctx.stroke();
+    } else if (tu.type === "mortar") {
+      // 💣 tlustá krátká hlaveň, vzipnutý granát vidět v ústí
+      ctx.fillStyle = "#1c1917";
+      ctx.beginPath();
+      ctx.arc(-6, 2, 6.5, 0, Math.PI * 2);
+      ctx.fill();
+      drawBarrel(11, 8, "#57534e");
+      ctx.strokeStyle = "#78716c";
+      ctx.lineWidth = 1.2;
+      ctx.strokeRect(6, -4, 11, 8);
+      ctx.fillStyle = "#0a0a0a";
+      ctx.beginPath();
+      ctx.arc(14, 0, 3.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = tdef.barrel;
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+    } else if (tu.type === "scatter") {
+      // 🔱 trojhlavňová brokovnice s dřevěnou pazbou
+      drawBarrel(9, 2.8, "#b45309");
+      drawBarrel(9, 2.8, "#d97706", -3.6);
+      drawBarrel(9, 2.8, "#8c4a06", 3.6);
+      ctx.fillStyle = "#78350f";
+      ctx.fillRect(-7, -4, 8, 8);
+    } else if (tu.type === "laser") {
+      // ☄️ červený hranol + emitor, po výstřelu zableskne paprsek
+      ctx.fillStyle = "#7f1d1d";
+      ctx.fillRect(-6, -5, 9, 10);
+      ctx.fillStyle = "rgba(239,68,68,0.9)";
+      ctx.beginPath();
+      ctx.moveTo(6, 0);
+      ctx.lineTo(12, -3);
+      ctx.lineTo(19, 0);
+      ctx.lineTo(12, 3);
+      ctx.closePath();
+      ctx.fill();
+      if (justFired) {
+        ctx.strokeStyle = "rgba(248,113,113,0.8)";
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        ctx.moveTo(19, 0);
+        ctx.lineTo(64, 0);
+        ctx.stroke();
+      }
+    } else if (tu.type === "plasma") {
+      // 💥 plovoucí plazmová koule s prstencem a pulzující aurou
       ctx.fillStyle = `rgba(232,121,249,${0.16 + 0.08 * Math.sin(tu.t * 7)})`;
       ctx.beginPath();
-      ctx.arc(tu.x, tu.y - 2, 14 + Math.sin(tu.t * 7) * 2, 0, Math.PI * 2);
+      ctx.arc(0, 1, 15 + Math.sin(tu.t * 7) * 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#86198f";
+      ctx.beginPath();
+      ctx.arc(-4, 0, 6, 0, Math.PI * 2);
+      ctx.fill();
+      const pg = ctx.createRadialGradient(8, 0, 0, 8, 0, 9);
+      pg.addColorStop(0, "rgba(250,232,255,0.95)");
+      pg.addColorStop(1, "rgba(192,38,211,0.25)");
+      ctx.fillStyle = pg;
+      ctx.beginPath();
+      ctx.arc(8, 0, 8 + Math.sin(tu.t * 5) * 0.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = `rgba(232,121,249,${0.6 + 0.3 * Math.sin(tu.t * 7)})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.ellipse(8, 0, 9, 3, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      // 🔫 standardní turetka - kulaté tělo s hlavní; plamenomet = trysek s pilotním plamínkem,
+      // mrzák = ledový hrot, větrník = tři rotující lopatky
+      ctx.fillStyle = g.tcfg.flame ? "#7c2d12" : g.tcfg.frost ? "#0e7490" : g.tcfg.wind ? "#1e3a5f" : "#6b6560";
+      ctx.beginPath();
+      ctx.arc(0, 0, 7.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#292524";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      if (g.tcfg.wind) {
+        for (let k = 0; k < 3; k++) {
+          ctx.save();
+          ctx.rotate(tu.t * 8 + k / 3 * Math.PI * 2);
+          ctx.fillStyle = "#93c5fd";
+          ctx.beginPath();
+          ctx.moveTo(3, 2);
+          ctx.quadraticCurveTo(13, 0, 3, -2);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      } else {
+        drawBarrel(10, 4, g.tcfg.flame ? "#ea580c" : g.tcfg.frost ? "#38bdf8" : "#d6d3d1");
+        if (g.tcfg.flame) {
+          ctx.fillStyle = `rgba(251,146,60,${0.5 + 0.5 * Math.sin(tu.t * 9)})`;
+          ctx.beginPath();
+          ctx.arc(17, 0, 2.2 + Math.sin(tu.t * 9) * 0.6, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (g.tcfg.frost) {
+          ctx.fillStyle = "#bae6fd";
+          ctx.beginPath();
+          ctx.moveTo(21, 0);
+          ctx.lineTo(15.5, -3);
+          ctx.lineTo(15.5, 3);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+    // záblesk na ústí po výstřelu (kromě druhů s vlastním efektem)
+    if (justFired && (tu.type === "standard" || tu.type === "scatter" || tu.type === "sniper" || tu.type === "mortar")) {
+      ctx.fillStyle = "rgba(254,240,138,0.85)";
+      ctx.beginPath();
+      ctx.arc(tu.type === "sniper" ? 27 : 17.5, 0, 3.4, 0, Math.PI * 2);
       ctx.fill();
     }
-    // hlaveň - barva podle druhu turetky (plamen/mráz jen u základního druhu)
-    const tdef = TURRET_TYPES[tu.type] || TURRET_TYPES.standard;
-    ctx.strokeStyle = tu.type === "standard" ? g.tcfg.flame ? "#ea580c" : g.tcfg.frost ? "#38bdf8" : "#d6d3d1" : tdef.barrel;
-    ctx.lineWidth = 3.2;
-    ctx.beginPath();
-    ctx.moveTo(tu.x, tu.y - 2);
-    ctx.lineTo(tu.x + Math.cos(tu.aim) * 13, tu.y - 2 + Math.sin(tu.aim) * 13);
-    ctx.stroke();
+    ctx.restore();
     // blikající kontrolka (modrá, když fouká vítr)
     const bl = 0.5 + 0.5 * Math.sin(tu.t * 6);
     ctx.fillStyle = g.tcfg.wind ? `rgba(147,197,253,${bl})` : `rgba(74,222,128,${bl})`;
     ctx.beginPath();
-    ctx.arc(tu.x, tu.y - 10, 1.8, 0, Math.PI * 2);
+    ctx.arc(tu.x, tu.y - 11, 1.6, 0, Math.PI * 2);
     ctx.fill();
     // znak druhu nad turetkou, ať poznáš, co pokládáš
-    ctx.fillText(tdef.emoji, tu.x, tu.y - 16);
+    ctx.fillText(tdef.emoji, tu.x, tu.y - 17);
     // ❤️ výdrž - pruh se ukáže, až když je turetka poškozená
     if (tu.hp < tu.maxHp) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
@@ -9574,7 +10221,6 @@ function render(ctx, g, joy) {
     }
   }
   ctx.textAlign = "left";
-
   // bedny z bosse
   ctx.font = "bold 13px system-ui, sans-serif";
   ctx.textAlign = "center";
@@ -10533,46 +11179,50 @@ function render(ctx, g, joy) {
   ctx.strokeStyle = "rgba(148,163,255,0.35)";
   ctx.lineWidth = 1.5;
   ctx.strokeRect(mx, my, ms, ms);
-  const k = ms / ARENA;
+  const kx = ms / ARENA_W;
+  const ky = ms / ARENA_H;
   for (const e of g.enemies) {
     ctx.fillStyle = e.boss ? "#c084fc" : e.elite ? "#fde047" : e.minib ? "#fbbf24" : "rgba(248,113,113,0.9)";
     ctx.beginPath();
-    ctx.arc(mx + e.x * k, my + e.y * k, e.boss ? 4.5 : e.elite ? 3.5 : e.minib ? 3.5 : e.big ? 3 : 2, 0, Math.PI * 2);
+    ctx.arc(mx + e.x * kx, my + e.y * ky, e.boss ? 4.5 : e.elite ? 3.5 : e.minib ? 3.5 : e.big ? 3 : 2, 0, Math.PI * 2);
     ctx.fill();
   }
+  // 🏰 hrad na minimapě
+  ctx.fillStyle = "#fcd34d";
+  ctx.fillRect(mx + g.castle.x * kx - 4, my + g.castle.y * ky - 4, 8, 8);
   // 📦 bedny a ⚙️ turetky na minimapě
   ctx.fillStyle = "#fbbf24";
   for (const c of g.crates) {
-    ctx.fillRect(mx + c.x * k - 1.5, my + c.y * k - 1.5, 3, 3);
+    ctx.fillRect(mx + c.x * kx - 1.5, my + c.y * ky - 1.5, 3, 3);
   }
   ctx.fillStyle = "#7dd3fc";
   for (const tu of g.turrets) {
-    ctx.fillRect(mx + tu.x * k - 1.5, my + tu.y * k - 1.5, 3, 3);
+    ctx.fillRect(mx + tu.x * kx - 1.5, my + tu.y * ky - 1.5, 3, 3);
   }
   ctx.fillStyle = "#34d399";
   ctx.beginPath();
-  ctx.arc(mx + h.x * k, my + h.y * k, 3.5, 0, Math.PI * 2);
+  ctx.arc(mx + h.x * kx, my + h.y * ky, 3.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
   // 🧭 směrová šipka - kam se hrdina dívá
   ctx.beginPath();
-  ctx.moveTo(mx + h.x * k + Math.cos(h.angle) * 7, my + h.y * k + Math.sin(h.angle) * 7);
-  ctx.lineTo(mx + h.x * k + Math.cos(h.angle + 2.5) * 3.5, my + h.y * k + Math.sin(h.angle + 2.5) * 3.5);
-  ctx.lineTo(mx + h.x * k + Math.cos(h.angle - 2.5) * 3.5, my + h.y * k + Math.sin(h.angle - 2.5) * 3.5);
+  ctx.moveTo(mx + h.x * kx + Math.cos(h.angle) * 7, my + h.y * ky + Math.sin(h.angle) * 7);
+  ctx.lineTo(mx + h.x * kx + Math.cos(h.angle + 2.5) * 3.5, my + h.y * ky + Math.sin(h.angle + 2.5) * 3.5);
+  ctx.lineTo(mx + h.x * kx + Math.cos(h.angle - 2.5) * 3.5, my + h.y * ky + Math.sin(h.angle - 2.5) * 3.5);
   ctx.closePath();
   ctx.fillStyle = "rgba(52,211,153,0.9)";
   ctx.fill();
   // 📷 obdélník výřezu kamery - vidíš, kolik mapy máš v zorném poli
   ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(mx + (h.x - VW / 2) * k, my + (h.y - VH / 2) * k, VW * k, VH * k);
+  ctx.strokeRect(mx + (h.x - VW / 2) * kx, my + (h.y - VH / 2) * ky, VW * kx, VH * ky);
   // 🏟️ kruh boss-arény na minimapě
   if (g.arena.active) {
     ctx.strokeStyle = "rgba(248,113,113,0.7)";
     ctx.beginPath();
-    ctx.arc(mx + g.arena.x * k, my + g.arena.y * k, g.arena.r * k, 0, Math.PI * 2);
+    ctx.arc(mx + g.arena.x * kx, my + g.arena.y * ky, g.arena.r * ky, 0, Math.PI * 2);
     ctx.stroke();
   }
 }
@@ -10810,6 +11460,8 @@ function LoukaTisicePriser() {
     kills: 0,
     hp: 100,
     maxHp: 100,
+    chp: 1600,
+    cmax: 1600,
     dash: 0,
     time: 0,
     paused: false,
@@ -11419,6 +12071,8 @@ function LoukaTisicePriser() {
           kills: g.kills,
           hp: Math.max(0, Math.ceil(g.hero.hp)),
           maxHp: g.hero.maxHp,
+          chp: Math.max(0, Math.ceil(g.castle.hp)),
+          cmax: g.castle.maxHp,
           dash: 1 - g.hero.dashCd / (HERO.dashCd * g.stats.dashMul),
           time: g.time,
           paused: g.userPaused,
@@ -11671,6 +12325,8 @@ function LoukaTisicePriser() {
   }, trk("lv"), " ", ui.level), /*#__PURE__*/React.createElement("span", {
     className: "rounded-lg border border-red-400/30 bg-red-500/25 px-2 py-1 text-red-300 sm:px-3"
   }, "\uD83D\uDC80 ", ui.kills), /*#__PURE__*/React.createElement("span", {
+    className: `rounded-lg border px-2 py-1 sm:px-3 ${ui.chp / ui.cmax > 0.35 ? "border-amber-400/30 bg-amber-500/25 text-amber-200" : "border-red-300/70 bg-red-500/45 text-red-100 animate-pulse"}`
+  }, "\uD83C\uDFF0 ", ui.chp), /*#__PURE__*/React.createElement("span", {
     className: `rounded-lg border px-2 py-1 sm:px-3 ${ui.night ? "border-indigo-300/50 bg-indigo-900/60 text-indigo-100" : "border-amber-400/30 bg-amber-500/25 text-amber-200"}`
   }, ui.night ? trk("night") : trk("day")), ui.weather && /*#__PURE__*/React.createElement("span", {
     className: "rounded-lg border border-sky-300/40 bg-sky-900/50 px-2 py-1 text-sky-100 sm:px-3"
@@ -11703,6 +12359,16 @@ function LoukaTisicePriser() {
   }, "\u23F8"))), /*#__PURE__*/React.createElement("div", {
     className: "absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-40 flex-col gap-2 sm:w-52"
   }, /*#__PURE__*/React.createElement("div", {
+    className: "pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs"
+  }, /*#__PURE__*/React.createElement("span", null, "\uD83C\uDFF0"), /*#__PURE__*/React.createElement("div", {
+    className: "h-2 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-2.5"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "h-full rounded-full transition-all",
+    style: {
+      width: `${ui.chp / ui.cmax * 100}%`,
+      background: ui.chp / ui.cmax > 0.35 ? "linear-gradient(90deg,#fbbf24,#d97706)" : "linear-gradient(90deg,#f87171,#dc2626)"
+    }
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs"
   }, /*#__PURE__*/React.createElement("span", null, "\u2764\uFE0F"), /*#__PURE__*/React.createElement("div", {
     className: "h-2.5 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-3"
@@ -12409,6 +13075,7 @@ function LoukaTisicePriser() {
     className: "ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
   }, trk("start"), " ", sandboxSel ? "🧪" : "▶")));
 }
+
 
 if (window.ltpWatch) clearTimeout(window.ltpWatch);
 // 🏁 hra stojí na nohou - od teď žádná chybová obrazovka nepřekrývá hraní

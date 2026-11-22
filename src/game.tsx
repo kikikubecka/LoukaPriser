@@ -1,12 +1,17 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-// 🗺️ louka je delší a užší: 9000 × 3600 - netvoři táhnou zleva na východ k hradu,
-// hrdina startuje před hradbou a brání příval ze západu
-const ARENA_W = 9000;
-const ARENA_H = 3000; // v1.16: koridor jeste o kous uzsi - cesta na hrad je napnuta jako luka
+// ️ louka je úzká stezka lesem: 10000 × 1000 - netvoři vyrážejí z lesa zcela zleva
+// a ze spáleniště u hradu, hrdina startuje před hradbou a brání příval ze západu
+const ARENA_W = 10000;
+const ARENA_H = 1000;
+//  hrad zakrývá celou pravou stranu mapy - zeď stojí u zadní východní hranice,
+// hlavní brána hledí na západ, odkud valí nepřátelé
+const CASTLE_FRONT = ARENA_W - 340;
+//  les roste ve 3/4 stezky, dál k hradu leží spálená oblast
+const BURN_X = Math.round(ARENA_W * 0.75);
 
-// 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.16.0";
+// ️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
+const GAME_VERSION = "1.17.0";
 const GAME_BUILD = "22. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -55,20 +60,20 @@ type WeaponDef = {
 };
 
 const WEAPONS: Record<string, WeaponDef> = {
-  bow: { id: "bow", emoji: "🏹", name: "Luk", rate: 1.4, dmg: 8, speed: 640, range: 620, count: 1, per: 1, spread: 0.13, inacc: 0.05, pierceBase: 0, knock: 1, kind: 0, life: 1.0 },
-  darts: { id: "darts", emoji: "🎯", name: "Vrhač šipek", rate: 2.6, dmg: 5, speed: 760, range: 520, count: 1, per: 1, spread: 0.22, inacc: 0.09, pierceBase: 0, knock: 0.7, kind: 1, life: 0.85 },
-  knives: { id: "knives", emoji: "🔪", name: "Vrhací nože", rate: 1.8, dmg: 13, speed: 520, range: 460, count: 1, per: 1, spread: 0.16, inacc: 0.06, pierceBase: 1, knock: 1.7, kind: 2, life: 1.0 },
-  shotgun: { id: "shotgun", emoji: "🔫", name: "Brokovnice", rate: 0.8, dmg: 6, speed: 520, range: 330, count: 6, per: 2, spread: 0.09, inacc: 0.14, pierceBase: 0, knock: 2.2, kind: 3, life: 0.62 },
+  bow: { id: "bow", emoji: "", name: "Luk", rate: 1.4, dmg: 8, speed: 640, range: 620, count: 1, per: 1, spread: 0.13, inacc: 0.05, pierceBase: 0, knock: 1, kind: 0, life: 1.0 },
+  darts: { id: "darts", emoji: "", name: "Vrhač šipek", rate: 2.6, dmg: 5, speed: 760, range: 520, count: 1, per: 1, spread: 0.22, inacc: 0.09, pierceBase: 0, knock: 0.7, kind: 1, life: 0.85 },
+  knives: { id: "knives", emoji: "", name: "Vrhací nože", rate: 1.8, dmg: 13, speed: 520, range: 460, count: 1, per: 1, spread: 0.16, inacc: 0.06, pierceBase: 1, knock: 1.7, kind: 2, life: 1.0 },
+  shotgun: { id: "shotgun", emoji: "", name: "Brokovnice", rate: 0.8, dmg: 6, speed: 520, range: 330, count: 6, per: 2, spread: 0.09, inacc: 0.14, pierceBase: 0, knock: 2.2, kind: 3, life: 0.62 },
   mg: { id: "mg", emoji: "⚙️", name: "Kulomet", rate: 9, dmg: 4.5, speed: 720, range: 560, count: 1, per: 2, spread: 0.14, inacc: 0.17, pierceBase: 0, knock: 0.5, kind: 4, life: 0.8 },
-  pistol: { id: "pistol", emoji: "🎖️", name: "Pistole", rate: 2.6, dmg: 11, speed: 700, range: 500, count: 1, per: 1, spread: 0.05, inacc: 0.04, pierceBase: 0, knock: 0.9, kind: 9, life: 0.75 },
-  fireball: { id: "fireball", emoji: "🔥", name: "Ohnivá koule", rate: 0.9, dmg: 16, speed: 420, range: 520, count: 1, per: 1, spread: 0.12, inacc: 0.04, pierceBase: 0, knock: 1.2, kind: 5, life: 1.4, expl: true, magic: true },
+  pistol: { id: "pistol", emoji: "️", name: "Pistole", rate: 2.6, dmg: 11, speed: 700, range: 500, count: 1, per: 1, spread: 0.05, inacc: 0.04, pierceBase: 0, knock: 0.9, kind: 9, life: 0.75 },
+  fireball: { id: "fireball", emoji: "", name: "Ohnivá koule", rate: 0.9, dmg: 16, speed: 420, range: 520, count: 1, per: 1, spread: 0.12, inacc: 0.04, pierceBase: 0, knock: 1.2, kind: 5, life: 1.4, expl: true, magic: true },
   frost: { id: "frost", emoji: "❄️", name: "Mrazivá koule", rate: 1.6, dmg: 7, speed: 480, range: 480, count: 1, per: 1, spread: 0.14, inacc: 0.05, pierceBase: 1, knock: 0.6, kind: 6, life: 1.0, frost: true, magic: true },
   lightning: { id: "lightning", emoji: "⚡", name: "Řetězový blesk", rate: 0.7, dmg: 16, speed: 900, range: 560, count: 1, per: 1, spread: 0.05, inacc: 0.02, pierceBase: 99, knock: 0.4, kind: 7, life: 0.9, chain: 4, magic: true },
-  flamethrower: { id: "flamethrower", emoji: "🎇", name: "Plamenomet", rate: 10, dmg: 2.6, speed: 300, range: 180, count: 2, per: 1, spread: 0.16, inacc: 0.05, pierceBase: 0, knock: 0.2, kind: 8, life: 0.55, magic: true },
+  flamethrower: { id: "flamethrower", emoji: "", name: "Plamenomet", rate: 10, dmg: 2.6, speed: 300, range: 180, count: 2, per: 1, spread: 0.16, inacc: 0.05, pierceBase: 0, knock: 0.2, kind: 8, life: 0.55, magic: true },
   shuriken: { id: "shuriken", emoji: "✴️", name: "Šuriken", rate: 2.4, dmg: 6, speed: 620, range: 460, count: 1, per: 1, spread: 0.12, inacc: 0.05, pierceBase: 1, knock: 0.7, kind: 10, life: 0.8 },
   sword: { id: "sword", emoji: "⚔️", name: "Meč", rate: 3.2, dmg: 25, speed: 0, range: 88, count: 1, per: 1, spread: 0, inacc: 0, pierceBase: 99, knock: 2.6, kind: 11, life: 1, melee: true },
-  splinters: { id: "splinters", emoji: "🌲", name: "Dřevěné třísky", rate: 1.2, dmg: 5.5, speed: 620, range: 460, count: 8, per: 0.5, spread: 0.085, inacc: 0.03, pierceBase: 1, knock: 1.2, kind: 16, life: 0.85, magic: true },
-  turret: { id: "turret", emoji: "🛡️", name: "Turetka", rate: 0.14, dmg: 0, speed: 0, range: 0, count: 1, per: 1, spread: 0, inacc: 0, pierceBase: 0, knock: 0, kind: 12, life: 1, deploy: true },
+  splinters: { id: "splinters", emoji: "", name: "Dřevěné třísky", rate: 1.2, dmg: 5.5, speed: 620, range: 460, count: 8, per: 0.5, spread: 0.085, inacc: 0.03, pierceBase: 1, knock: 1.2, kind: 16, life: 0.85, magic: true },
+  turret: { id: "turret", emoji: "️", name: "Turetka", rate: 0.14, dmg: 0, speed: 0, range: 0, count: 1, per: 1, spread: 0, inacc: 0, pierceBase: 0, knock: 0, kind: 12, life: 1, deploy: true },
 };
 
 // --- typy nepřátel 0-19: sliz, netopýr, mumie, štvanec, brut, šaman, duch, kamenáč, rozpulc, ---
@@ -97,28 +102,28 @@ const ENEMY_DEFS = [
   { hue: 100, r: 17, hp: 26, speed: 0, dmg: 16, big: false, lunge: true, ranged: false },     // 19 dravec - schovaný v trávě, skočí telegrafovaný výpad
 ];
 
-// 🧪 katalog běžných nepřátel pro sandbox
+// 離 katalog běžných nepřátel pro sandbox
 const SBX_ENEMIES = [
-  { k: 0, name: "Sliz", emoji: "🟢" },
-  { k: 1, name: "Netopýr", emoji: "🦇" },
-  { k: 2, name: "Mumie", emoji: "🧟" },
-  { k: 3, name: "Štvanec", emoji: "🐺" },
-  { k: 4, name: "Brut", emoji: "👹" },
-  { k: 5, name: "Šaman", emoji: "🧙" },
-  { k: 6, name: "Duch", emoji: "👻" },
-  { k: 7, name: "Kamenáč", emoji: "🗿" },
-  { k: 8, name: "Rozpulc", emoji: "😈" },
-  { k: 9, name: "Elita", emoji: "🌟" },
-  { k: 10, name: "Dynamiter", emoji: "💣" },
+  { k: 0, name: "Sliz", emoji: "" },
+  { k: 1, name: "Netopýr", emoji: "驪" },
+  { k: 2, name: "Mumie", emoji: "履" },
+  { k: 3, name: "Štvanec", emoji: "" },
+  { k: 4, name: "Brut", emoji: "" },
+  { k: 5, name: "Šaman", emoji: "慄" },
+  { k: 6, name: "Duch", emoji: "" },
+  { k: 7, name: "Kamenáč", emoji: "" },
+  { k: 8, name: "Rozpulc", emoji: "" },
+  { k: 9, name: "Elita", emoji: "" },
+  { k: 10, name: "Dynamiter", emoji: "" },
   { k: 11, name: "Miner", emoji: "⛏️" },
-  { k: 12, name: "Vosa", emoji: "🐝" },
-  { k: 13, name: "Jezevec", emoji: "🦡" },
+  { k: 12, name: "Vosa", emoji: "" },
+  { k: 13, name: "Jezevec", emoji: "說" },
   { k: 14, name: "Kostlivec", emoji: "☠️" },
-  { k: 15, name: "Sopkaš", emoji: "🔥" },
+  { k: 15, name: "Sopkaš", emoji: "" },
   { k: 16, name: "Ledovec", emoji: "❄️" },
-  { k: 17, name: "Květomil", emoji: "🌷" },
-  { k: 18, name: "Rozpuk", emoji: "🫧" },
-  { k: 19, name: "Dravec", emoji: "🐍" },
+  { k: 17, name: "Květomil", emoji: "" },
+  { k: 18, name: "Rozpuk", emoji: "﫧" },
+  { k: 19, name: "Dravec", emoji: "" },
 ];
 
 // --- druhy bossů: střídají se, každý má jiný styl útoku ---
@@ -146,7 +151,7 @@ const MINI_TYPES = [
 
 type Vec = { x: number; y: number };
 type Particle = { x: number; y: number; vx: number; vy: number; life: number; maxLife: number; r: number; hue: number };
-// 💥 rázová vlna - expandující dvojitý prstenec se vnitřní září (cool efekt pro ultimáta, bomby, bosse)
+//  rázová vlna - expandující dvojitý prstenec se vnitřní září (cool efekt pro ultimáta, bomby, bosse)
 type Shock = { x: number; y: number; maxR: number; t: number; dur: number; hue: number; w: number; fill: number };
 type FloatText = { x: number; y: number; text: string; life: number; maxLife: number; hue: number; size: number };
 type Orb = { x: number; y: number; vx: number; vy: number; r: number; xp: number; hue: number; pk: number };
@@ -184,9 +189,9 @@ type Enemy = {
   dmgAcc?: number;
   dmgAccT?: number;
   dmgAccCrit?: boolean;
-  fa?: number;        // 🏰 směr pochodu - podle něj se orientuje silueta
-  castleCd?: number;  // 🏰 kadence úderů do hradby
-  twCd?: number;      // 🗼 kadence úderů do strážní věže
+  fa?: number;        //  směr pochodu - podle něj se orientuje silueta
+  castleCd?: number;  //  kadence úderů do hradby
+  twCd?: number;      //  kadence úderů do strážní věže
 };
 type Arrow = { x: number; y: number; vx: number; vy: number; dmg: number; pierce: number; crit: boolean; life: number; hits: number[]; kind: number; knock: number; chain: number; expl: boolean; frost: boolean; lvl: number; src?: string };
 type Bolt = { x: number; y: number; vx: number; vy: number; life: number; dmg: number; home?: number; boom?: number; oid?: number; slow?: boolean };
@@ -202,10 +207,10 @@ type Telegraph = { x: number; y: number; r: number; t: number; dur: number; dmg:
 type Arena = { x: number; y: number; r: number; active: boolean };
 type Castle = { x: number; y: number; r: number; hp: number; maxHp: number; walls: number; bows: number; keep: boolean; regen: number; flash: number; hitT: number; cd: number };
 type Tower = { x: number; y: number; r: number; tier: number; hp: number; maxHp: number; cd: number; flash: number; hitT: number; rise: number };
-// 🗼 strážní věže: rozpadliny podél cesty na hrad - postavíš je za peníze přímo v runu
-const TOWER_BUILD_COST = 3; // 🪙 z rozpadliny na plnohodnotnou věž 1. úrovně
-const TOWER_FIX_COST = 2; // 🪙 oprava zbořené nebo poškozené věže
-const TOWER_UP_COST: Record<number, number> = { 1: 5, 2: 8 }; // 🪙 upgrade na T2 / T3 (index = cílová úroveň - 1)
+//  strážní věže: rozpadliny podél cesty na hrad - postavíš je za peníze přímo v runu
+const TOWER_BUILD_COST = 3; // 滋 z rozpadliny na plnohodnotnou věž 1. úrovně
+const TOWER_FIX_COST = 2; // 滋 oprava zbořené nebo poškozené věže
+const TOWER_UP_COST: Record<number, number> = { 1: 5, 2: 8 }; // 滋 upgrade na T2 / T3 (index = cílová úroveň - 1)
 const TOWER_MAX_TIER = 3;
 function towerMaxHp(tier: number): number {
   return 380 + tier * 170;
@@ -235,7 +240,7 @@ type HeroClass = {
 const CLASSES: HeroClass[] = [
   {
     id: "archer",
-    emoji: "🏹",
+    emoji: "",
     name: "Lučištník",
     desc: "⚔️ Fyzické zbraně, vyšší kadence",
     weapon: "bow",
@@ -249,7 +254,7 @@ const CLASSES: HeroClass[] = [
   },
   {
     id: "soldier",
-    emoji: "🎖️",
+    emoji: "️",
     name: "Voják",
     desc: "⚔️ Pistole od startu, +10 % kadence, zbroj",
     weapon: "pistol",
@@ -263,7 +268,7 @@ const CLASSES: HeroClass[] = [
   },
   {
     id: "ninja",
-    emoji: "🥷",
+    emoji: "亮",
     name: "Ninja",
     desc: "⚔️ Šurikeny od startu, +25 % rychlost pohybu",
     weapon: "shuriken",
@@ -277,7 +282,7 @@ const CLASSES: HeroClass[] = [
   },
   {
     id: "knight",
-    emoji: "🛡️",
+    emoji: "️",
     name: "Rytíř",
     desc: "⚔️ Meč na blízko, rychlý, velká zbroj",
     weapon: "sword",
@@ -291,9 +296,9 @@ const CLASSES: HeroClass[] = [
   },
   {
     id: "mage",
-    emoji: "🔮",
+    emoji: "",
     name: "Mág",
-    desc: "🪄 Blesk od startu, +15 % rychlosti",
+    desc: "彩 Blesk od startu, +15 % rychlosti",
     weapon: "lightning",
     hp: 80,
     speedMul: 0.15,
@@ -307,7 +312,7 @@ const CLASSES: HeroClass[] = [
     id: "engineer",
     emoji: "⚙️",
     name: "Inženýr",
-    desc: "🛡️ Pokládá turetky (max 3), žádné zbraně - bojují za něj. Karty odemykají nové druhy, normální upgrady zlepšují turetky",
+    desc: "️ Pokládá turetky (max 3), žádné zbraně - bojují za něj. Karty odemykají nové druhy, normální upgrady zlepšují turetky",
     weapon: "turret",
     hp: 95,
     speedMul: 0,
@@ -319,7 +324,7 @@ const CLASSES: HeroClass[] = [
   },
 ];
 
-// 🔓 classy se odemykají za semínka - všechny jsou teď zadarmo, ať si každou vyzkoušíš hned
+//  classy se odemykají za semínka - všechny jsou teď zadarmo, ať si každou vyzkoušíš hned
 const CLS_FREE = ["archer", "soldier", "ninja", "knight", "mage", "engineer"];
 const CLS_UNLOCK_COST = 600;
 function clsUnlocked(meta: Meta, id: string): boolean {
@@ -359,16 +364,16 @@ const RARITY_WEIGHTS = [100, 55, 30, 14, 6, 2.5, 1];
 // ⚙️ druhy turetek - každý druh má vlastní způsob střelby (odemykají se kartami)
 // rate = násobek základní kadence, dmg = násobek základní ráže
 const TURRET_TYPES: Record<string, { emoji: string; rng: number; rate: number; dmg: number; sp: number; life: number; kind: number; knock: number; pierce?: number; chain?: number; expl?: boolean; shots?: number; spread?: number; barrel: string }> = {
-  standard: { emoji: "🔫", rng: 380, rate: 1, dmg: 1, sp: 640, life: 1, kind: 9, knock: 0.8, barrel: "#d6d3d1" },
+  standard: { emoji: "", rng: 380, rate: 1, dmg: 1, sp: 640, life: 1, kind: 9, knock: 0.8, barrel: "#d6d3d1" },
   tesla: { emoji: "⚡", rng: 430, rate: 0.55, dmg: 1.15, sp: 900, life: 0.7, kind: 7, knock: 0.4, chain: 2, barrel: "#facc15" },
-  sniper: { emoji: "🎯", rng: 680, rate: 0.16, dmg: 4.6, sp: 950, life: 1.1, kind: 1, knock: 2.6, pierce: 2, barrel: "#94a3b8" },
-  mortar: { emoji: "💣", rng: 540, rate: 0.2, dmg: 2.4, sp: 400, life: 1.6, kind: 5, knock: 1.4, expl: true, barrel: "#78716c" },
-  scatter: { emoji: "🔱", rng: 250, rate: 1.4, dmg: 0.5, sp: 560, life: 0.5, kind: 3, knock: 1.6, shots: 3, spread: 0.2, barrel: "#b45309" },
+  sniper: { emoji: "", rng: 680, rate: 0.16, dmg: 4.6, sp: 950, life: 1.1, kind: 1, knock: 2.6, pierce: 2, barrel: "#94a3b8" },
+  mortar: { emoji: "", rng: 540, rate: 0.2, dmg: 2.4, sp: 400, life: 1.6, kind: 5, knock: 1.4, expl: true, barrel: "#78716c" },
+  scatter: { emoji: "", rng: 250, rate: 1.4, dmg: 0.5, sp: 560, life: 0.5, kind: 3, knock: 1.6, shots: 3, spread: 0.2, barrel: "#b45309" },
   laser: { emoji: "☄️", rng: 560, rate: 0.9, dmg: 0.85, sp: 950, life: 0.6, kind: 15, knock: 0.2, pierce: 9, barrel: "#ef4444" },
-  plasma: { emoji: "💥", rng: 500, rate: 0.35, dmg: 3.6, sp: 470, life: 1.4, kind: 14, knock: 1.8, expl: true, barrel: "#e879f9" },
+  plasma: { emoji: "", rng: 500, rate: 0.35, dmg: 3.6, sp: 470, life: 1.4, kind: 14, knock: 1.8, expl: true, barrel: "#e879f9" },
 };
 
-// 🧮 výdrž turetek inženýra: 200 základ + 100 za KAŽDÝ odebraný upgrade turetek
+// 燐 výdrž turetek inženýra: 200 základ + 100 za KAŽDÝ odebraný upgrade turetek
 // (nový druh, plameny/vítr/mráz, kadence, ráže - vše se počítá)
 function turretHp(g: Game): number {
   let n = g.tKinds.length - 1; // počet odemčených druhů nad standard
@@ -424,9 +429,9 @@ type Game = {
   crates: Crate[];
   telegraphs: Telegraph[];
   arena: Arena;
-  castle: Castle; // 🏰 hrad na východě mapy (tower-defense cíl nepřátel)
-  towers: Tower[]; // 🗼 strážní věže podél cesty - staví se za peníze přímo v runu
-  coins: number; // 🪙 peníze: 1 za každé druhé zabití - platí se jimi za stavbu a opravu věží
+  castle: Castle; //  hrad na východě mapy (tower-defense cíl nepřátel)
+  towers: Tower[]; //  strážní věže podél cesty - staví se za peníze přímo v runu
+  coins: number; // 滋 peníze: 1 za každé druhé zabití - platí se jimi za stavbu a opravu věží
   trees: TreeDeco[];
   orbs: Orb[];
   particles: Particle[];
@@ -454,10 +459,10 @@ type Game = {
   tcfg: { fire: number; dmg: number; flame: boolean; wind: boolean; frost: boolean };
   crateOpen: boolean;
   bossKills: number;
-  crownsEarned: number; // 👑 koruny připsané během runu (čekají na zápis do mety)
-  weaponBonus: number; // 🎒 extra sloty zbraní ze stromu dovedností (základ = 1 zbraň)
-  allWeapons: boolean; // 🔓 speciál stromu: zrušené třídní omezení zbraní (fyz vs. magie)
-  seedBonus?: number;   // 👑 Koruna louky - násobitel výdělku semínek
+  crownsEarned: number; //  koruny připsané během runu (čekají na zápis do mety)
+  weaponBonus: number; //  extra sloty zbraní ze stromu dovedností (základ = 1 zbraň)
+  allWeapons: boolean; //  speciál stromu: zrušené třídní omezení zbraní (fyz vs. magie)
+  seedBonus?: number;   //  Koruna louky - násobitel výdělku semínek
   nextBoss: number;
   bossWarned: boolean;
   minibKills: number;
@@ -471,11 +476,11 @@ type Game = {
   night: boolean;
   over: boolean;
   shake: number;
-  // 🆕 nové systémy: hit-stop, combo, ultimáta, počasí, rázové vlny, hudba, obtížnost
+  //  nové systémy: hit-stop, combo, ultimáta, počasí, rázové vlny, hudba, obtížnost
   hitStop: number;
-  // 🏆 zlatý záblesk obrazovky po položení bosse (1 → 0)
+  //  zlatý záblesk obrazovky po položení bosse (1 → 0)
   goldFlash: number;
-  // 👹 červený děsivý záblesk při spawnu bosse (1 → 0)
+  //  červený děsivý záblesk při spawnu bosse (1 → 0)
   dreadFlash: number;
   combo: number;
   comboT: number;
@@ -502,7 +507,7 @@ type Game = {
 type Joy = { id: number | null; active: boolean; ax: number; ay: number; x: number; y: number };
 
 function hsla(h: number, s: number, l: number, a: number): string {
-  // 🚀 memoizace - hsla řetězce se skládají tisíckrát za frame, cache je vrátí z paměti
+  //  memoizace - hsla řetězce se skládají tisíckrát za frame, cache je vrátí z paměti
   const key = `${h}|${s}|${l}|${a}`;
   let v = HSLA_CACHE[key];
   if (v === undefined) {
@@ -520,7 +525,7 @@ let orbSprites: Map<number, HTMLCanvasElement> | null = null;
 
 function getOrbSprite(hue: number): HTMLCanvasElement {
   if (!orbSprites) orbSprites = new Map();
-  // 🌈 krok 15° - jemnější přechody žlutá→červená u XP orbů (dřív hrubé 30°)
+  //  krok 15° - jemnější přechody žlutá→červená u XP orbů (dřív hrubé 30°)
   const bucket = (((Math.round(hue / 15) * 15) % 360) + 360) % 360;
   let c = orbSprites.get(bucket);
   if (!c) {
@@ -548,10 +553,10 @@ function getOrbSprite(hue: number): HTMLCanvasElement {
 }
 
 let fxCache: { ctx?: CanvasRenderingContext2D; n1?: CanvasGradient; n2?: CanvasGradient; vg?: CanvasGradient; lg?: CanvasGradient; gl?: CanvasGradient; w?: number; h?: number } = {};
-// 🎨 cache gradientů, které se nemění mezi snímky (pozadí podle výšky, světlo hrdiny)
+//  cache gradientů, které se nemění mezi snímky (pozadí podle výšky, světlo hrdiny)
 let bgCache: { g: CanvasGradient; h: number } | null = null;
 let hlgCache: CanvasGradient | null = null;
-// 🚀 vinětace předrenderovaná do offscreen plátna - každý snímek pak jen blit místo drahého gradient fillu
+//  vinětace předrenderovaná do offscreen plátna - každý snímek pak jen blit místo drahého gradient fillu
 let vigCv: { cv: HTMLCanvasElement | null; w: number; h: number } = { cv: null, w: 0, h: 0 };
 
 function dist2(ax: number, ay: number, bx: number, by: number): number {
@@ -560,7 +565,7 @@ function dist2(ax: number, ay: number, bx: number, by: number): number {
   return dx * dx + dy * dy;
 }
 
-// 🧙‍♂️ úsečka (x1,y1)-(x2,y2) vs kruh (cx,cy,r) - swept kolize projektilů proti tunelování:
+// 慄‍♂️ úsečka (x1,y1)-(x2,y2) vs kruh (cx,cy,r) - swept kolize projektilů proti tunelování:
 // při větším dt projektil nesmí nepřátela přeskočit jen proto, že testujeme koncový bod
 function segHit(x1: number, y1: number, x2: number, y2: number, cx: number, cy: number, r: number): boolean {
   const dx = x2 - x1;
@@ -574,7 +579,7 @@ function segHit(x1: number, y1: number, x2: number, y2: number, cx: number, cy: 
   return qx * qx + qy * qy < r * r;
 }
 
-// 🕸️ PROSTOROVÁ MŘÍŽKA nepřátel - přestavuje se každý snímek; kolize pak běží jen mezi
+// ️ PROSTOROVÁ MŘÍŽKA nepřátel - přestavuje se každý snímek; kolize pak běží jen mezi
 // sousedními buňkami místo O(n²) přes všechny příšery (klíčové pro plynulost v endgame)
 const GRID_CELL = 160;
 const GRID_N = Math.ceil(ARENA_W / GRID_CELL) + 1; // počet buněk na osu (šířka pokryje i výšku)
@@ -646,7 +651,7 @@ function burst(g: Game, x: number, y: number, n: number, hue: number, speed = 13
   }
 }
 
-// 💥 spuštění rázové vlny - dvojitý prstenec + vnitřní záře, max 24 najednou (perf)
+//  spuštění rázové vlny - dvojitý prstenec + vnitřní záře, max 24 najednou (perf)
 function shock(g: Game, x: number, y: number, maxR: number, hue: number, dur = 0.45, w = 6, fill = 0.16): void {
   if (g.shocks.length > 24) return;
   g.shocks.push({ x, y, maxR, t: 0, dur, hue, w, fill });
@@ -664,26 +669,26 @@ function damageTurret(g: Game, tu: Turret, dmg: number): void {
     const idx = g.turrets.indexOf(tu);
     if (idx >= 0) g.turrets.splice(idx, 1);
     burst(g, tu.x, tu.y, 14, 20, 160);
-    addText(g, tu.x, tu.y - 18, "💥 Turetka zničena!", 0, 13);
+    addText(g, tu.x, tu.y - 18, " Turetka zničena!", 0, 13);
     g.shake = Math.max(g.shake, 3);
   }
 }
 
-// 🔊 ZVUKOVÝ ENGINE - vše syntetizované přes Web Audio API, žádné soubory, tlačítko mute v pauze
+//  ZVUKOVÝ ENGINE - vše syntetizované přes Web Audio API, žádné soubory, tlačítko mute v pauze
 let AC: AudioContext | null = null;
 let noiseBuf: AudioBuffer | null = null;
 let ambBuf: AudioBuffer | null = null;
 let masterOut: GainNode | null = null;
-// 🎚 hlasitost master kanálu (0–1) - posuvník v pauze, ukládá se do mety
+//  hlasitost master kanálu (0–1) - posuvník v pauze, ukládá se do mety
 let masterVol = 1;
 function setMasterVol(v01: number): void {
   masterVol = Math.max(0, Math.min(1, v01));
   if (masterOut) masterOut.gain.value = 0.9 * masterVol;
 }
-// 🚦 každý častý zvuk má vlastní branku, ať se překrývání neslepí v kakofonii
+//  každý častý zvuk má vlastní branku, ať se překrývání neslepí v kakofonii
 const sfxGateOf: Record<string, number> = {};
 
-// 🎚 společný master kanál s kompresorem - exploze a salvy nepřefleknou výstup
+//  společný master kanál s kompresorem - exploze a salvy nepřefleknou výstup
 function audioOut(): GainNode {
   if (!masterOut) {
     masterOut = AC!.createGain();
@@ -775,7 +780,7 @@ function playSfx(g: Game, name: string): void {
       case "crate": tone("triangle", 392, 392, 0.12, 0, 0.1); tone("triangle", 523, 523, 0.12, 0.1, 0.1); tone("triangle", 659, 659, 0.18, 0.2, 0.11); break;
       case "elite": tone("sawtooth", 90, 60, 0.4, 0, 0.12); tone("sawtooth", 135, 90, 0.4, 0.05, 0.08); break;
       case "combo": {
-        // 🔥 čím delší řetěz, tím výš kmitočet - combo "zpívá"
+        //  čím delší řetěz, tím výš kmitočet - combo "zpívá"
         const cb = 659 * (1 + Math.min(0.6, g.combo * 0.012));
         tone("sine", cb, cb, 0.07, 0, 0.08);
         tone("sine", cb * 1.34, cb * 1.34, 0.1, 0.06, 0.08);
@@ -785,9 +790,9 @@ function playSfx(g: Game, name: string): void {
       case "glass": tone("square", 1800, 600, 0.12, 0, 0.08); noise(0.16, 0.06, 2600); break;
       case "click": tone("square", 700, 500, 0.04, 0, 0.05); break;
       case "buy": tone("sine", 784, 784, 0.08, 0, 0.08); tone("sine", 1175, 1175, 0.14, 0.07, 0.08); break;
-      // 🚀 riser - nájezd před tím, než vypadne boss track (sweep nahoru + šum)
+      //  riser - nájezd před tím, než vypadne boss track (sweep nahoru + šum)
       case "riser": noise(0.75, 0.1, 3200); tone("sawtooth", 90, 720, 0.75, 0, 0.09); tone("sine", 55, 110, 0.75, 0, 0.07); break;
-      // 🔥 fever fanfára - combo 15+ rozjíždí hype režim
+      //  fever fanfára - combo 15+ rozjíždí hype režim
       case "fever": tone("sine", 523, 523, 0.09, 0, 0.1); tone("sine", 659, 659, 0.09, 0.07, 0.1); tone("sine", 784, 784, 0.09, 0.14, 0.11); tone("sine", 1046, 1046, 0.32, 0.21, 0.13); break;
       // ⚡ každá classa má k ultimátu vlastní dabing
       case "ult_archer": tone("sine", 1200, 300, 0.18, 0.02, 0.06); break;
@@ -802,20 +807,20 @@ function playSfx(g: Game, name: string): void {
   }
 }
 
-// 🎵 HUDBA NA POZADÍ - jukebox se šesti skladbami: podle dění na louce se přepíná track
+//  HUDBA NA POZADÍ - jukebox se šesti skladbami: podle dění na louce se přepíná track
 // (klid → polka → funk → rave), u bosse zahraje tvrdé boss témata, při kombu 15+ se
 // přidá fever arpeggio vrstva a hi-haty v šestnáctinách - čím větší peklo, tím větší banger
 let musNext = 0;
 let musStep = 0;
 let musSong: Song | null = null;
-// 📣 toast s názvem skladby + ⏱ čas posledního kopáku (kvůli beat pulsu ve vizuálu)
+//  toast s názvem skladby + ⏱ čas posledního kopáku (kvůli beat pulsu ve vizuálu)
 let musToast = "";
 let musToastAt = -1e9;
 let musKickAt = -1e9;
 let musThumpAt = -1e9;
 let musStepDur = 0.3;
 let musFever = false;
-// 💀 příznak děsivého stingu při pádu pod kritické HP
+//  příznak děsivého stingu při pádu pod kritické HP
 let musDangerSting = false;
 
 // jedna skladba jukeboxu - pattern (0 = pauza), výchozí délka 16 kroků, delší skladby
@@ -827,20 +832,20 @@ interface Song {
   leadWave: OscillatorType;
   bass: number[];
   lead: number[];
-  arp: number[]; // 🎸 arpeggio vrstva - u rave vždy, jinde při fever kombu
-  chords: number[]; // 🎹 pomalé polštářkové kvinty, střídají se po osmi krocích
-  kick: number[]; // 🥁 kroky s kopákem
+  arp: number[]; //  arpeggio vrstva - u rave vždy, jinde při fever kombu
+  chords: number[]; //  pomalé polštářkové kvinty, střídají se po osmi krocích
+  kick: number[]; // 論 kroky s kopákem
   snare: number[]; // kroky se snárou
   hat: number[]; // kroky s hi-hatem
   arpAlways: boolean;
-  oompah?: boolean; // 🕊 oom-pah dechová sekce - tuba-bum + brass staby v muzikálovém rytmu
-  fanfare?: number[]; // 🎺 fanfárové brass stabs - power akordy v bitevním rytmu
-  strings?: boolean; // 🎻 smyčcový orchestrální pad držící harmonii
-  len?: number; // 🧭 délka patternu v krocích (výchozí 16)
-  lyrics?: string[]; // 🎤 text k zazpívání - řádky po 16 krocích, zpívá se hlasem v rytmu
+  oompah?: boolean; //  oom-pah dechová sekce - tuba-bum + brass staby v muzikálovém rytmu
+  fanfare?: number[]; //  fanfárové brass stabs - power akordy v bitevním rytmu
+  strings?: boolean; //  smyčcový orchestrální pad držící harmonii
+  len?: number; // 吝 délka patternu v krocích (výchozí 16)
+  lyrics?: string[]; //  text k zazpívání - řádky po 16 krocích, zpívá se hlasem v rytmu
 }
 
-// 🌅 „Jitro na louce" - klidné pastoralní téma na začátek (C dur pentatonika)
+//  „Jitro na louce" - klidné pastoralní téma na začátek (C dur pentatonika)
 const SONG_CALM: Song = {
   name: "Jitro na louce",
   step: 0.33,
@@ -855,7 +860,7 @@ const SONG_CALM: Song = {
   hat: [],
   arpAlways: false,
 };
-// 🌼 „Kvítková polka" -veselá oom-pah polka, až se louka rozezní (C dur)
+//  „Kvítková polka" -veselá oom-pah polka, až se louka rozezní (C dur)
 const SONG_POLKA: Song = {
   name: "Kvítková polka",
   step: 0.21,
@@ -870,7 +875,7 @@ const SONG_POLKA: Song = {
   hat: [2, 6, 10, 14],
   arpAlways: false,
 };
-// 🐝 „Bzučivý funk" - synkopovaný groove, když se na louce hemží (e moll)
+//  „Bzučivý funk" - synkopovaný groove, když se na louce hemží (e moll)
 const SONG_FUNK: Song = {
   name: "Bzučivý funk",
   step: 0.22,
@@ -900,7 +905,7 @@ const SONG_RAVE: Song = {
   hat: [2, 6, 10, 14],
   arpAlways: true,
 };
-// 💀 „Mumie v rytmu" - tvrdé mollové boss téma s plnou sadou bubnů (c moll)
+//  „Mumie v rytmu" - tvrdé mollové boss téma s plnou sadou bubnů (c moll)
 const SONG_BOSS: Song = {
   name: "Mumie v rytmu",
   step: 0.214,
@@ -933,7 +938,7 @@ const SONG_EPIC: Song = {
   fanfare: [3, 7, 11, 15],
   strings: true,
 };
-// 👑 „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
+//  „Koruna záhrobí" - finální boss: nejrychlejší a nejtemnější banger (16tinové hi-haty)
 const SONG_FINAL: Song = {
   name: "Koruna záhrobí",
   step: 0.165,
@@ -948,11 +953,11 @@ const SONG_FINAL: Song = {
   hat: [1, 3, 5, 7, 9, 11, 13, 15],
   arpAlways: true,
 };
-// 🎺 „Arnold Rimmer" - 🎁 speciální překvapení z Red Dwarf: muzikálová oom-pah hymna
+//  „Arnold Rimmer" -  speciální překvapení z Red Dwarf: muzikálová oom-pah hymna
 // ve F dur (F C7 / Gm C7 / F Am / F A / Bb A / Dm G7), 128 kroků = celá sloka + refrén,
 // text zazpívá syntetický hlas - hraje dokola, dokud ji nevypneš
 const SONG_RIMMER: Song = {
-  name: "🎺 Arnold Rimmer",
+  name: " Arnold Rimmer",
   step: 0.185,
   bassWave: "triangle",
   leadWave: "square",
@@ -1030,7 +1035,7 @@ function musicNote(type: OscillatorType, f: number, t: number, dur: number, peak
   const gg = AC!.createGain();
   o.type = type;
   o.frequency.setValueAtTime(f, t);
-  // 🎵 jemné vibrato s náběhem - oom-pah lead zní jako živá tuba, ne jako varhany
+  //  jemné vibrato s náběhem - oom-pah lead zní jako živá tuba, ne jako varhany
   if (vib > 0) {
     const vl = AC!.createOscillator();
     const vg = AC!.createGain();
@@ -1074,7 +1079,7 @@ function musicDrum(t: number, dur: number, peak: number, f: number): void {
   src.stop(t + dur + 0.02);
 }
 
-// 💓 tlukot srdce - hluboký buch (sine propad frekvence), sílí s klesajícím HP
+//  tlukot srdce - hluboký buch (sine propad frekvence), sílí s klesajícím HP
 function musicThump(t: number, peak: number): void {
   const o = AC!.createOscillator();
   musTrackVoice(o);
@@ -1090,7 +1095,7 @@ function musicThump(t: number, peak: number): void {
   o.stop(t + 0.2);
 }
 
-// 🌦️ AMBIENT POČASÍ - tichá šumová smyčka deště/bouře, vítr se pravidelně rozvíjí a ztiší
+// ️ AMBIENT POČASÍ - tichá šumová smyčka deště/bouře, vítr se pravidelně rozvíjí a ztiší
 let ambSrc: AudioBufferSourceNode | null = null;
 let ambGain: GainNode | null = null;
 let ambKind = "";
@@ -1149,9 +1154,9 @@ function ambTick(g: Game): void {
   ambSrc.start();
 }
 
-// 🎤 ZPÍVÁNÍ - syntetický hlas zazpívá texty překvapení (Web Speech API, britština jako v originále)
+//  ZPÍVÁNÍ - syntetický hlas zazpívá texty překvapení (Web Speech API, britština jako v originále)
 let voxOn = false;
-// 📻 konkrétní anglický hlas - hlasy se na mobilu načítají asynchronně, bez čekání by zpěv neměl čím zaznít
+//  konkrétní anglický hlas - hlasy se na mobilu načítají asynchronně, bez čekání by zpěv neměl čím zaznít
 let voxVoice: SpeechSynthesisVoice | null = null;
 function voxPick(): void {
   try {
@@ -1187,10 +1192,10 @@ function stopVox(): void {
     }
   }
   voxOn = false;
-  // 🤖 robotí vokál se při pauze / přepnutí tracku taky střihne
+  // 烙 robotí vokál se při pauze / přepnutí tracku taky střihne
   cutVoxSynth();
 }
-// 🔓 odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z právě proběhlého dotyku
+//  odemknutí řeči přímo v gestě klepnutí - mobily povolí speak jen z právě proběhlého dotyku
 function warmVox(): void {
   if (typeof speechSynthesis === "undefined") return;
   try {
@@ -1203,7 +1208,7 @@ function warmVox(): void {
     // hlas nedostupný - hraje se jen hudba
   }
 }
-// 🤖 ROBOTÍ VOKÁL - garantovaný zpěv přímo ve zvukovém enginu: formantový hlas zazpívá
+// 烙 ROBOTÍ VOKÁL - garantovaný zpěv přímo ve zvukovém enginu: formantový hlas zazpívá
 // slabiky textu na melodii linky. Na mobilu často chybí hlasová syntéza (TTS) - tahle
 // cesta je čistě Web Audio, takže Rimmer zazpívá vždycky, i když TTS mlčí.
 let voxSynthLive: OscillatorNode[] = [];
@@ -1224,7 +1229,7 @@ function cutVoxSynth(): void {
   }
   voxSynthLive.length = 0;
 }
-// 🧮 text se rozloží na slabiky (skupiny samohlásek) - každou zazpívá jedna nota linky
+// 燐 text se rozloží na slabiky (skupiny samohlásek) - každou zazpívá jedna nota linky
 function voxSyllables(line: string): string[] {
   const words = line
     .toLowerCase()
@@ -1239,7 +1244,7 @@ function voxSyllables(line: string): string[] {
   }
   return out;
 }
-// 🗣 formanty samohlásek (F1/F2/F3) - tři rezonance z pily udělají opravdovou samohlásku,
+//  formanty samohlásek (F1/F2/F3) - tři rezonance z pily udělají opravdovou samohlásku,
 // třetí formant utahuje "i" a rozjasňuje hlas (dřív jen F1/F2 = znělo to jako bouda)
 const VOX_FORMANTS: Record<string, [number, number, number]> = {
   a: [730, 1090, 2440],
@@ -1249,7 +1254,7 @@ const VOX_FORMANTS: Record<string, [number, number, number]> = {
   u: [320, 800, 2240],
   y: [730, 1090, 2440],
 };
-// 🌀 diftongy - sklouzávky dvou samohlásek, formanty se během noty svezou z první do druhé
+//  diftongy - sklouzávky dvou samohlásek, formanty se během noty svezou z první do druhé
 const VOX_DIPHTHONGS: Record<string, [string, string]> = {
   ai: ["a", "i"],
   ay: ["a", "i"],
@@ -1263,9 +1268,9 @@ const VOX_DIPHTHONGS: Record<string, [string, string]> = {
   ow: ["o", "u"],
   ie: ["i", "e"],
 };
-// 🫧 souhlásky pro artikulaci - před samohláskou se oťuknou šumem, "Rimmer" nezí jako "immer"
+// 﫧 souhlásky pro artikulaci - před samohláskou se oťuknou šumem, "Rimmer" nezí jako "immer"
 const VOX_CONSONANTS = /[bcdfghjklmnpqrstvwxyz]/;
-// 🗣 jedna slabika - pila třemi formanty (F1/F2/F3), diftongový skluz, vibrato s náběhem,
+//  jedna slabika - pila třemi formanty (F1/F2/F3), diftongový skluz, vibrato s náběhem,
 // portamento mezi notami, souhlásková artikulace a dech - z robotího "lá lá" se stane zpěvák
 let voxPrevF = 0;
 function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): void {
@@ -1276,7 +1281,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
       const dch = noiseBuf.getChannelData(0);
       for (let i = 0; i < dch.length; i++) dch[i] = Math.random() * 2 - 1;
     }
-    // 🧮 ze slabiky: samohlásková skupina (třeba diftong "ou") + úvodní souhláska pro artikulaci
+    // 燐 ze slabiky: samohlásková skupina (třeba diftong "ou") + úvodní souhláska pro artikulaci
     const vm = syl.match(/[aeiouy]+/);
     const vg = vm ? vm[0] : "a";
     const diph = vg.length >= 2 ? VOX_DIPHTHONGS[vg.slice(0, 2)] : null;
@@ -1284,7 +1289,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
     const fm1 = diph ? VOX_FORMANTS[diph[1]] || null : null;
     const o = AC.createOscillator();
     o.type = "sawtooth";
-    // 🎢 portamento - hlas se k nové notě přisune hladce, neskočí po notách jako robot
+    //  portamento - hlas se k nové notě přisune hladce, neskočí po notách jako robot
     if (voxPrevF > 0 && Math.abs(Math.log(f / voxPrevF)) < 0.7) {
       o.frequency.setValueAtTime(voxPrevF, t);
       o.frequency.exponentialRampToValueAtTime(f, t + Math.min(0.05, dur * 0.3));
@@ -1292,7 +1297,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
       o.frequency.setValueAtTime(f, t);
     }
     voxPrevF = f;
-    // 🎵 vibrato s náběhem - nota začne čistě a pomalu se rozkmitá, jako skutečný zpěv
+    //  vibrato s náběhem - nota začne čistě a pomalu se rozkmitá, jako skutečný zpěv
     const lfo = AC.createOscillator();
     lfo.frequency.value = 5.8;
     const lfoG = AC.createGain();
@@ -1300,7 +1305,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
     lfoG.gain.linearRampToValueAtTime(f * 0.015, t + Math.max(0.07, dur * 0.45));
     lfo.connect(lfoG);
     lfoG.connect(o.frequency);
-    // 🗣 tři úzké formantové rezonance - u diftongu formanty během noty svezou ("ou" = ó→u)
+    //  tři úzké formantové rezonance - u diftongu formanty během noty svezou ("ou" = ó→u)
     const f1 = AC.createBiquadFilter();
     f1.type = "bandpass";
     f1.frequency.setValueAtTime(fm0[0], t);
@@ -1328,7 +1333,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
     f2.connect(g);
     f3.connect(g);
     g.connect(audioOut());
-    // 🫧 artikulace - úvodní souhláska se oťukne krátkým šumem, "Rimmer" už nezí jako "immer"
+    // 﫧 artikulace - úvodní souhláska se oťukne krátkým šumem, "Rimmer" už nezí jako "immer"
     if (VOX_CONSONANTS.test(syl[0])) {
       const cs = AC.createBufferSource();
       cs.buffer = noiseBuf;
@@ -1345,7 +1350,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
       cs.start(t);
       cs.stop(t + 0.06);
     }
-    // 🌬 dech - jemný šumový nádech na začátku slabiky, hlas bez něho zní sterilně
+    //  dech - jemný šumový nádech na začátku slabiky, hlas bez něho zní sterilně
     const br = AC.createBufferSource();
     br.buffer = noiseBuf;
     const bf = AC.createBiquadFilter();
@@ -1369,7 +1374,7 @@ function voxNote(f: number, t: number, dur: number, syl: string, peak = 0.075): 
     // zvuk nedostupný - nevadí
   }
 }
-// 🎼 celá řádka - slabiky textu se zazpívají rovnoměrně na noty melodické linky,
+//  celá řádka - slabiky textu se zazpívají rovnoměrně na noty melodické linky,
 // refrén o kvintu výš, verš níž - hlas drží s melodií písničky
 function synthVox(line: string, li: number, song: Song, t: number, stepDur: number): void {
   const syl = voxSyllables(line);
@@ -1382,26 +1387,26 @@ function synthVox(line: string, li: number, song: Song, t: number, stepDur: numb
   }
   if (!notes.length) return;
   const per = (stepDur * 16) / syl.length;
-  // 🎤 refrén se zpívá hlasitěji a slabiky se déle drží - muzikálový "big finish"
+  //  refrén se zpívá hlasitěji a slabiky se déle drží - muzikálový "big finish"
   const peak = li >= 3 ? 0.1 : 0.082;
   for (let k = 0; k < syl.length; k++) {
     const nf = notes[Math.min(notes.length - 1, Math.floor((k * notes.length) / syl.length))];
     voxNote(nf, t + k * per, Math.min(per * 1.15, 0.48), syl[k], peak);
   }
 }
-// 🎤 ZPĚV RIMMERA - na každé řádce písničky se zazpívá její text a když písnička dojede
+//  ZPĚV RIMMERA - na každé řádce písničky se zazpívá její text a když písnička dojede
 // na konec, zpěv se točí znovu od začátku (spolu s hudbou, dokola). Zpívá VŽY robotí vokál:
 // TTS v prohlížeči často nastartuje (onstart), ale žádný zvuk nevyjde - dřív tak hlas
 // utnul robota a nezpíval nikdo. Robot je čisté Web Audio, zazní vždy.
 function singLine(song: Song, li: number, t: number, stepDur: number): void {
   const line = song.lyrics ? song.lyrics[li] : "";
   if (!line) return;
-  // 🤖 zpívá VŽY robotí vokál (čisté Web Audio) - na TTS se nedá spolehnout:
+  // 烙 zpívá VŽY robotí vokál (čisté Web Audio) - na TTS se nedá spolehnout:
   // umí nastartovat (onstart), ale nevydat zvuk - a dřív tak utnul i robota, takže nezpíval nikdo
   synthVox(line, li, song, t, stepDur);
 }
 
-// 🎚 normálně hraje bitevní téma, jen boss si vezme svá tematická_tracks; překvapení (🎁) přebíjí všechno
+//  normálně hraje bitevní téma, jen boss si vezme svá tematická_tracks; překvapení () přebíjí všechno
 function pickSong(g: Game): Song {
   let finalBoss = false;
   let boss = false;
@@ -1418,7 +1423,7 @@ function pickSong(g: Game): Song {
 
 // volá se každý snímek - noty se plánují ~0,35 s dopředu, takže hudba nezapráská
 function musicTick(g: Game): void {
-  // 🎵 hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je bitevní
+  //  hudba hraje i v menu (dokud běží zvuk a nejsi po smrti) - výchozí track je bitevní
   if (!g.opts.snd || g.over || typeof AudioContext === "undefined") {
     stopVox();
     return;
@@ -1436,17 +1441,17 @@ function musicTick(g: Game): void {
       return;
     }
     const want = g.opts.surp ? SONG_RIMMER : pickSong(g);
-    // 🔥 fever - při kombu 15+ se přidá arp vrstva a hi-haty v šestnáctinách (v překvapení ne)
+    //  fever - při kombu 15+ se přidá arp vrstva a hi-haty v šestnáctinách (v překvapení ne)
     musFever = !g.opts.surp && g.combo >= 15;
     if (want !== musSong) {
       const prev = musSong;
       musSong = want;
       musStep = 0;
       musNext = Math.max(musNext, AC.currentTime + 0.05);
-      // 📣 přepnutý track se ohlásí toastem nahoře, u bosse se ozve i riser
+      //  přepnutý track se ohlásí toastem nahoře, u bosse se ozve i riser
       musToast = want.name;
       musToastAt = performance.now();
-      // 🎤 při přepnutí tracku se zpívání zastaví (nová skladba začíná od začátku)
+      //  při přepnutí tracku se zpívání zastaví (nová skladba začíná od začátku)
       stopVox();
       // ✂️ a rozvržené noty starého tracku se tvrdě střihnou - žádné překrývání dvou melodií
       cutMusic();
@@ -1463,22 +1468,22 @@ function musicTick(g: Game): void {
         }
       }
     }
-    // 🌋 BITEVNÍ INTENZITA 0-3: čím víc nepřátel na louce, tím víc válečných vrstev hudby
+    //  BITEVNÍ INTENZITA 0-3: čím víc nepřátel na louce, tím víc válečných vrstev hudby
     // (10+ brass staby, 20+ marš + zdvojený lead, 40+ plná vřava a zrychlení) - boss řve vždy naplno
     const bossOn = song === SONG_BOSS || song === SONG_FINAL;
     const fury = bossOn ? 3 : g.opts.surp ? 0 : g.enemies.length >= 40 ? 3 : g.enemies.length >= 20 ? 2 : g.enemies.length >= 10 ? 1 : 0;
     // finální fáze bosse (3+) ještě zrychlí tempo - hra se zní jako smršť; dav 40+ přidá spěch
     const stepDur = song === SONG_BOSS && bossPhase >= 3 ? song.step * 0.88 : song.step * (fury >= 3 && !bossOn ? 0.94 : 1);
     musStepDur = stepDur;
-    // 💀 DANGER - čím blíž smrti (pod 45 % HP), tím větší děs: 0 = v pohodě, 1 = skoro mrtvý
-    // 👹 a když je na mapě boss, běží děs na 45 % i při plném HP - „teď už to máš spočítaný"
+    //  DANGER - čím blíž smrti (pod 45 % HP), tím větší děs: 0 = v pohodě, 1 = skoro mrtvý
+    //  a když je na mapě boss, běží děs na 45 % i při plném HP - „teď už to máš spočítaný"
     const bossDread = song === SONG_BOSS || song === SONG_FINAL ? 0.45 : 0;
     const danger = g.opts.surp ? 0 : Math.max(bossDread, Math.max(0, Math.min(1, 1 - g.hero.hp / (g.hero.maxHp * 0.45))));
-    // 🎻 při velkém strachu se celá hudba mírně rozladí (detune) - podvědomá úzkost
+    //  při velkém strachu se celá hudba mírně rozladí (detune) - podvědomá úzkost
     const detune = danger > 0.45 ? 0.978 : 1;
-    // 👹 davová tlačenice - když je louka plná nepřátel, přidávají se hi-haty v 16tinách
+    //  davová tlačenice - když je louka plná nepřátel, přidávají se hi-haty v 16tinách
     const horde = !g.opts.surp && g.enemies.length > 40;
-    // 💓 přechod do kritického stavu zahouká děsivý sting (jen jednou, dokud nezvedneš HP)
+    //  přechod do kritického stavu zahouká děsivý sting (jen jednou, dokud nezvedneš HP)
     if (danger >= 0.55 && !musDangerSting) {
       musDangerSting = true;
       playSfx(g, "boss");
@@ -1488,10 +1493,10 @@ function musicTick(g: Game): void {
     const now = AC.currentTime;
     if (musNext < now) musNext = now + 0.05;
     while (musNext < now + 0.35) {
-      // 🧭 délka patternu - výchozí 16 kroků, ale delší skladby (sloka + refrén) mají vlastní len
+      // 吝 délka patternu - výchozí 16 kroků, ale delší skladby (sloka + refrén) mají vlastní len
       const s = musStep % (song.len ?? 16);
       const t = musNext;
-      // 🎤 ZPÍVÁ SE - na začátku každé řádky (16 kroků) se zazpívá celý verš, na konci písničky se zpěv točí od začátku
+      //  ZPÍVÁ SE - na začátku každé řádky (16 kroků) se zazpívá celý verš, na konci písničky se zpěv točí od začátku
       if (s % 16 === 0 && song.lyrics) {
         const li = (musStep >> 4) % song.lyrics.length;
         singLine(song, li, t, stepDur);
@@ -1501,11 +1506,11 @@ function musicTick(g: Game): void {
       const l = song.lead[s];
       if (l) {
         musicNote(song.leadWave, l * detune, t, stepDur * 0.9, epic ? 0.042 : 0.028, song.oompah ? 0.007 : 0);
-        // 🌋 od davu 20+ melodie zdvojí oktávu a při 40+ přibude rozladěný sborový hlas - fortissimo
+        //  od davu 20+ melodie zdvojí oktávu a při 40+ přibude rozladěný sborový hlas - fortissimo
         if (fury >= 2 && !song.oompah) musicNote(song.leadWave, l * 2 * detune, t, stepDur * 0.9, 0.013);
         if (fury >= 3 && !song.oompah) musicNote(song.leadWave, l * 1.008 * detune, t, stepDur * 0.9, 0.014);
       }
-      // 🕊 OOM-PAH - armádní kapela: na lichých krocích brass staby root+kvinta (PAH!),
+      //  OOM-PAH - armádní kapela: na lichých krocích brass staby root+kvinta (PAH!),
       // pod kopákem zaduní hluboká tuba (OOM) - Rimmerova noční můra v plné parádě
       if (song.oompah) {
         const oph = song.chords[(musStep >> 3) % song.chords.length];
@@ -1515,7 +1520,7 @@ function musicTick(g: Game): void {
         }
         if (song.kick.includes(s)) musicThump(t, 0.06);
       }
-      // 🎺 EPICKÁ VRSTVA: brass fanfáry (power akord root+kvinta+oktáva), timpani pod kopákem, crash na takt
+      //  EPICKÁ VRSTVA: brass fanfáry (power akord root+kvinta+oktáva), timpani pod kopákem, crash na takt
       if (epic) {
         if (song.fanfare && song.fanfare.includes(s)) {
           const f0 = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
@@ -1523,24 +1528,24 @@ function musicTick(g: Game): void {
           musicNote("sawtooth", f0 * 1.5, t, stepDur * 1.6, 0.03);
           musicNote("sawtooth", f0 * 2, t, stepDur * 1.6, 0.026);
         }
-        // 🥁 timpani - válečný buben zahouká s každým kopákem
+        // 論 timpani - válečný buben zahouká s každým kopákem
         if (song.kick.includes(s)) musicThump(t, 0.075);
-        // 🥁 orchestrální crash na začátku každého taktu
+        // 論 orchestrální crash na začátku každého taktu
         if (s === 0) musicDrum(t, 0.6, 0.02, 7000);
       }
-      // 🎹 pomalé polštářové kvinty - dávají trackům tělo
+      //  pomalé polštářové kvinty - dávají trackům tělo
       const ch = song.chords[(musStep >> 3) % song.chords.length];
       if (ch && s % 8 === 0) {
         musicNote("sine", ch * detune, t, stepDur * 7.5, 0.016);
         musicNote("sine", ch * 1.5 * detune, t, stepDur * 7.5, 0.012);
-        // 🎻 smyčcový pad - orchestr drží harmonii jako v bitevní scéně
+        //  smyčcový pad - orchestr drží harmonii jako v bitevní scéně
         if (song.strings) {
           musicNote("sawtooth", ch * detune, t, stepDur * 7.6, 0.019);
           musicNote("sawtooth", ch * 1.19 * detune, t, stepDur * 7.6, 0.015);
           musicNote("sawtooth", ch * 2 * detune, t, stepDur * 7.6, 0.013);
         }
       }
-      // 🎺 BITEVNÍ STABY - od davu 10+ zahouká brass power akord (root+kvinta+oktáva) každý takt
+      //  BITEVNÍ STABY - od davu 10+ zahouká brass power akord (root+kvinta+oktáva) každý takt
       if (fury >= 1 && !song.oompah) {
         const st = song.chords[(musStep >> 3) % song.chords.length] * 2 * detune;
         if (s % 4 === 0) {
@@ -1548,10 +1553,10 @@ function musicTick(g: Game): void {
           musicNote("sawtooth", st * 1.5, t, stepDur * 0.9, 0.016);
           musicNote("sawtooth", st * 2, t, stepDur * 0.9, 0.012);
         }
-        // 🥁 VOJENSKÝ MARŠ - od davu 20+ bije bojový buben v osminách, jízda se řítí do útoku
+        // 論 VOJENSKÝ MARŠ - od davu 20+ bije bojový buben v osminách, jízda se řítí do útoku
         if (fury >= 2 && s % 2 === 0 && !song.kick.includes(s)) musicDrum(t, 0.02, 0.05, 1800);
       }
-      // 👹 BOSS ULTRA - válečné tomy, orchestrální crash a brass war staby navíc, boss = pořádná vřava
+      //  BOSS ULTRA - válečné tomy, orchestrální crash a brass war staby navíc, boss = pořádná vřava
       if (bossOn) {
         if (s % 4 === 2) musicThump(t, 0.05);
         if (s % 4 === 3) musicThump(t, 0.035);
@@ -1563,10 +1568,10 @@ function musicTick(g: Game): void {
           musicNote("sawtooth", wch * 2, t, stepDur * 1.2, 0.016);
         }
       }
-      // 🎸 arp vrstva - u rave a finálního bosse vždy, u bosse ve fázi 3 taky, jinde jen ve fever kombu
+      //  arp vrstva - u rave a finálního bosse vždy, u bosse ve fázi 3 taky, jinde jen ve fever kombu
       const ar = song.arp[s];
       if (ar && (song.arpAlways || bossPhase >= 3 || (musFever && song !== SONG_CALM))) musicNote("square", ar * detune, t, stepDur * 0.55, 0.014);
-      // 💀 DREAD DRONE - na začátku každého taktu táhlý rozladěný akord (malá sekunda buší sama se sebou)
+      //  DREAD DRONE - na začátku každého taktu táhlý rozladěný akord (malá sekunda buší sama se sebou)
       if (s === 0 && (danger > 0.2 || song === SONG_BOSS || song === SONG_FINAL)) {
         const df = song === SONG_BOSS || song === SONG_FINAL ? 55 : 82.41; // A1 u bossů, E2 jinak
         const dg = song === SONG_BOSS || song === SONG_FINAL ? 0.028 : 0.018 + 0.05 * danger;
@@ -1580,7 +1585,7 @@ function musicTick(g: Game): void {
       }
       if (song.snare.includes(s)) musicDrum(t, 0.12, 0.038, 1800);
       if (song.hat.includes(s) || (((musFever || horde || bossPhase >= 3) && song !== SONG_CALM && s % 2 === 1))) musicDrum(t, 0.04, 0.016, 6000);
-      // 💓 SRDCE - lub-dub s každým půltaktem, sílí a zrychluje se s klesajícím HP
+      //  SRDCE - lub-dub s každým půltaktem, sílí a zrychluje se s klesajícím HP
       if (danger > 0.05) {
         if (s % 8 === 0) {
           musicThump(t, 0.045 + 0.12 * danger);
@@ -1597,7 +1602,7 @@ function musicTick(g: Game): void {
   }
 }
 
-// 🔢 sčítaná čísla poškození - rychlé rány na jednoho nepřítele se spojí do jednoho součtu
+//  sčítaná čísla poškození - rychlé rány na jednoho nepřítele se spojí do jednoho součtu
 function dmgText(g: Game, e: Enemy, dmg: number, crit: boolean, src?: string): void {
   if (src) g.dmgSrc[src] = (g.dmgSrc[src] || 0) + dmg;
   // ✨ crit rány vyhodí zlaté jiskry - čísla ne, jiskry vždy
@@ -1608,10 +1613,10 @@ function dmgText(g: Game, e: Enemy, dmg: number, crit: boolean, src?: string): v
   e.dmgAccT = 0.16;
 }
 
-// pk: 0 = XP koule, 1 = ❤️ srdíčko (heal), 2 = 💣 bomba (AoE), 3 = 🧲 magnet (vysaje koule)
+// pk: 0 = XP koule, 1 = ❤️ srdíčko (heal), 2 =  bomba (AoE), 3 = 鱗 magnet (vysaje koule)
 
-// 🎨 XP orby ve třech barevných řadách (v1.13): 🟡 žlutá < 64 XP < 🔴 červená (64× žlutá)
-// < 🔵 modrá (256× červená = 16 384 XP). V rámci barvy koule roste až na 3× základní velikost
+//  XP orby ve třech barevných řadách (v1.13):  žlutá < 64 XP <  červená (64× žlutá)
+// <  modrá (256× červená = 16 384 XP). V rámci barvy koule roste až na 3× základní velikost
 // (6 → 18) a na hranici se mění na další barvu, kde růst začne od znovu; modrá už nemá
 // kam povyšovat, takže roste dál bez limitu - ať pobere všechna XP, která do ní spadnou
 const ORB_RED_XP = 64;
@@ -1681,10 +1686,10 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
   if (forceKind >= 0) kind = forceKind;
   const d = ENEMY_DEFS[kind];
   // endgame křivka: po 5. minutách HP roste výrazně rychleji (obtížnost ji násobí)
-  // 💪 v1.12: nepřátel je na louce polovina, ale každý má 4× HP a 3× dmg
+  //  v1.12: nepřátel je na louce polovina, ale každý má 4× HP a 3× dmg
   const df = DIFFS[g.diff] || DIFFS[1];
   const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
-  // 🌟 elitní varianta: po minutě 6 % šance na korunku s náhodnou vlastností (3× HP, víc dropů)
+  //  elitní varianta: po minutě 6 % šance na korunku s náhodnou vlastností (3× HP, víc dropů)
   // korunky nedostanou podpůrné druhý (květomil by dvojitě léčil, dravec by byl nezabitelný) a na mapě je jich max 4
   let eliteCount = 0;
   for (const en of g.enemies) {
@@ -1692,13 +1697,29 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
   }
   const elite = !g.sandbox && t > 60 && kind !== 9 && kind !== 17 && kind !== 19 && eliteCount < 4 && Math.random() < 0.06 ? ["swift", "boom", "vamp", "shield"][Math.floor(Math.random() * 4)] : undefined;
   const eMul = elite ? 3 : 1;
-  // 🏰 pochod na hrad: netvoři přicházejí ZLEVA od hrdiny (těsně mimo obraz)
-  // a valí se na východ k hradu; sandbox nucený druh se rodí na dohled od hrdiny
-  const laneH = Math.min(VH * 1.25, ARENA_H - 80);
+  //  pochod na hrad: netvoři vyrážejí ZCELA ZLEVA z hlubokého lesa NEBO
+  // ze spáleniště úplně vpravo, co nejvíc k hradbě - oba proudy valí na bránu;
+  // sandbox nucený druh se rodí na dohled od hrdiny
+  const laneH = ARENA_H - 160;
   const a = Math.random() * Math.PI * 2;
   const dd = forceKind >= 0 ? 150 : (Math.hypot(VW, VH) / 2) * 1.1 + 60;
-  const ex = px !== undefined ? Math.max(40, Math.min(ARENA_W - 40, px)) : forceKind >= 0 ? Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd)) : Math.max(40, Math.min(ARENA_W - 40, g.hero.x - dd - Math.random() * 300));
-  const ey = py !== undefined ? Math.max(40, Math.min(ARENA_H - 40, py)) : forceKind >= 0 ? Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd)) : Math.max(40, Math.min(ARENA_H - 40, g.hero.y + (Math.random() - 0.5) * laneH));
+  let ex: number;
+  let ey: number;
+  if (px !== undefined) {
+    ex = Math.max(40, Math.min(ARENA_W - 40, px));
+    ey = Math.max(40, Math.min(ARENA_H - 40, py));
+  } else if (forceKind >= 0) {
+    ex = Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd));
+    ey = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd));
+  } else if (Math.random() < 0.5) {
+    //  z lesa úplně vlevo - vynoří se z podrostu na západním okraji mapy
+    ex = 30 + Math.random() * 90;
+    ey = 80 + Math.random() * laneH;
+  } else {
+    //  ze spáleniště úplně vpravo - co nejvíc k hradbě, co mapa dovolí
+    ex = CASTLE_FRONT - 60 - Math.random() * 320;
+    ey = 80 + Math.random() * laneH;
+  }
   g.enemies.push({
     id: g.nextId++,
     x: ex,
@@ -1726,26 +1747,25 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
     phase: 1,
   });
   if (elite) playSfx(g, "elite");
-  // 🎯 střílející druhy chodí ve skupinkách - k vládci houfu se zblízka připojí 2 kolegové
+  //  střílející druhy chodí ve skupinkách - k vládci houfu se zblízka připojí 2 kolegové
   // (elitní vlna má svůj spawner, sandbox a vynucený spawn zůstávají jednotlivé)
   if (!noPack && forceKind < 0 && !g.sandbox && d.ranged && kind !== 9) {
     for (let i = 0; i < 2; i++) {
       spawnEnemy(g, kind, ex + (Math.random() - 0.5) * 80, ey + (Math.random() - 0.5) * 80, true);
     }
-    addText(g, ex, ey - 34, "🎯", 0, 13);
+    addText(g, ex, ey - 34, "", 0, 13);
   }
 }
 
-// 🌟 elitní vlna - skupina extra silných střílejících nepřátel (kind 9)
+//  elitní vlna - skupina extra silných střílejících nepřátel (kind 9)
 function spawnEliteWave(g: Game): void {
   const t = g.time;
   const df = DIFFS[g.diff] || DIFFS[1];
-  // 💪 v1.12: elitní vlna drží 4× HP
+  //  v1.12: elitní vlna drží 4× HP
   const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
-  const dd = (Math.hypot(VW, VH) / 2) * 1.1 + 60;
-  // 🏰 elitní vlna vytáhne ze západu jako každý jiný pochod
-  const cx = Math.max(40, Math.min(ARENA_W - 40, g.hero.x - dd - Math.random() * 220));
-  const cy = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + (Math.random() - 0.5) * Math.min(VH * 1.25, ARENA_H - 80)));
+  //  elitní vlna vytáhne z hlubiny lesa úplně vlevo a vydá se na dlouhý pochod na východ
+  const cx = 40 + Math.random() * 110;
+  const cy = Math.max(40, Math.min(ARENA_H - 40, 90 + Math.random() * (ARENA_H - 180)));
   addText(g, cx, cy - 34, "⚠️ ELITNÍ VLNA!", 280, 20);
   const n = Math.min(5, 2 + Math.floor(t / 300));
   for (let i = 0; i < n; i++) {
@@ -1778,32 +1798,32 @@ function spawnEliteWave(g: Game): void {
   }
 }
 
-// 💀 finální boss - každý třetí boss je posílená finální podoba (nebo na přání v sandboxu)
+//  finální boss - každý třetí boss je posílená finální podoba (nebo na přání v sandboxu)
 function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const t = g.time;
   // druh bosse se střídá podle počtu zabiték (v sandboxu lze vynutit konkrétní druh)
   const isFinal = forceFinal || g.bossKills % 3 === 2;
-  // 🎲 druh bosse je čistě náhodný (dřív šel pevně v pořadí - první finální boss byla vždy mumie)
+  //  druh bosse je čistě náhodný (dřív šel pevně v pořadí - první finální boss byla vždy mumie)
   const bt = forceType >= 0 ? BOSS_TYPES[forceType] : BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
-  // 🗼 v1.16: žádná boss aréna a žádné vybíjení louky - boss se zrodí na západě a sám táhne na hrad
+  //  v1.16: žádná boss aréna a žádné vybíjení louky - boss se zrodí na západě a sám táhne na hrad
   g.arena.active = false;
   g.telegraphs.length = 0;
   g.eBolts.length = 0;
-  // 📣 intro banner - první vteřiny po spawnu se rozezní jméno bosse
+  //  intro banner - první vteřiny po spawnu se rozezní jméno bosse
   g.bossIntroT = 2.6;
   g.bossIntroName = bt.name;
-  // 👹 děsivý náraz při zrodu bosse: otřes, rudý záblesk přes obrazovku a táhlý sting
+  //  děsivý náraz při zrodu bosse: otřes, rudý záblesk přes obrazovku a táhlý sting
   g.shake = Math.max(g.shake, 10);
   g.goldFlash = 0;
   g.dreadFlash = 1;
   playSfx(g, "boss");
   playSfx(g, "riser");
-  // 🌄 boss se zrodí západně od tebe, mimo obraz - a vydá se pochodem na hrad
+  //  boss se zrodí západně od tebe, mimo obraz - a vydá se pochodem na hrad
   const dd = (Math.hypot(VW, VH) / 2) * 1.05 + 60;
   const x = Math.max(80, Math.min(ARENA_W - 80, g.hero.x - dd));
   const y = Math.max(80, Math.min(ARENA_H - 80, g.hero.y + (Math.random() - 0.5) * Math.min(ARENA_H - 160, 900)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
-  // 💪 v1.16: bossové o čtvrtinu slabší - 6× HP a 2.25× dmg, bez arény táhnou na hrad
+  //  v1.16: bossové o čtvrtinu slabší - 6× HP a 2.25× dmg, bez arény táhnou na hrad
   const hp = (260 + t * 3 + g.bossKills * 90) * 30 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
@@ -1836,11 +1856,11 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   burst(g, x, y, isFinal ? 30 : 20, bt.hue, 220);
 }
 
-// 🌟 mini-boss: bez arény, 5 variant se specializacemi - spawnuje se během hry
+//  mini-boss: bez arény, 5 variant se specializacemi - spawnuje se během hry
 function spawnMini(g: Game, typeIdx = -1): void {
   const t = g.time;
   const mt = MINI_TYPES[typeIdx >= 0 ? typeIdx : Math.floor(Math.random() * MINI_TYPES.length)];
-  // 💪 i mini-boss: 4× HP a 3× dmg
+  //  i mini-boss: 4× HP a 3× dmg
   const hp = (95 + t * 1.8 + g.bossKills * 40) * 4;
   const a = Math.random() * Math.PI * 2;
   const dd = (Math.hypot(VW, VH) / 2) * 1.05 + 40;
@@ -1872,13 +1892,13 @@ function spawnMini(g: Game, typeIdx = -1): void {
     phase: 1,
   });
   g.shake = 4;
-  addText(g, g.hero.x, g.hero.y - 44, `🌟 MINI-BOSS: ${mt.name}!`, mt.hue, 19);
+  addText(g, g.hero.x, g.hero.y - 44, ` MINI-BOSS: ${mt.name}!`, mt.hue, 19);
   burst(g, x, y, 14, mt.hue, 160);
 }
 
-// 🌱 META PROGRES - semínka za runy → nekonečné trvalé upgrady (localStorage)
+//  META PROGRES - semínka za runy → nekonečné trvalé upgrady (localStorage)
 const META_KEY = "louka_meta_v1";
-// 🏆 jeden zápis v žebříčku nejlepších runů
+//  jeden zápis v žebříčku nejlepších runů
 type ScoreEntry = { name: string; score: number; level: number; kills: number; time: number; cls: string; diff: number; date: string; combo: number };
 type Meta = {
   pts: number;
@@ -1890,10 +1910,10 @@ type Meta = {
   vol?: number;
   lang?: string;
   daily?: { key: string; best: number };
-  // 🥇 žebříček top 10 + naposledy použité jméno hráče
+  // 磊 žebříček top 10 + naposledy použité jméno hráče
   board?: ScoreEntry[];
   lastName?: string;
-  // 🌳 strom dovedností: { id uzlu: úroveň } + 👑 koruny za finální bosse
+  //  strom dovedností: { id uzlu: úroveň } +  koruny za finální bosse
   tree?: Record<string, number>;
   crowns?: number;
 };
@@ -1937,7 +1957,7 @@ function saveMeta(m: Meta): void {
   }
 }
 
-// 🌍 ONLINE ŽEBŘÍČEK - rekordy se ukládají přes ntfy.sh (veřejné kanálové téma bez registrace),
+//  ONLINE ŽEBŘÍČEK - rekordy se ukládají přes ntfy.sh (veřejné kanálové téma bez registrace),
 // takže je vidíš mezi zařízeními a i ostatní hráči. Téma je vlastně heslo k žebříčku:
 // kdokoli, kdo ho zná, může záznamy číst i psát (hodí se pro přátelské skóre).
 const LB_SERVER = "https://ntfy.sh"; // bezplatný veřejný backend - nic se nikde neregistruje
@@ -1945,7 +1965,7 @@ const LB_TOPIC = "louka-priser-lb-x7k9m2q4"; // kanál s tajným sufixem, ať ho
 const LB_SHOW = 20; // kolik globálních rekordů ukázat v tabulce
 const LB_SYNC_KEY = "louka_lb_sync_v1"; // poznámka "staré lokální rekordy už jsou na serveru"
 
-// 🥇 ŽEBŘÍČEK - arcade styl: top 10 runů uložených v prohlížeči
+// 磊 ŽEBŘÍČEK - arcade styl: top 10 runů uložených v prohlížeči
 const BOARD_MAX = 10;
 // dostane se skóre mezi top 10? (sandbox se nezapočítává)
 function boardQualifies(m: Meta, score: number): boolean {
@@ -1958,7 +1978,7 @@ function pushBoard(m: Meta, e: ScoreEntry): Meta {
   return { ...m, board: b, lastName: e.name };
 }
 
-// 📡 text ze serveru s bezpečným timeoutem - při výpadku prostě použijeme lokální data
+//  text ze serveru s bezpečným timeoutem - při výpadku prostě použijeme lokální data
 async function lbTxt(url: string): Promise<string | null> {
   try {
     const ctrl = new AbortController();
@@ -1975,12 +1995,12 @@ async function lbTxt(url: string): Promise<string | null> {
     return null;
   }
 }
-// 📤 zapsat zprávu do kanálu - GET = simple request, žádný CORS preflight ani POST
+//  zapsat zprávu do kanálu - GET = simple request, žádný CORS preflight ani POST
 async function lbPublish(payload: string): Promise<boolean> {
   const t = await lbTxt(LB_SERVER + "/" + LB_TOPIC + "/publish?message=" + encodeURIComponent(payload));
   return !!(t && t.indexOf("message") >= 0); // odpověď serveru potvrdí přijetí
 }
-// 🦟 normalizace řádku ze serveru - nikdy nevěř vstupu, čísla musí být čísla
+// 烈 normalizace řádku ze serveru - nikdy nevěř vstupu, čísla musí být čísla
 function lbRow(r: Record<string, unknown>): ScoreEntry {
   const nn = (v: unknown): number => {
     const x = Number(v);
@@ -1998,7 +2018,7 @@ function lbRow(r: Record<string, unknown>): ScoreEntry {
     combo: nn(r.combo),
   };
 }
-// 🌍 stažení globálního top listu z kanálu - přečteme celou cache (posledních 12 h),
+//  stažení globálního top listu z kanálu - přečteme celou cache (posledních 12 h),
 // sloučíme běžné záznamy se SNAPSHOTem, každému necháme jen jeho nejlepší skóre
 async function lbTop(): Promise<ScoreEntry[] | null> {
   const txt = await lbTxt(LB_SERVER + "/" + LB_TOPIC + "/json?poll=1&since=all");
@@ -2024,12 +2044,12 @@ async function lbTop(): Promise<ScoreEntry[] | null> {
   if (rows.length > 0) lbPublish("SNAP:" + JSON.stringify(rows.map(lbPack)));
   return rows;
 }
-// 📦 záznam na drátu = krátké pole [jméno, skóre, level, zabité, čas, postava, obtížnost, datum, combo]
+//  záznam na drátu = krátké pole [jméno, skóre, level, zabité, čas, postava, obtížnost, datum, combo]
 type LbPack = [string, number, number, number, number, string, number, string, number];
 function lbPack(e: ScoreEntry): LbPack {
   return [e.name, e.score, e.level, e.kills, e.time, e.cls, e.diff, e.date, e.combo];
 }
-// 🦟 zpráva z kanálu rozbalená do řádků - nikdy nevěř vstupu, vše zkontrolujeme
+// 烈 zpráva z kanálu rozbalená do řádků - nikdy nevěř vstupu, vše zkontrolujeme
 function lbParse(m: string): ScoreEntry[] {
   try {
     const isSnap = m.indexOf("SNAP:") === 0;
@@ -2043,15 +2063,15 @@ function lbParse(m: string): ScoreEntry[] {
     return [];
   }
 }
-// 📤 upload skóre do kanálu - GET = simple request, žádný CORS preflight ani POST
+//  upload skóre do kanálu - GET = simple request, žádný CORS preflight ani POST
 async function lbSubmit(e: ScoreEntry): Promise<boolean> {
   if (e.score <= 0) return false;
   return await lbPublish("ROW:" + JSON.stringify(lbPack(e)));
 }
 
-// 🌳 STROM DOVEDNOSTÍ - začíná u Síly, každý normální uzel se dá koupit 5×,
-// speciální uzly (až po dokoupení předchůdce) stojí 👑 korunu a jen 1×.
-// 👑 korunu dostaneš za každého zabitého FINÁLNÍHO bosse (každý třetí boss).
+//  STROM DOVEDNOSTÍ - začíná u Síly, každý normální uzel se dá koupit 5×,
+// speciální uzly (až po dokoupení předchůdce) stojí  korunu a jen 1×.
+//  korunu dostaneš za každého zabitého FINÁLNÍHO bosse (každý třetí boss).
 type TreeNode = {
   id: string;
   emoji: string;
@@ -2059,60 +2079,60 @@ type TreeNode = {
   per: string;
   max: number;
   parent?: string;   // odkud vede čára - musí být aspoň Lv 1
-  special?: boolean; // true = stojí 👑 korunu místo semínek, jen 1×
-  crownCost?: number; // kolik 👑 korun speciál stojí (výchozí 1)
+  special?: boolean; // true = stojí  korunu místo semínek, jen 1×
+  crownCost?: number; // kolik  korun speciál stojí (výchozí 1)
   base: number;      // cena v semíncích (první level), každý další + growth
   growth: number;
   pos: [number, number]; // pozice ve stromu v % (x, y), střed boxu
   apply: (g: Game, lvl: number) => void;
 };
 
-// 🌳 v1.14: strom roste zdola nahoru - ze Síly 💪 vyrůstá kmen a větve,
-// nové uzly: Kalich krve 🩸, Průraznost 🏹, Dvojúder 🔱 (poloha v % = střed orbu)
+//  v1.14: strom roste zdola nahoru - ze Síly  vyrůstá kmen a větve,
+// nové uzly: Kalich krve 喝, Průraznost , Dvojúder  (poloha v % = střed orbu)
 const TREE_NODES: TreeNode[] = [
   // kmen a kořenové ratolesti
-  { id: "t_str", emoji: "💪", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 80], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
-  { id: "t_arm", emoji: "🛡️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [26, 80], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
+  { id: "t_str", emoji: "", name: "Síla", per: "+20 % dmg", max: 5, base: 400, growth: 400, pos: [50, 80], apply: (g, l) => { g.stats.dmgMul += 0.2 * l; } },
+  { id: "t_arm", emoji: "️", name: "Tvrdá kůže", per: "+20 % zbroje", max: 5, parent: "t_str", base: 400, growth: 350, pos: [26, 80], apply: (g, l) => { g.stats.armor += 0.2 * l; } },
   { id: "t_xp", emoji: "✨", name: "Moudrost", per: "+20 % XP", max: 5, parent: "t_str", base: 300, growth: 300, pos: [74, 80], apply: (g, l) => { g.xpMul += 0.2 * l; } },
-  { id: "t_dash", emoji: "💨", name: "Rychlý úskok", per: "-20 % cd úskoku", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 62], apply: (g, l) => { g.stats.dashMul = Math.pow(0.8, l); } },
-  { id: "t_wpn1", emoji: "🎒", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, parent: "t_dash", base: 2000, growth: 0, pos: [28, 62], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
-  { id: "t_wpn2", emoji: "🎯", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [28, 44], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_dash", emoji: "", name: "Rychlý úskok", per: "-20 % cd úskoku", max: 5, parent: "t_str", base: 300, growth: 300, pos: [50, 62], apply: (g, l) => { g.stats.dashMul = Math.pow(0.8, l); } },
+  { id: "t_wpn1", emoji: "", name: "Druhá zbraň", per: "+1 slot zbraně", max: 1, parent: "t_dash", base: 2000, growth: 0, pos: [28, 62], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
+  { id: "t_wpn2", emoji: "", name: "Třetí zbraň", per: "+1 slot zbraně", max: 1, parent: "t_wpn1", base: 5000, growth: 0, pos: [28, 44], apply: (g) => { g.weaponBonus = (g.weaponBonus || 0) + 1; } },
   // větev života (kmen nahoru, pak vlevo k Kalichu krve)
   { id: "t_hp", emoji: "❤️", name: "Houževnatost", per: "+20 % HP", max: 5, parent: "t_dash", base: 300, growth: 300, pos: [50, 44], apply: (g, l) => { g.hero.maxHp = Math.round(g.hero.maxHp * (1 + 0.2 * l)); g.hero.hp = g.hero.maxHp; } },
-  { id: "t_regen", emoji: "🌿", name: "Regenerace", per: "+0.5 HP/s", max: 5, parent: "t_hp", base: 350, growth: 350, pos: [30, 26], apply: (g, l) => { g.stats.regen += 0.5 * l; } },
-  { id: "t_blood", emoji: "🩸", name: "Kalich krve", per: "+1 HP/kill", max: 3, parent: "t_regen", base: 600, growth: 600, pos: [10, 8], apply: (g, l) => { g.stats.lifesteal += 1 * l; } },
+  { id: "t_regen", emoji: "", name: "Regenerace", per: "+0.5 HP/s", max: 5, parent: "t_hp", base: 350, growth: 350, pos: [30, 26], apply: (g, l) => { g.stats.regen += 0.5 * l; } },
+  { id: "t_blood", emoji: "喝", name: "Kalich krve", per: "+1 HP/kill", max: 3, parent: "t_regen", base: 600, growth: 600, pos: [10, 8], apply: (g, l) => { g.stats.lifesteal += 1 * l; } },
   // obranná větev (vlevo)
-  { id: "t_mag", emoji: "🧲", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [10, 62], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
-  { id: "t_foot", emoji: "👟", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [10, 44], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
-  { id: "t_seed", emoji: "🌱", name: "Bohatá úroda", per: "+10 % semínek", max: 5, parent: "t_foot", base: 400, growth: 400, pos: [10, 26], apply: (g, l) => { g.seedBonus = (g.seedBonus || 1) * (1 + 0.1 * l); } },
+  { id: "t_mag", emoji: "鱗", name: "Sběrná síla", per: "+20 % dosah sběru", max: 5, parent: "t_arm", base: 250, growth: 250, pos: [10, 62], apply: (g, l) => { g.stats.magnetMul += 0.2 * l; } },
+  { id: "t_foot", emoji: "", name: "Rychlost nohou", per: "+20 % rychlosti", max: 5, parent: "t_mag", base: 300, growth: 300, pos: [10, 44], apply: (g, l) => { g.stats.speedMul += 0.2 * l; } },
+  { id: "t_seed", emoji: "", name: "Bohatá úroda", per: "+10 % semínek", max: 5, parent: "t_foot", base: 400, growth: 400, pos: [10, 26], apply: (g, l) => { g.seedBonus = (g.seedBonus || 1) * (1 + 0.1 * l); } },
   // útočná větev (vpravo)
-  { id: "t_crit", emoji: "🎯", name: "Střelecké oko", per: "+20 % crit", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [90, 62], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
-  { id: "t_cad", emoji: "🌀", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [90, 44], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
+  { id: "t_crit", emoji: "", name: "Střelecké oko", per: "+20 % crit", max: 5, parent: "t_xp", base: 350, growth: 350, pos: [90, 62], apply: (g, l) => { g.stats.crit += 0.2 * l; } },
+  { id: "t_cad", emoji: "", name: "Rychlé ruce", per: "+20 % kadence", max: 5, parent: "t_crit", base: 300, growth: 300, pos: [90, 44], apply: (g, l) => { g.stats.fireMul += 0.2 * l; } },
   { id: "t_ult", emoji: "⚡", name: "Ultimátní fokus", per: "-20 % cd ulta", max: 5, parent: "t_cad", base: 500, growth: 500, pos: [90, 26], apply: (g, l) => { g.stats.ultCdMul = Math.pow(0.8, l); } },
-  { id: "t_crd", emoji: "💥", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [72, 44], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
-  { id: "t_pierce", emoji: "🏹", name: "Průraznost", per: "+1 průraz", max: 3, parent: "t_crd", base: 600, growth: 600, pos: [72, 26], apply: (g, l) => { g.stats.pierce += 1 * l; } },
-  { id: "t_multi", emoji: "🔱", name: "Dvojúder", per: "+1 projektil", max: 2, parent: "t_crd", base: 2500, growth: 2500, pos: [50, 8], apply: (g, l) => { g.stats.multishot += 1 * l; } },
-  // 🏰 hradní větev stromu - hrad na východě mapy dostane tvrdší hradby a vlastní lučištníky
-  { id: "t_cwall", emoji: "🧱", name: "Hradby", per: "+100 HP hradu", max: 5, parent: "t_arm", base: 300, growth: 300, pos: [50, 26], apply: (g, l) => { g.castle.walls = l; castleMaxHp(g); } },
-  { id: "t_cbow", emoji: "🏹", name: "Střílny", per: "+1 lučištník hradu", max: 3, parent: "t_cwall", base: 450, growth: 450, pos: [30, 8], apply: (g, l) => { g.castle.bows = l; } },
+  { id: "t_crd", emoji: "", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [72, 44], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
+  { id: "t_pierce", emoji: "", name: "Průraznost", per: "+1 průraz", max: 3, parent: "t_crd", base: 600, growth: 600, pos: [72, 26], apply: (g, l) => { g.stats.pierce += 1 * l; } },
+  { id: "t_multi", emoji: "", name: "Dvojúder", per: "+1 projektil", max: 2, parent: "t_crd", base: 2500, growth: 2500, pos: [50, 8], apply: (g, l) => { g.stats.multishot += 1 * l; } },
+  //  hradní větev stromu - hrad na východě mapy dostane tvrdší hradby a vlastní lučištníky
+  { id: "t_cwall", emoji: "隣", name: "Hradby", per: "+100 HP hradu", max: 5, parent: "t_arm", base: 300, growth: 300, pos: [50, 26], apply: (g, l) => { g.castle.walls = l; castleMaxHp(g); } },
+  { id: "t_cbow", emoji: "", name: "Střílny", per: "+1 lučištník hradu", max: 3, parent: "t_cwall", base: 450, growth: 450, pos: [30, 8], apply: (g, l) => { g.castle.bows = l; } },
 ];
 
-// ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
+// ✨ speciální upgrady (jen 1×) - stojí  korunu z finálních bossů, koupíš je ve stromu
 const TREE_SPECIALS: TreeNode[] = [
-  { id: "t_home", emoji: "🧿", name: "Vládce střel", per: "+30 % navádění", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.stats.home = Math.min(1, g.stats.home + 0.3); } },
-  { id: "t_phoenix", emoji: "🕊️", name: "Fénixovo srdce", per: "1× oživení za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.revive = true; } },
-  { id: "t_crown", emoji: "👑", name: "Koruna louky", per: "+15 % semínek za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
-  { id: "t_allwpn", emoji: "🔓", name: "Všechny zbraně", per: "zruší třídní omezení zbraní (ne pro inženýra)", max: 1, special: true, crownCost: 3, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.allWeapons = true; } },
-  { id: "t_titan", emoji: "❤️‍🔥", name: "Titánské srdce", per: "+30 max HP", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.hero.maxHp += 30; g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + 30); } },
-  { id: "t_keep", emoji: "🏰", name: "Královský donjon", per: "+200 HP hradu a hrad se sám opravuje", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.castle.keep = true; castleMaxHp(g); g.castle.regen = g.castle.maxHp * 0.01; } },
+  { id: "t_home", emoji: "刺", name: "Vládce střel", per: "+30 % navádění", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.stats.home = Math.min(1, g.stats.home + 0.3); } },
+  { id: "t_phoenix", emoji: "️", name: "Fénixovo srdce", per: "1× oživení za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.revive = true; } },
+  { id: "t_crown", emoji: "", name: "Koruna louky", per: "+15 % semínek za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
+  { id: "t_allwpn", emoji: "", name: "Všechny zbraně", per: "zruší třídní omezení zbraní (ne pro inženýra)", max: 1, special: true, crownCost: 3, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.allWeapons = true; } },
+  { id: "t_titan", emoji: "❤️‍", name: "Titánské srdce", per: "+30 max HP", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.hero.maxHp += 30; g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + 30); } },
+  { id: "t_keep", emoji: "", name: "Královský donjon", per: "+200 HP hradu a hrad se sám opravuje", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.castle.keep = true; castleMaxHp(g); g.castle.regen = g.castle.maxHp * 0.01; } },
 ];
 
 const TREE_ALL: TreeNode[] = [...TREE_NODES, ...TREE_SPECIALS];
 
-// 🌱 cena normálního uzlu stromu (semínka); speciály stojí 1 👑 korunu
+//  cena normálního uzlu stromu (semínka); speciály stojí 1  korunu
 const treeCost = (tn: TreeNode, lvl: number) => Math.round(tn.base + tn.growth * lvl);
 
-// 🏰 HP hradu: základ 900, každá hradba +100 HP, Královský donjon +200 HP (v1.16 ploché přírůstky)
+//  HP hradu: základ 900, každá hradba +100 HP, Královský donjon +200 HP (v1.16 ploché přírůstky)
 function castleMaxHp(g: Game): void {
   g.castle.maxHp = 900 + g.castle.walls * 100 + (g.castle.keep ? 200 : 0); // v1.16: nizsi zaklad + plocho +100 HP za hradbu, +200 za donjon
   g.castle.hp = g.castle.maxHp;
@@ -2120,19 +2140,19 @@ function castleMaxHp(g: Game): void {
 
 // ⚡ ULTIMÁTNÍ SCHOPNOSTI - každá classa má jednu (klávesa E), cooldown 26-38 s
 const ULTS: Record<string, { emoji: string; name: string; desc: string; cd: number }> = {
-  archer: { emoji: "🏹", name: "Déšť šípů", desc: "~20 šípů padá z nebe na netvory kolem tebe", cd: 30 },
-  soldier: { emoji: "🎖️", name: "Náletek", desc: "bombardér přeletí louku a shodí 6 bomb kolem tebe", cd: 30 },
-  ninja: { emoji: "🥷", name: "Stínová záměna", desc: "3 s neviditelnosti - nepřátelé tě nenajdou, ale ty útočíš 3× silněji", cd: 26 },
-  knight: { emoji: "🛡️", name: "Štítová zeď", desc: "5 s nesmrtelnosti se štítem, ale pohyb máš poloviční", cd: 32 },
+  archer: { emoji: "", name: "Déšť šípů", desc: "~20 šípů padá z nebe na netvory kolem tebe", cd: 30 },
+  soldier: { emoji: "️", name: "Náletek", desc: "bombardér přeletí louku a shodí 6 bomb kolem tebe", cd: 30 },
+  ninja: { emoji: "亮", name: "Stínová záměna", desc: "3 s neviditelnosti - nepřátelé tě nenajdou, ale ty útočíš 3× silněji", cd: 26 },
+  knight: { emoji: "️", name: "Štítová zeď", desc: "5 s nesmrtelnosti se štítem, ale pohyb máš poloviční", cd: 32 },
   mage: { emoji: "☄️", name: "Meteor", desc: "dopadne na netvora: 160 dmg do okolí", cd: 30 },
   engineer: { emoji: "⚙️", name: "Šestiboj", desc: "položí 6 turetek najednou (mimo ult se staví jen do max 3 na mapě)", cd: 38 },
 };
 
-// 🌍 JAZYKY HRY - čeština, angličtina, polština; výběr perzistuje se do mety
+//  JAZYKY HRY - čeština, angličtina, polština; výběr perzistuje se do mety
 const LANGS = [
-  { id: "cs", flag: "🇨🇿", label: "Čeština" },
-  { id: "en", flag: "🇬🇧", label: "English" },
-  { id: "pl", flag: "🇵🇱", label: "Polski" },
+  { id: "cs", flag: "", label: "Čeština" },
+  { id: "en", flag: "", label: "English" },
+  { id: "pl", flag: "", label: "Polski" },
 ];
 // aktuální jazyk (modulová proměnná - čte ji trk() i v komponentách)
 let CUR_LANG = "cs";
@@ -2144,291 +2164,291 @@ const LANG: Record<string, Record<string, string>> = {
   cs: {
     title: "Louka příšer",
     tab_cls: "Classa", tab_trophy: "Trofeje", tab_sbx: "Sandbox", tab_meta: "Semínka", tab_board: "Žebříček", tab_tree: "Strom", menu_best: "Rekord",
-    sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: "👑 Bossové", sbx_sec_mini: "🌟 Mini-bossové", sbx_sec_enemies: "👾 Nepřátelé",
+    sbx_live: "Živé staty", sbx_sec_actions: "⚡ Akce", sbx_sec_boss: " Bossové", sbx_sec_mini: " Mini-bossové", sbx_sec_enemies: " Nepřátelé",
     board_title: "Žebříček nejlepších runů",
-    board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 🥇",
+    board_empty: "Zatím tu nic není. Zahaj run, zapis se a vyhrávej 磊",
     ask_name: "Top 10! Zapiš se do žebříčku:",
     name_ph: "Jméno hrdiny…",
     save_score: "Uložit",
-    saved_board: "Zapsáno do žebříčku! 🥇",
+    saved_board: "Zapsáno do žebříčku! 磊",
     player_default: "Hráč",
     board_note: "Žebříček top 10 se ukládá v tomto prohlížeči.",
     board_global: "Sdílený žebříček – rekordy hráčů z celého světa",
-    board_global_note: "🌍 Žebříček je sdílený online – vidí ho všichni hráči na všech zařízeních.",
+    board_global_note: " Žebříček je sdílený online – vidí ho všichni hráči na všech zařízeních.",
     board_loading: "Načítám světové rekordy…",
     board_offline: "Server nedostupný – ukazuji jen záznamy z tohoto prohlížeče",
-    board_clear: "🧹 Smazat žebříček",
+    board_clear: "粒 Smazat žebříček",
     board_confirm: "Opravdu smazat? Klikni znovu!",
     start: "Spustit run",
-    sbx_badge: "🧪 Sandbox je zapnutý",
-    lv: "Lv", level: "Level", night: "🌙 NOC ×1.5", day: "☀️ DEN",
+    sbx_badge: "離 Sandbox je zapnutý",
+    lv: "Lv", level: "Level", night: " NOC ×1.5", day: "☀️ DEN",
     lvlup: "⬆️ Level up! Vyber vylepšení",
     keys_pick: "klávesy 1–5 vybírají",
-    crate: "📦 Bedna z bosse! Vyber 1 z 5",
+    crate: " Bedna z bosse! Vyber 1 z 5",
     crate_keys: "⌨️ Klávesy 1–5 vybírají z bedny",
-    sbx_title: "🧪 Sandbox — navol si, co chceš (bez XP)",
-    sbx_clear: "🧹 Smazat nepřátelé", sbx_cleared: "🧹 Nepřátelé smazáni", sbx_final: "☠️ Finální boss", sbx_close: "✖ Zavřít a hrát",
-    sbx_hold: " TAP = 1× · PODRŽ = dokola 🔄",
-    sbx_hint: "Klikni na kartu = okamžitě se aplikuje · PODRŽ kartu = aplikuje se dokola 🔄 · panel lze otevřít znovu · B = náhodný boss · zbraně: ∞ slotů",
+    sbx_title: "離 Sandbox — navol si, co chceš (bez XP)",
+    sbx_clear: "粒 Smazat nepřátelé", sbx_cleared: "粒 Nepřátelé smazáni", sbx_final: "☠️ Finální boss", sbx_close: "✖ Zavřít a hrát",
+    sbx_hold: " TAP = 1× · PODRŽ = dokola ",
+    sbx_hint: "Klikni na kartu = okamžitě se aplikuje · PODRŽ kartu = aplikuje se dokola  · panel lze otevřít znovu · B = náhodný boss · zbraně: ∞ slotů",
     applied: "✅ Aplikováno:",
     dmg: "dmg", kadence: "kadence", rychlost: "rychlost", crit: "crit", zbroj: "zbroje", projektil: "projektilů", navad: "navádění",
     pause: "⏸ Pauza",
     kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo",
-    boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
-    snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎁 Překvapení: ZAP", surp_off: "🎁 Překvapení",
-    src_title: "📊 Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
-    pacts: "🩸 Sedm paktů (Krvavý, Šílence, Fénixův, Titán, Skla, Sběratele, Lovce) padá mezi upgrady — každý jednou za run, každý s kletbou.",
+    boss_in: "☠️ Boss za {n} s", night_in: " Noc za {n} s", day_in: "☀️ Den za {n} s",
+    snd: " Zvuk", snd_off: " Zvuk", shk: " Třesení", shk_off: " Třesení", nums: " Čísla dmg", nums_off: "➖ Čísla dmg", surp: " Překvapení: ZAP", surp_off: " Překvapení",
+    src_title: " Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
+    pacts: "喝 Sedm paktů (Krvavý, Šílence, Fénixův, Titán, Skla, Sběratele, Lovce) padá mezi upgrady — každý jednou za run, každý s kletbou.",
     turret_kinds: "⚙️ Druhy turetek:",
-    spec_knight: "🛡️ Železná disciplína: vestoj = −40 % přijímaného zranění",
-    spec_ninja: "🌫️ Stínový úhyb: úhyb = 0,55 s nezranitelnost",
-    autopause: "🏚️ Přepneš na jinou kartu? Hra se sama pozastaví (auto-pauza).",
-    resume: "▶ Pokračovat", quit: "🏁 Ukončit run", quit_confirm: "😱 Opravdu? Klikni znovu!",
+    spec_knight: "️ Železná disciplína: vestoj = −40 % přijímaného zranění",
+    spec_ninja: "️ Stínový úhyb: úhyb = 0,55 s nezranitelnost",
+    autopause: "️ Přepneš na jinou kartu? Hra se sama pozastaví (auto-pauza).",
+    resume: "▶ Pokračovat", quit: " Ukončit run", quit_confirm: " Opravdu? Klikni znovu!",
     pause_hint_touch: "Tlačítkem ▶ Pokračovat se vrátíš do hry", pause_hint_kbd: "Nebo stiskni P pro pokračování",
-    over: "💀 Hrdina padl",
+    over: " Hrdina padl",
     over_level: "Level", over_kills: "Zabití", over_time: "Přežito",
-    over_best: "🏆 Rekord", over_clsrec: "rekord", over_combo: "kombo max",
-    over_nights: "🌙 Nocí přežito:", over_minib: "🌟 Mini-bossů:",
+    over_best: " Rekord", over_clsrec: "rekord", over_combo: "kombo max",
+    over_nights: " Nocí přežito:", over_minib: " Mini-bossů:",
     seeds_got: "Získáno", seeds_total: "celkem", seeds: "semínek",
-    daily_record: "📅 Nový denní rekord!",
+    daily_record: " Nový denní rekord!",
     new_trophy: "Nová trofej:",
-    shop_btn: "🌱 Trvalá vylepšení", again: "Nový run 🔄",
-    shop_title: "🌳 Strom dovedností",
+    shop_btn: " Trvalá vylepšení", again: "Nový run ",
+    shop_title: " Strom dovedností",
     shop_close: "✖ Zavřít",
-    hint_touch: "👇 Táhni prstem = pohyb · 💨 = úhyb · ⚡ = ultimátum · zbraně střílí samy",
+    hint_touch: " Táhni prstem = pohyb ·  = úhyb · ⚡ = ultimátum · zbraně střílí samy",
     hint_kbd: "⌨️ WASD / šipky = pohyb · Mezerník = úhyb · E = ultimátum · zbraně střílí samy · P = pauza",
-    legend: "📜 Legenda praví: louka kdysi patřila slepicím. Pak přišly příšery — a pak přišel ty. 🎒 1 zbraň do runu (další 2 sloty v 🌳 stromu) · ⭐ 5. tier = ULTIMÁTNÍ FORMA · ⚔️ fyzické classy neberou magii (a 🪄 naopak) · každých 90 s 💀 boss a 📦 bedna",
-    records: "🏅 Rekordy za classy", daily_best: "📅 Nejlepší denní výzva:",
-    daily_btn: "📅 Denní výzva", daily_on: "ZAP",
-    daily_note: "📅 Dnes {d} — obtížnost vylosovaná podle data, denní rekord se ukládá zvlášť. Kdo přístroj nepodvádí, ten má čistý měsíc!",
-    sbx_on: "🧪 Sandbox ZAPNUTÝ", sbx_off: "🧪 Sandbox VYPNUTÝ",
+    legend: " Legenda praví: louka kdysi patřila slepicím. Pak přišly příšery — a pak přišel ty.  1 zbraň do runu (další 2 sloty v  stromu) · ⭐ 5. tier = ULTIMÁTNÍ FORMA · ⚔️ fyzické classy neberou magii (a 彩 naopak) · každých 90 s  boss a  bedna",
+    records: " Rekordy za classy", daily_best: " Nejlepší denní výzva:",
+    daily_btn: " Denní výzva", daily_on: "ZAP",
+    daily_note: " Dnes {d} — obtížnost vylosovaná podle data, denní rekord se ukládá zvlášť. Kdo přístroj nepodvádí, ten má čistý měsíc!",
+    sbx_on: "離 Sandbox ZAPNUTÝ", sbx_off: "離 Sandbox VYPNUTÝ",
     sbx_click_on: "Klikni pro vypnutí", sbx_click_off: "Klikni pro zapnutí",
-    sbx_1: "🔓 Volné upgrady bez XP — 🧪 tlačítko přímo ve hře",
+    sbx_1: " Volné upgrady bez XP — 離 tlačítko přímo ve hře",
     sbx_2: "☠️ Spawnování všech bossů a mini-bossů kdykoliv (B / tlačítka)",
-    sbx_3: "🎭 Žádná omezení classy — každý bere všechny karty",
-    sbx_4: "📊 Live staty a mazání nepřátel na jedno tlačítko",
+    sbx_3: " Žádná omezení classy — každý bere všechny karty",
+    sbx_4: " Live staty a mazání nepřátel na jedno tlačítko",
     sbx_note: "Sandbox je jen na hraní a testování — pro normální průběh ho nech vypnutý.",
     per_lvl: "/ úroveň",
     meta_note: "Semínka získáváš za každý run podle zabití, přežitého času a levelů. Upgrady jsou nekonečné, platí do všech dalších runů a ukládají se.",
-    tree_note: "🌳 Strom roste zdola nahoru ze Síly 💪 - 18 upgradů na větvích: dmg, HP, regenerace, kalich krve, zbroj, sběr, rychlost, úskok, semínka, XP, crit, kritická rána, průraznost, dvojúder, kadence, ult i sloty na zbraně 🎒. ✨ Zlaté speciály stojí 👑 koruny z finálního bosse (každý třetí boss).",
+    tree_note: " Strom roste zdola nahoru ze Síly  - 18 upgradů na větvích: dmg, HP, regenerace, kalich krve, zbroj, sběr, rychlost, úskok, semínka, XP, crit, kritická rána, průraznost, dvojúder, kadence, ult i sloty na zbraně . ✨ Zlaté speciály stojí  koruny z finálního bosse (každý třetí boss).",
     tree_max: "✅ hotovo",
-    specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí 👑 koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
-    reset_btn: "🔄 Restart upgradů (smaže semínka, strom i koruny)",
+    specials_note: "✨ Zlaté upgrady platí jednou a navždy. Stojí  koruny (1–3) — tu dostaneš za každého zabitého finálního bosse (každý třetí boss).",
+    reset_btn: " Restart upgradů (smaže semínka, strom i koruny)",
     reset_w1: "⚠️ OPRAVDU? Smažou se upgrady, semínka i koruny! (potvrď 2×)",
-    reset_w2: "😱 POSLEDNÍ ŠANCE — po kliknutí už nic nevrátíš!",
+    reset_w2: " POSLEDNÍ ŠANCE — po kliknutí už nic nevrátíš!",
     reset_done: "✅ Upgrady smazány — rekordy a trofeje zůstávají",
-    locked: "chybí 🌱",
+    locked: "chybí ",
     diff_0: "Procházka", diff_1: "Normál", diff_2: "Peklo",
     w_rain: "Déšť", w_storm: "Bouřka", w_wind: "Silný vítr",
     cls_archer: "Lučištník", cls_soldier: "Voják", cls_ninja: "Ninja", cls_knight: "Rytíř", cls_mage: "Mág", cls_engineer: "Inženýr",
     dsc_archer: "⚔️ Fyzické zbraně, vyšší kadence",
     dsc_soldier: "⚔️ Pistole od startu, +10 % kadence, zbroj",
-    dsc_ninja: "⚔️ Šurikeny od startu, +25 % rychlost · 🌫️ Stínový úhyb · 🥷 Ult: 3 s neviditelnost a 3× dmg",
-    dsc_knight: "⚔️ Meč na blízko, velká zbroj · 🛡️ Ult: 5 s nesmrtelnosti se štítem, ale −50 % rychlost",
-    dsc_mage: "🪄 Blesk od startu, +15 % rychlosti",
-    dsc_engineer: "🛡️ Turetky bojují za něj (běžně max 3 na mapě) - ult jich mimo limit položí 6 najednou. Karty odemykají nové druhy",
+    dsc_ninja: "⚔️ Šurikeny od startu, +25 % rychlost · ️ Stínový úhyb · 亮 Ult: 3 s neviditelnost a 3× dmg",
+    dsc_knight: "⚔️ Meč na blízko, velká zbroj · ️ Ult: 5 s nesmrtelnosti se štítem, ale −50 % rychlost",
+    dsc_mage: "彩 Blesk od startu, +15 % rychlosti",
+    dsc_engineer: "️ Turetky bojují za něj (běžně max 3 na mapě) - ult jich mimo limit položí 6 najednou. Karty odemykají nové druhy",
     wpn_bow: "Luk", wpn_darts: "Šipky", wpn_knives: "Nože", wpn_shotgun: "Brokovnice", wpn_mg: "Kulomet", wpn_pistol: "Pistole", wpn_fireball: "Ohnivá koule", wpn_frost: "Mrazík", wpn_lightning: "Blesk", wpn_flamethrower: "Plamenomet", wpn_shuriken: "Šurikeny", wpn_sword: "Meč", wpn_splinters: "Třísky", wpn_turret: "Turetka",
   },
   en: {
     title: "Meadow of Monsters",
     tab_cls: "Classes", tab_trophy: "Trophies", tab_sbx: "Sandbox", tab_meta: "Seeds", tab_board: "Leaderboard", tab_tree: "Tree", menu_best: "Best",
-    sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: "👑 Bosses", sbx_sec_mini: "🌟 Mini-bosses", sbx_sec_enemies: "👾 Enemies",
+    sbx_live: "Live stats", sbx_sec_actions: "⚡ Actions", sbx_sec_boss: " Bosses", sbx_sec_mini: " Mini-bosses", sbx_sec_enemies: " Enemies",
     board_title: "Best runs leaderboard",
-    board_empty: "Nothing here yet. Start a run, sign in and win 🥇",
+    board_empty: "Nothing here yet. Start a run, sign in and win 磊",
     ask_name: "Top 10! Sign the leaderboard:",
     name_ph: "Hero name…",
     save_score: "Save",
-    saved_board: "Saved to the leaderboard! 🥇",
+    saved_board: "Saved to the leaderboard! 磊",
     player_default: "Player",
     board_note: "Top 10 board is saved in this browser.",
     board_global: "Shared leaderboard – records from players worldwide",
-    board_global_note: "🌍 The leaderboard is shared online – every player sees it on every device.",
+    board_global_note: " The leaderboard is shared online – every player sees it on every device.",
     board_loading: "Loading world records…",
     board_offline: "Server unreachable – showing only this browser's records",
-    board_clear: "🧹 Clear board",
+    board_clear: "粒 Clear board",
     board_confirm: "Really clear it? Click again!",
     start: "Start run",
-    sbx_badge: "🧪 Sandbox is on",
-    lv: "Lv", level: "Level", night: "🌙 NIGHT ×1.5", day: "☀️ DAY",
+    sbx_badge: "離 Sandbox is on",
+    lv: "Lv", level: "Level", night: " NIGHT ×1.5", day: "☀️ DAY",
     lvlup: "⬆️ Level up! Pick an upgrade",
     keys_pick: "keys 1–5 pick",
-    crate: "📦 Boss crate! Pick 1 of 5",
+    crate: " Boss crate! Pick 1 of 5",
     crate_keys: "⌨️ Keys 1–5 pick from the crate",
-    sbx_title: "🧪 Sandbox — set it up as you like (no XP)",
-    sbx_clear: "🧹 Clear enemies", sbx_cleared: "🧹 Enemies cleared", sbx_final: "☠️ Final boss", sbx_close: "✖ Close & play",
-    sbx_hold: " TAP = 1× · HOLD = repeats 🔄",
-    sbx_hint: "Click a card = applies instantly · HOLD = applies repeatedly 🔄 · panel can be reopened · B = random boss · weapons: ∞ slots",
+    sbx_title: "離 Sandbox — set it up as you like (no XP)",
+    sbx_clear: "粒 Clear enemies", sbx_cleared: "粒 Enemies cleared", sbx_final: "☠️ Final boss", sbx_close: "✖ Close & play",
+    sbx_hold: " TAP = 1× · HOLD = repeats ",
+    sbx_hint: "Click a card = applies instantly · HOLD = applies repeatedly  · panel can be reopened · B = random boss · weapons: ∞ slots",
     applied: "✅ Applied:",
     dmg: "dmg", kadence: "fire rate", rychlost: "speed", crit: "crit", zbroj: "armor", projektil: "projectiles", navad: "homing",
     pause: "⏸ Paused",
     kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo",
-    boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
-    snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎁 Surprise: ON", surp_off: "🎁 Surprise",
-    src_title: "📊 Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
-    pacts: "🩸 Seven pacts (Blood, Madman, Phoenix, Titan, Glass, Collector, Hunter) drop among upgrades — once per run, each with a curse.",
+    boss_in: "☠️ Boss in {n} s", night_in: " Night in {n} s", day_in: "☀️ Day in {n} s",
+    snd: " Sound", snd_off: " Sound", shk: " Shake", shk_off: " Shake", nums: " Dmg numbers", nums_off: "➖ Dmg numbers", surp: " Surprise: ON", surp_off: " Surprise",
+    src_title: " Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
+    pacts: "喝 Seven pacts (Blood, Madman, Phoenix, Titan, Glass, Collector, Hunter) drop among upgrades — once per run, each with a curse.",
     turret_kinds: "⚙️ Turret kinds:",
-    spec_knight: "🛡️ Iron Discipline: standing still = −40 % incoming damage",
-    spec_ninja: "🌫️ Shadow Dodge: dash = 0.55 s invulnerability",
-    autopause: "🏚️ Switch to another tab? The game auto-pauses.",
-    resume: "▶ Resume", quit: "🏁 End run", quit_confirm: "😱 Really? Click again!",
+    spec_knight: "️ Iron Discipline: standing still = −40 % incoming damage",
+    spec_ninja: "️ Shadow Dodge: dash = 0.55 s invulnerability",
+    autopause: "️ Switch to another tab? The game auto-pauses.",
+    resume: "▶ Resume", quit: " End run", quit_confirm: " Really? Click again!",
     pause_hint_touch: "Tap ▶ Resume to return to the game", pause_hint_kbd: "Or press P to continue",
-    over: "💀 The hero has fallen",
+    over: " The hero has fallen",
     over_level: "Level", over_kills: "Kills", over_time: "Survived",
-    over_best: "🏆 Best", over_clsrec: "record", over_combo: "combo max",
-    over_nights: "🌙 Nights survived:", over_minib: "🌟 Mini-bosses:",
+    over_best: " Best", over_clsrec: "record", over_combo: "combo max",
+    over_nights: " Nights survived:", over_minib: " Mini-bosses:",
     seeds_got: "Earned", seeds_total: "total", seeds: "seeds",
-    daily_record: "📅 New daily record!",
+    daily_record: " New daily record!",
     new_trophy: "New trophy:",
-    shop_btn: "🌱 Permanent upgrades", again: "New run 🔄",
-    shop_title: "🌳 Skill tree",
+    shop_btn: " Permanent upgrades", again: "New run ",
+    shop_title: " Skill tree",
     shop_close: "✖ Close",
-    hint_touch: "👇 Drag your finger = move · 💨 = dash · ⚡ = ultimate · weapons fire on their own",
+    hint_touch: " Drag your finger = move ·  = dash · ⚡ = ultimate · weapons fire on their own",
     hint_kbd: "⌨️ WASD / arrows = move · Space = dash · E = ultimate · weapons fire on their own · P = pause",
-    legend: "📜 Legend says: the meadow once belonged to hens. Then the monsters came — and then you came. 🎒 1 weapon per run (2 more slots in the 🌳 tree) · ⭐ tier 5 = ULTIMATE FORM · ⚔️ physical classes take no magic (and 🪄 vice versa) · every 90 s a 💀 boss and a 📦 crate",
-    records: "🏅 Records per class", daily_best: "📅 Best daily challenge:",
-    daily_btn: "📅 Daily challenge", daily_on: "ON",
-    daily_note: "📅 Today {d} — difficulty drawn from the date, the daily record is stored separately. Who doesn't cheat has a clean month!",
-    sbx_on: "🧪 Sandbox ON", sbx_off: "🧪 Sandbox OFF",
+    legend: " Legend says: the meadow once belonged to hens. Then the monsters came — and then you came.  1 weapon per run (2 more slots in the  tree) · ⭐ tier 5 = ULTIMATE FORM · ⚔️ physical classes take no magic (and 彩 vice versa) · every 90 s a  boss and a  crate",
+    records: " Records per class", daily_best: " Best daily challenge:",
+    daily_btn: " Daily challenge", daily_on: "ON",
+    daily_note: " Today {d} — difficulty drawn from the date, the daily record is stored separately. Who doesn't cheat has a clean month!",
+    sbx_on: "離 Sandbox ON", sbx_off: "離 Sandbox OFF",
     sbx_click_on: "Click to turn off", sbx_click_off: "Click to turn on",
-    sbx_1: "🔓 Free upgrades without XP — 🧪 button right in the game",
+    sbx_1: " Free upgrades without XP — 離 button right in the game",
     sbx_2: "☠️ Spawn any boss or mini-boss anytime (B / buttons)",
-    sbx_3: "🎭 No class restrictions — everyone takes all cards",
-    sbx_4: "📊 Live stats and one-click enemy clearing",
+    sbx_3: " No class restrictions — everyone takes all cards",
+    sbx_4: " Live stats and one-click enemy clearing",
     sbx_note: "Sandbox is just for playing and testing — keep it off for a normal run.",
     per_lvl: "/ level",
     meta_note: "You earn seeds each run for kills, time survived and levels. Upgrades are endless, apply to all future runs and are saved.",
-    tree_note: "🌳 The tree grows upward from Strength 💪 - 18 upgrades on its branches: dmg, HP, regen, blood chalice, armor, magnet, speed, dash, seeds, XP, crit, crit damage, pierce, double shot, fire rate, ult and weapon slots 🎒. ✨ Golden specials cost 👑 crowns from a FINAL boss (every third boss).",
+    tree_note: " The tree grows upward from Strength  - 18 upgrades on its branches: dmg, HP, regen, blood chalice, armor, magnet, speed, dash, seeds, XP, crit, crit damage, pierce, double shot, fire rate, ult and weapon slots . ✨ Golden specials cost  crowns from a FINAL boss (every third boss).",
     tree_max: "✅ done",
-    specials_note: "✨ Golden upgrades are one-time and permanent. They cost 👑 crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
-    reset_btn: "🔄 Restart upgrades (wipes seeds, tree and crowns)",
+    specials_note: "✨ Golden upgrades are one-time and permanent. They cost  crowns (1–3) — you get one for every FINAL boss you kill (every third boss).",
+    reset_btn: " Restart upgrades (wipes seeds, tree and crowns)",
     reset_w1: "⚠️ REALLY? Upgrades, seeds and crowns will be wiped! (confirm 2×)",
-    reset_w2: "😱 LAST CHANCE — there is no undo after this!",
+    reset_w2: " LAST CHANCE — there is no undo after this!",
     reset_done: "✅ Upgrades wiped — records and trophies stay",
-    locked: "need 🌱",
+    locked: "need ",
     diff_0: "Walk", diff_1: "Normal", diff_2: "Hell",
     w_rain: "Rain", w_storm: "Storm", w_wind: "Strong wind",
     cls_archer: "Archer", cls_soldier: "Soldier", cls_ninja: "Ninja", cls_knight: "Knight", cls_mage: "Mage", cls_engineer: "Engineer",
     dsc_archer: "⚔️ Physical weapons, higher fire rate",
     dsc_soldier: "⚔️ Pistol from the start, +10 % fire rate, armor",
-    dsc_ninja: "⚔️ Shurikens from the start, +25 % speed · 🌫️ Shadow Dodge · 🥷 Ult: 3 s invisibility with 3× damage",
-    dsc_knight: "⚔️ Melee sword, heavy armor · 🛡️ Ult: 5 s immortality behind the shield, but −50 % speed",
-    dsc_mage: "🪄 Lightning from the start, +15 % speed",
-    dsc_engineer: "🛡️ Turrets fight for him (max 3 on the map) — the ult drops 6 at once. Cards unlock new kinds",
+    dsc_ninja: "⚔️ Shurikens from the start, +25 % speed · ️ Shadow Dodge · 亮 Ult: 3 s invisibility with 3× damage",
+    dsc_knight: "⚔️ Melee sword, heavy armor · ️ Ult: 5 s immortality behind the shield, but −50 % speed",
+    dsc_mage: "彩 Lightning from the start, +15 % speed",
+    dsc_engineer: "️ Turrets fight for him (max 3 on the map) — the ult drops 6 at once. Cards unlock new kinds",
     wpn_bow: "Bow", wpn_darts: "Darts", wpn_knives: "Knives", wpn_shotgun: "Shotgun", wpn_mg: "Machine gun", wpn_pistol: "Pistol", wpn_fireball: "Fireball", wpn_frost: "Frost bolt", wpn_lightning: "Lightning", wpn_flamethrower: "Flamethrower", wpn_shuriken: "Shurikens", wpn_sword: "Sword", wpn_splinters: "Splinters", wpn_turret: "Turret",
   },
   pl: {
     title: "Łąka potworów",
     tab_cls: "Klasy", tab_trophy: "Trofea", tab_sbx: "Sandbox", tab_meta: "Nasiona", tab_board: "Tablica", tab_tree: "Drzewko", menu_best: "Rekord",
-    sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: "👑 Bossowie", sbx_sec_mini: "🌟 Mini-bossowie", sbx_sec_enemies: "👾 Wrogowie",
+    sbx_live: "Staty na żywo", sbx_sec_actions: "⚡ Akcje", sbx_sec_boss: " Bossowie", sbx_sec_mini: " Mini-bossowie", sbx_sec_enemies: " Wrogowie",
     board_title: "Tablica najlepszych runów",
-    board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 🥇",
+    board_empty: "Jeszcze nic tu nie ma. Zacznij run, zapisz się i wygrywaj 磊",
     ask_name: "Top 10! Zapisz się na tablicę:",
     name_ph: "Imię bohatera…",
     save_score: "Zapisz",
-    saved_board: "Zapisano na tablicy! 🥇",
+    saved_board: "Zapisano na tablicy! 磊",
     player_default: "Gracz",
     board_note: "Tablica top 10 zapisuje się w tej przeglądarce.",
     board_global: "Wspólna tablica – rekordy graczy z całego świata",
-    board_global_note: "🌍 Tablica jest współdzielona online – widzą ją wszyscy gracze na wszystkich urządzeniach.",
+    board_global_note: " Tablica jest współdzielona online – widzą ją wszyscy gracze na wszystkich urządzeniach.",
     board_loading: "Ładuję światowe rekordy…",
     board_offline: "Serwer niedostępny – pokazuję tylko zapisy z tej przeglądarki",
-    board_clear: "🧹 Wyczyść tablicę",
+    board_clear: "粒 Wyczyść tablicę",
     board_confirm: "Na pewno? Kliknij ponownie!",
     start: "Start runu",
-    sbx_badge: "🧪 Sandbox jest włączony",
-    lv: "Lv", level: "Poziom", night: "🌙 NOC ×1.5", day: "☀️ DZIEŃ",
+    sbx_badge: "離 Sandbox jest włączony",
+    lv: "Lv", level: "Poziom", night: " NOC ×1.5", day: "☀️ DZIEŃ",
     lvlup: "⬆️ Nowy poziom! Wybierz ulepszenie",
     keys_pick: "klawisze 1–5 wybierają",
-    crate: "📦 Skrzynia z bossem! Wybierz 1 z 5",
+    crate: " Skrzynia z bossem! Wybierz 1 z 5",
     crate_keys: "⌨️ Klawisze 1–5 wybierają ze skrzyni",
-    sbx_title: "🧪 Sandbox — ustaw po swojemu (bez XP)",
-    sbx_clear: "🧹 Usuń wrogów", sbx_cleared: "🧹 Wrogowie usunięci", sbx_final: "☠️ Finałowy boss", sbx_close: "✖ Zamknij i graj",
-    sbx_hold: " TAP = 1× · PRZYTRZYMAJ = powtarza 🔄",
-    sbx_hint: "Kliknięcie karty = działa od razu · PRZYTRZYMAJ = stosuje w kółko 🔄 · panel można otworzyć ponownie · B = losowy boss · bronie: ∞ slotów",
+    sbx_title: "離 Sandbox — ustaw po swojemu (bez XP)",
+    sbx_clear: "粒 Usuń wrogów", sbx_cleared: "粒 Wrogowie usunięci", sbx_final: "☠️ Finałowy boss", sbx_close: "✖ Zamknij i graj",
+    sbx_hold: " TAP = 1× · PRZYTRZYMAJ = powtarza ",
+    sbx_hint: "Kliknięcie karty = działa od razu · PRZYTRZYMAJ = stosuje w kółko  · panel można otworzyć ponownie · B = losowy boss · bronie: ∞ slotów",
     applied: "✅ Zastosowano:",
     dmg: "obr.", kadence: "kadencja", rychlost: "szybkość", crit: "kryt.", zbroj: "pancerza", projektil: "pocisków", navad: "naprowadzanie",
     pause: "⏸ Pauza",
     kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo",
-    boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
-    snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎁 Niespodzianka: WŁ", surp_off: "🎁 Niespodzianka",
-    src_title: "📊 Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
-    pacts: "🩸 Siedem paktów (Krwawy, Szaleńca, Feniksa, Tytana, Szkła, Kolekcjonera, Łowcy) trafia między ulepszenia — raz na run, każdy z klątwą.",
+    boss_in: "☠️ Boss za {n} s", night_in: " Noc za {n} s", day_in: "☀️ Dzień za {n} s",
+    snd: " Dźwięk", snd_off: " Dźwięk", shk: " Trzęsienie", shk_off: " Trzęsienie", nums: " Liczby obr.", nums_off: "➖ Liczby obr.", surp: " Niespodzianka: WŁ", surp_off: " Niespodzianka",
+    src_title: " Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
+    pacts: "喝 Siedem paktów (Krwawy, Szaleńca, Feniksa, Tytana, Szkła, Kolekcjonera, Łowcy) trafia między ulepszenia — raz na run, każdy z klątwą.",
     turret_kinds: "⚙️ Rodzaje wieżyczek:",
-    spec_knight: "🛡️ Żelazna dyscyplina: stanie w miejscu = −40 % otrzymywanych obrażeń",
-    spec_ninja: "🌫️ Unik w cień: unik = 0,55 s nietykalności",
-    autopause: "🏚️ Przełączysz na inną kartę? Gra się sama zatrzyma (auto-pauza).",
-    resume: "▶ Kontynuuj", quit: "🏁 Zakończ run", quit_confirm: "😱 Na pewno? Kliknij ponownie!",
+    spec_knight: "️ Żelazna dyscyplina: stanie w miejscu = −40 % otrzymywanych obrażeń",
+    spec_ninja: "️ Unik w cień: unik = 0,55 s nietykalności",
+    autopause: "️ Przełączysz na inną kartę? Gra się sama zatrzyma (auto-pauza).",
+    resume: "▶ Kontynuuj", quit: " Zakończ run", quit_confirm: " Na pewno? Kliknij ponownie!",
     pause_hint_touch: "Przyciskiem ▶ Kontynuuj wrócisz do gry", pause_hint_kbd: "Albo naciśnij P, aby kontynuować",
-    over: "💀 Bohater poległ",
+    over: " Bohater poległ",
     over_level: "Poziom", over_kills: "Zabójstwa", over_time: "Przetrwane",
-    over_best: "🏆 Rekord", over_clsrec: "rekord", over_combo: "kombo maks.",
-    over_nights: "🌙 Przetrwane noce:", over_minib: "🌟 Mini-bossów:",
+    over_best: " Rekord", over_clsrec: "rekord", over_combo: "kombo maks.",
+    over_nights: " Przetrwane noce:", over_minib: " Mini-bossów:",
     seeds_got: "Zdobyto", seeds_total: "razem", seeds: "nasion",
-    daily_record: "📅 Nowy dzienny rekord!",
+    daily_record: " Nowy dzienny rekord!",
     new_trophy: "Nowe trofeum:",
-    shop_btn: "🌱 Trwałe ulepszenia", again: "Nowy run 🔄",
-    shop_title: "🌳 Drzewko umiejętności",
+    shop_btn: " Trwałe ulepszenia", again: "Nowy run ",
+    shop_title: " Drzewko umiejętności",
     shop_close: "✖ Zamknij",
-    hint_touch: "👇 Przeciągnij palcem = ruch · 💨 = unik · ⚡ = ultimatum · bronie strzelają same",
+    hint_touch: " Przeciągnij palcem = ruch ·  = unik · ⚡ = ultimatum · bronie strzelają same",
     hint_kbd: "⌨️ WASD / strzałki = ruch · Spacja = unik · E = ultimatum · bronie strzelają same · P = pauza",
-    legend: "📜 Legenda głosi: łąka niegdyś należała do kur. Potem przyszły potwory — a potem przyszedłeś ty. 🎒 1 broń na run (2 kolejne sloty w 🌳 drzewku) · ⭐ 5. poziom = FORMA OSTATECZNA · ⚔️ fizyczne klasy nie biorą magii (i 🪄 odwrotnie) · co 90 s 💀 boss i 📦 skrzynia",
-    records: "🏅 Rekordy według klas", daily_best: "📅 Najlepsze dzienne wyzwanie:",
-    daily_btn: "📅 Dzienne wyzwanie", daily_on: "WŁ.",
-    daily_note: "📅 Dziś {d} — trudność losowana z daty, dzienny rekord zapisuje się osobno. Kto nie oszukuje, ma czysty miesiąc!",
-    sbx_on: "🧪 Sandbox WŁĄCZONY", sbx_off: "🧪 Sandbox WYŁĄCZONY",
+    legend: " Legenda głosi: łąka niegdyś należała do kur. Potem przyszły potwory — a potem przyszedłeś ty.  1 broń na run (2 kolejne sloty w  drzewku) · ⭐ 5. poziom = FORMA OSTATECZNA · ⚔️ fizyczne klasy nie biorą magii (i 彩 odwrotnie) · co 90 s  boss i  skrzynia",
+    records: " Rekordy według klas", daily_best: " Najlepsze dzienne wyzwanie:",
+    daily_btn: " Dzienne wyzwanie", daily_on: "WŁ.",
+    daily_note: " Dziś {d} — trudność losowana z daty, dzienny rekord zapisuje się osobno. Kto nie oszukuje, ma czysty miesiąc!",
+    sbx_on: "離 Sandbox WŁĄCZONY", sbx_off: "離 Sandbox WYŁĄCZONY",
     sbx_click_on: "Kliknij, aby wyłączyć", sbx_click_off: "Kliknij, aby włączyć",
-    sbx_1: "🔓 Darmowe ulepszenia bez XP — przycisk 🧪 prosto w grze",
+    sbx_1: " Darmowe ulepszenia bez XP — przycisk 離 prosto w grze",
     sbx_2: "☠️ Spawn dowolnego bossa i mini-bossa kiedykolwiek (B / przyciski)",
-    sbx_3: "🎭 Bez ograniczeń klas — każdy bierze wszystkie karty",
-    sbx_4: "📊 Statystyki na żywo i czyszczenie wrogów jednym kliknięciem",
+    sbx_3: " Bez ograniczeń klas — każdy bierze wszystkie karty",
+    sbx_4: " Statystyki na żywo i czyszczenie wrogów jednym kliknięciem",
     sbx_note: "Sandbox jest tylko do zabawy i testów — na normalny run zostaw go wyłączonego.",
     per_lvl: "/ poziom",
     meta_note: "Nasiona zdobywasz za każdy run za zabójstwa, przeżyty czas i poziomy. Ulepszenia są nieskończone, działają we wszystkich runach i się zapisują.",
-    tree_note: "🌳 Drzewo rośnie w górę od Siły 💪 - 18 ulepszeń na gałęziach: obrażenia, HP, regeneracja, kielich krwi, pancerz, magnes, szybkość, doskok, nasiona, XP, crit, krytyczne obrażenia, przebijanie, podwójny strzał, kadencja, ult i sloty na broń 🎒. ✨ Złote specjały kosztują 👑 korony z FINAŁOWEGO bossa (co trzeci boss).",
+    tree_note: " Drzewo rośnie w górę od Siły  - 18 ulepszeń na gałęziach: obrażenia, HP, regeneracja, kielich krwi, pancerz, magnes, szybkość, doskok, nasiona, XP, crit, krytyczne obrażenia, przebijanie, podwójny strzał, kadencja, ult i sloty na broń . ✨ Złote specjały kosztują  korony z FINAŁOWEGO bossa (co trzeci boss).",
     tree_max: "✅ gotowe",
-    specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują 👑 korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
-    reset_btn: "🔄 Restart ulepszeń (kasuje nasiona, drzewko i korony)",
+    specials_note: "✨ Złote ulepszenia są jednorazowe i trwałe. Kosztują  korony (1–3) — dostajesz ją za każdego pokonanego FINAŁOWEGO bossa (co trzeci boss).",
+    reset_btn: " Restart ulepszeń (kasuje nasiona, drzewko i korony)",
     reset_w1: "⚠️ NAPRAWDĘ? Skasują się ulepszenia, nasiona i korony! (potwierdź 2×)",
-    reset_w2: "😱 OSTATNIA SZANSA — po kliknięciu nie ma odwrotu!",
+    reset_w2: " OSTATNIA SZANSA — po kliknięciu nie ma odwrotu!",
     reset_done: "✅ Ulepszenia skasowane — rekordy i trofea zostają",
-    locked: "brak 🌱",
+    locked: "brak ",
     diff_0: "Spacer", diff_1: "Norma", diff_2: "Piekło",
     w_rain: "Deszcz", w_storm: "Burza", w_wind: "Silny wiatr",
     cls_archer: "Łucznik", cls_soldier: "Żołnierz", cls_ninja: "Ninja", cls_knight: "Rycerz", cls_mage: "Mag", cls_engineer: "Inżynier",
     dsc_archer: "⚔️ Fizyczne bronie, wyższa kadencja",
     dsc_soldier: "⚔️ Pistolet od startu, +10 % kadencji, pancerz",
-    dsc_ninja: "⚔️ Shurikeny od startu, +25 % szybkości · 🌫️ Unik w cień · 🥷 Ult: 3 s niewidzialność i 3× obrażenia",
-    dsc_knight: "⚔️ Miecz w zwarciu, duży pancerz · 🛡️ Ult: 5 s nieśmiertelności za tarczą, ale −50 % szybkości",
-    dsc_mage: "🪄 Błyskawica od startu, +15 % szybkości",
-    dsc_engineer: "🛡️ Wieżyczki walczą za niego (maks. 3 na mapie) — ult stawia 6 naraz. Karty odblokowują nowe rodzaje",
+    dsc_ninja: "⚔️ Shurikeny od startu, +25 % szybkości · ️ Unik w cień · 亮 Ult: 3 s niewidzialność i 3× obrażenia",
+    dsc_knight: "⚔️ Miecz w zwarciu, duży pancerz · ️ Ult: 5 s nieśmiertelności za tarczą, ale −50 % szybkości",
+    dsc_mage: "彩 Błyskawica od startu, +15 % szybkości",
+    dsc_engineer: "️ Wieżyczki walczą za niego (maks. 3 na mapie) — ult stawia 6 naraz. Karty odblokowują nowe rodzaje",
     wpn_bow: "Łuk", wpn_darts: "Lotki", wpn_knives: "Noże", wpn_shotgun: "Strzelba", wpn_mg: "Karabin maszynowy", wpn_pistol: "Pistolet", wpn_fireball: "Kula ognia", wpn_frost: "Mroźny pocisk", wpn_lightning: "Błyskawica", wpn_flamethrower: "Miotacz ognia", wpn_shuriken: "Shurikeny", wpn_sword: "Miecz", wpn_splinters: "Drewniane drzazgi", wpn_turret: "Wieżyczka",
   },
 };
 
-// 🏆 TROFEJE - trvalé úspěchy s odměnou do semínek (kontrolují se v průběhu i na konci runu)
+//  TROFEJE - trvalé úspěchy s odměnou do semínek (kontrolují se v průběhu i na konci runu)
 const ACHIEVEMENTS: { id: string; emoji: string; name: string; desc: string; reward: number; cond: (g: Game) => boolean }[] = [
-  { id: "first_blood", emoji: "🗡️", name: "První krev", desc: "Zabij 25 nepřátel v jednom runu", reward: 25, cond: (g) => g.kills >= 25 },
-  { id: "slayer", emoji: "💀", name: "Pobití louky", desc: "Zabij 300 nepřátel v jednom runu", reward: 125, cond: (g) => g.kills >= 300 },
-  { id: "boss1", emoji: "👑", name: "Královrah", desc: "Zabij prvního bosse", reward: 75, cond: (g) => g.bossKills >= 1 },
+  { id: "first_blood", emoji: "️", name: "První krev", desc: "Zabij 25 nepřátel v jednom runu", reward: 25, cond: (g) => g.kills >= 25 },
+  { id: "slayer", emoji: "", name: "Pobití louky", desc: "Zabij 300 nepřátel v jednom runu", reward: 125, cond: (g) => g.kills >= 300 },
+  { id: "boss1", emoji: "", name: "Královrah", desc: "Zabij prvního bosse", reward: 75, cond: (g) => g.bossKills >= 1 },
   { id: "boss5", emoji: "☠️", name: "Kat bosů", desc: "Zabij 5 bossů v jednom runu", reward: 200, cond: (g) => g.bossKills >= 5 },
   { id: "lv20", emoji: "⭐", name: "Dvouciferný", desc: "Dosáhni 20. levelu", reward: 100, cond: (g) => g.level >= 20 },
   { id: "survive10", emoji: "⏱️", name: "Maratónec", desc: "Přežij 10 minut", reward: 150, cond: (g) => g.time >= 600 },
-  { id: "combo20", emoji: "🔥", name: "Nepřetržitý řetěz", desc: "Dosáhni kombo 20", reward: 75, cond: (g) => g.comboBest >= 20 },
-  { id: "nightowl", emoji: "🌙", name: "Dítě noci", desc: "Zabij 100 nepřátel v noci (v jednom runu)", reward: 100, cond: (g) => g.nightKills >= 100 },
-  { id: "plasma", emoji: "💥", name: "Plazmový architekt", desc: "Odemkni plazmovou turetku", reward: 150, cond: (g) => g.tKinds.includes("plasma") },
-  { id: "hellrun", emoji: "😈", name: "Pekelník", desc: "Zabij bosse v Pekle", reward: 250, cond: (g) => g.bossKills >= 1 && g.diff === 2 },
-  { id: "pact3", emoji: "📜", name: "Sběratel kleteb", desc: "Uzavři 3 pakty v jednom runu", reward: 100, cond: (g) => g.pactTaken.length >= 3 },
+  { id: "combo20", emoji: "", name: "Nepřetržitý řetěz", desc: "Dosáhni kombo 20", reward: 75, cond: (g) => g.comboBest >= 20 },
+  { id: "nightowl", emoji: "", name: "Dítě noci", desc: "Zabij 100 nepřátel v noci (v jednom runu)", reward: 100, cond: (g) => g.nightKills >= 100 },
+  { id: "plasma", emoji: "", name: "Plazmový architekt", desc: "Odemkni plazmovou turetku", reward: 150, cond: (g) => g.tKinds.includes("plasma") },
+  { id: "hellrun", emoji: "", name: "Pekelník", desc: "Zabij bosse v Pekle", reward: 250, cond: (g) => g.bossKills >= 1 && g.diff === 2 },
+  { id: "pact3", emoji: "", name: "Sběratel kleteb", desc: "Uzavři 3 pakty v jednom runu", reward: 100, cond: (g) => g.pactTaken.length >= 3 },
   { id: "turret10", emoji: "⚙️", name: "Zámečník", desc: "Polož 10 turetek v jednom runu", reward: 50, cond: (g) => g.nextTid >= 11 },
 ];
 
-// 🌦️ POČASÍ - náhodné epizody se zvláštními pravidly
+// ️ POČASÍ - náhodné epizody se zvláštními pravidly
 const WEATHERS: Record<string, { emoji: string; name: string }> = {
-  rain: { emoji: "🌧️", name: "Déšť" },
+  rain: { emoji: "️", name: "Déšť" },
   storm: { emoji: "⛈️", name: "Bouřka" },
-  wind: { emoji: "🌬️", name: "Silný vítr" },
+  wind: { emoji: "️", name: "Silný vítr" },
 };
-// 🧮 combo bonusy: dmg i XP rostou s řetězem killů (rozpadá se po 3 s bez zabití)
+// 燐 combo bonusy: dmg i XP rostou s řetězem killů (rozpadá se po 3 s bez zabití)
 function heroDmgMul(g: Game): number {
-  // 🥷 stínová záměna: dokud je ninja zneviditelněný, útočí z stínu trojnásobnou silou
+  // 亮 stínová záměna: dokud je ninja zneviditelněný, útočí z stínu trojnásobnou silou
   const shadow = g.cls === "ninja" && g.hero.invis > 0 ? 3 : 1;
   return (1 + g.stats.dmgMul + Math.min(0.5, g.combo * 0.01)) * shadow;
 }
@@ -2436,7 +2456,7 @@ function comboXpMul(g: Game): number {
   return 1 + Math.min(1, g.combo * 0.03);
 }
 
-// 🏆 kontrola trofejí v průběhu runu - grant přidá odměnu do mety (React callback)
+//  kontrola trofejí v průběhu runu - grant přidá odměnu do mety (React callback)
 function checkAch(g: Game, grant: (id: string, reward: number) => void): void {
   for (const a of ACHIEVEMENTS) {
     if (g.achToast.indexOf(a.id) === -1 && a.cond(g)) {
@@ -2450,9 +2470,9 @@ function checkAch(g: Game, grant: (id: string, reward: number) => void): void {
 
 // ⚖️ OBTÍŽNOSTI: multiplikátory HP/dmg nepřátel a výnosu semínek
 const DIFFS: { emoji: string; name: string; hp: number; dmg: number; seed: number }[] = [
-  { emoji: "🌿", name: "Procházka", hp: 0.8, dmg: 0.8, seed: 0.8 },
+  { emoji: "", name: "Procházka", hp: 0.8, dmg: 0.8, seed: 0.8 },
   { emoji: "⚔️", name: "Normál", hp: 1, dmg: 1, seed: 1 },
-  { emoji: "😈", name: "Peklo", hp: 1.5, dmg: 1.3, seed: 1.6 },
+  { emoji: "", name: "Peklo", hp: 1.5, dmg: 1.3, seed: 1.6 },
 ];
 
 function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, diff = 1, daily = false): Game {
@@ -2487,12 +2507,12 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     crates: [],
     telegraphs: [],
     arena: { x: 0, y: 0, r: 0, active: false },
-    castle: { x: ARENA_W - 340, y: ARENA_H / 2, r: 150, hp: 900, maxHp: 900, walls: 0, bows: 0, keep: false, regen: 0, flash: 0, hitT: 0, cd: 0 },
+    castle: { x: ARENA_W - 170, y: ARENA_H / 2, r: 150, hp: 900, maxHp: 900, walls: 0, bows: 0, keep: false, regen: 0, flash: 0, hitT: 0, cd: 0 },
     towers: [
-      { x: 2880, y: 850, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 2880, y: 2150, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 5580, y: 850, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 5580, y: 2150, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 3400, y: 310, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 3400, y: 690, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 8300, y: 310, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 8300, y: 690, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
     ],
     coins: 0,
     trees: [],
@@ -2579,24 +2599,26 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
   for (let i = 0; i < 2160; i++) {
     g.stars.push({ x: Math.random() * ARENA_W, y: Math.random() * ARENA_H, r: 0.6 + Math.random() * 1.4 });
   }
-  // 🌳 stromy, keře, houby a kameny po celé mapě (ne přímo na startu) - hustota zachována i po zvětšení mapy
-  for (let i = 0; i < 740; i++) {
+  //  jehličnaté stromy, keře, houby a kameny po louce - na spáleništi už nic nezelená
+  // stezka k bráně a okolí hradby zůstanou volné
+  for (let i = 0; i < 480; i++) {
     const kr = Math.random();
-    const k = kr < 0.36 ? 0 : kr < 0.62 ? 1 : kr < 0.76 ? 2 : kr < 0.9 ? 3 : 4;
-    const tx = 50 + Math.random() * (ARENA_W - 100);
-    const ty = 50 + Math.random() * (ARENA_H - 100);
-    // 🏰 volno kolem startu hrdiny i pod hradbami
-    if ((tx - (ARENA_W - 640)) * (tx - (ARENA_W - 640)) + (ty - ARENA_H / 2) * (ty - ARENA_H / 2) < 150 * 150) continue;
-    if (tx > ARENA_W - 560) continue;
+    const k = kr < 0.46 ? 0 : kr < 0.72 ? 1 : kr < 0.86 ? 2 : 3;
+    const tx = 60 + Math.random() * (BURN_X - 120);
+    const ty = 46 + Math.random() * (ARENA_H - 92);
+    //  volno před hradbami
+    if (tx > CASTLE_FRONT - 260) continue;
+    // ️ stezka k bráně zůstane průchodná
+    if (Math.abs(ty - ARENA_H / 2) < 64) continue;
     g.trees.push({
       x: tx,
       y: ty,
-      r: k === 0 ? 20 + Math.random() * 12 : k === 2 ? 6 + Math.random() * 3 : k === 3 ? 8 + Math.random() * 6 : 10 + Math.random() * 6,
+      r: k === 0 ? 22 + Math.random() * 14 : k === 2 ? 6 + Math.random() * 3 : k === 3 ? 8 + Math.random() * 6 : 10 + Math.random() * 6,
       k,
       rn: Math.random(),
     });
   }
-  // 🌱 trvalé bonusy ze stromu dovedností + uložené nastavení
+  //  trvalé bonusy ze stromu dovedností + uložené nastavení
   if (meta) {
     for (const tn of TREE_ALL) {
       const tl = meta.tree?.[tn.id] || 0;
@@ -2621,7 +2643,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "dmg",
-    emoji: "💪",
+    emoji: "",
     name: "Silný nátěh",
     desc: "+25% poškození",
     rarity: 0,
@@ -2642,7 +2664,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "speed",
-    emoji: "👟",
+    emoji: "",
     name: "Rychlé nohy",
     desc: "+12% rychlost pohybu",
     rarity: 0,
@@ -2652,7 +2674,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "magnet",
-    emoji: "🧲",
+    emoji: "鱗",
     name: "Runa přitažlivosti",
     desc: "+45% dosah sběru XP",
     rarity: 0,
@@ -2662,7 +2684,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "armor",
-    emoji: "🛡️",
+    emoji: "️",
     name: "Želví krunýř",
     desc: "-12 % přijímaného poškození",
     rarity: 0,
@@ -2673,7 +2695,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // --- RARE ---
   {
     id: "multishot",
-    emoji: "🏹",
+    emoji: "",
     name: "Více střel",
     desc: "+1 projektil na výstřel (brokovnice/kulomet +2)",
     rarity: 1,
@@ -2683,7 +2705,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pierce",
-    emoji: "💠",
+    emoji: "",
     name: "Průrazný hrot",
     desc: "Projektily projdou +1 nepřítelem",
     rarity: 1,
@@ -2693,7 +2715,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "crit",
-    emoji: "🎯",
+    emoji: "",
     name: "Zásah do černého",
     desc: "+10% šance na dvojnásobné poškození",
     rarity: 1,
@@ -2703,7 +2725,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "home",
-    emoji: "🧿",
+    emoji: "刺",
     name: "Naváděcí runa",
     desc: "Projektily se samy přitáčí k nepřátelům (+10 % navádění)",
     rarity: 2,
@@ -2714,7 +2736,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_bow",
-    emoji: "🏹",
+    emoji: "",
     name: "Luk",
     desc: "Zbraň",
     rarity: 1,
@@ -2723,7 +2745,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_darts",
-    emoji: "🎯",
+    emoji: "",
     name: "Vrhač šipek",
     desc: "Zbraň",
     rarity: 1,
@@ -2732,7 +2754,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_pistol",
-    emoji: "🎖️",
+    emoji: "️",
     name: "Pistole",
     desc: "Zbraň",
     rarity: 1,
@@ -2751,7 +2773,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // --- SUPER RARE ---
   {
     id: "dmg2",
-    emoji: "💥",
+    emoji: "",
     name: "Demoliční síla",
     desc: "+50% poškození",
     rarity: 2,
@@ -2761,7 +2783,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "crit2",
-    emoji: "🎯",
+    emoji: "",
     name: "Mistrovský zásah",
     desc: "+15% šance na kritický zásah",
     rarity: 2,
@@ -2771,7 +2793,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_knives",
-    emoji: "🔪",
+    emoji: "",
     name: "Vrhací nože",
     desc: "Zbraň",
     rarity: 2,
@@ -2789,7 +2811,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_fireball",
-    emoji: "🔥",
+    emoji: "",
     name: "Ohnivá koule",
     desc: "Zbraň",
     rarity: 2,
@@ -2798,7 +2820,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "clover",
-    emoji: "🍀",
+    emoji: "",
     name: "Čtyřlístek",
     desc: "+5 % crit, +10 % rychlost, +10 % sběr XP",
     rarity: 2,
@@ -2812,7 +2834,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // --- EPIC ---
   {
     id: "multi2",
-    emoji: "🌀",
+    emoji: "",
     name: "Dvojitá salva",
     desc: "+2 projektily na výstřel",
     rarity: 3,
@@ -2832,7 +2854,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pierce2",
-    emoji: "💠",
+    emoji: "",
     name: "Titánové ostří",
     desc: "+2 průrazy navíc",
     rarity: 3,
@@ -2842,7 +2864,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_shotgun",
-    emoji: "🔫",
+    emoji: "",
     name: "Brokovnice",
     desc: "Zbraň",
     rarity: 3,
@@ -2851,7 +2873,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "vampiric",
-    emoji: "🩸",
+    emoji: "喝",
     name: "Upírská kletba",
     desc: "+0,6 HP za každého zabitého nepřítele",
     rarity: 3,
@@ -2871,7 +2893,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "w_flamethrower",
-    emoji: "🔥",
+    emoji: "",
     name: "Plamenomet",
     desc: "Zbraň",
     rarity: 3,
@@ -2881,7 +2903,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // --- MYTHIC ---
   {
     id: "dragonblood",
-    emoji: "🐉",
+    emoji: "",
     name: "Dračí krev",
     desc: "+60% poškození",
     rarity: 4,
@@ -2892,7 +2914,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "dragonscales",
-    emoji: "🛡️",
+    emoji: "️",
     name: "Dračí šupiny",
     desc: "+60 max HP a plné vyléčení",
     rarity: 4,
@@ -2903,7 +2925,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "royalmagnet",
-    emoji: "👑",
+    emoji: "",
     name: "Král arény",
     desc: "+100% dosah sběru XP",
     rarity: 4,
@@ -2913,7 +2935,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "berserk",
-    emoji: "🗡️",
+    emoji: "️",
     name: "Berserk",
     desc: "+35 % poškození a +20 % kadence",
     rarity: 4,
@@ -2933,7 +2955,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "falconeye",
-    emoji: "🦅",
+    emoji: "礪",
     name: "Sokolí oko",
     desc: "+25 % šance na kritický zásah",
     rarity: 4,
@@ -2943,7 +2965,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "windrunner",
-    emoji: "🌪️",
+    emoji: "️",
     name: "Zadní vítr",
     desc: "+30 % rychlosti pohybu",
     rarity: 4,
@@ -2953,7 +2975,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "piercingforce",
-    emoji: "🎯",
+    emoji: "",
     name: "Průrazná síla",
     desc: "+1 průraz a +15 % poškození",
     rarity: 4,
@@ -2974,7 +2996,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "titanstrength",
-    emoji: "💪",
+    emoji: "",
     name: "Titánova síla",
     desc: "+100 % poškození",
     rarity: 5,
@@ -2984,7 +3006,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "quickhands",
-    emoji: "🌀",
+    emoji: "",
     name: "Bleskové ruce",
     desc: "+60 % rychlosti střelby",
     rarity: 5,
@@ -2994,7 +3016,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "projectilerain",
-    emoji: "🌧️",
+    emoji: "️",
     name: "Déšť projektilů",
     desc: "+3 projektily u všech zbraní",
     rarity: 5,
@@ -3005,7 +3027,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // --- ULTRA LEGENDARY ---
   {
     id: "phoenix",
-    emoji: "🌈",
+    emoji: "",
     name: "Fénixovo peří",
     desc: "Při smrti tě jednou oživí s 50 % HP",
     rarity: 6,
@@ -3030,7 +3052,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "mastergrail",
-    emoji: "🏆",
+    emoji: "",
     name: "Mistrův grál",
     desc: "Všechny zbraně +1 úroveň",
     rarity: 6,
@@ -3049,7 +3071,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "divineguard",
-    emoji: "🕊️",
+    emoji: "️",
     name: "Božská ochrana",
     desc: "+20 % panceru, +100 max HP a plné vyléčení",
     rarity: 6,
@@ -3059,10 +3081,10 @@ const UPGRADE_POOL: Upgrade[] = [
       g.hero.hp = g.hero.maxHp;
     },
   },
-  // 🩸 ODVÁŽNÉ PAKTY - obří posílení, ale každé s kletbou; každé jen jednou za run
+  // 喝 ODVÁŽNÉ PAKTY - obří posílení, ale každé s kletbou; každé jen jednou za run
   {
     id: "pact_blood",
-    emoji: "🩸",
+    emoji: "喝",
     name: "Krvavý pakt",
     desc: "+25 % poškození a +1 HP za každý kill, ale -20 % max HP",
     rarity: 5,
@@ -3077,7 +3099,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_chaos",
-    emoji: "🎰",
+    emoji: "",
     name: "Pakt šílence",
     desc: "+1 projektil na každý výstřel, ale -15 % rychlosti a o 10 % slabší zbroj",
     rarity: 5,
@@ -3091,7 +3113,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_phoenix",
-    emoji: "🔥",
+    emoji: "",
     name: "Fénixův pakt",
     desc: "Poprvé tě zabijí, ožiješ s plným HP - ale sbíráš o 20 % méně XP",
     rarity: 5,
@@ -3104,7 +3126,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_titan",
-    emoji: "🏔️",
+    emoji: "️",
     name: "Pakt titána",
     desc: "+40 % max HP (hned se vyléčíš) a +10 % zbroje, ale -12 % poškození",
     rarity: 5,
@@ -3119,7 +3141,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_glass",
-    emoji: "🪞",
+    emoji: "爵",
     name: "Pakt skla",
     desc: "+80 % poškození, ale -40 % max HP",
     rarity: 5,
@@ -3134,7 +3156,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_hoard",
-    emoji: "🫙",
+    emoji: "龎",
     name: "Pakt sběratele",
     desc: "+100 % XP, ale nepřátelé jsou o 25 % rychlejší",
     rarity: 5,
@@ -3147,7 +3169,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "pact_hunter",
-    emoji: "🏹",
+    emoji: "",
     name: "Pakt lovce",
     desc: "Bossové padají s 3 bednami a elitní vlny přicházejí častěji, ale bossové mají +30 % HP",
     rarity: 5,
@@ -3160,7 +3182,7 @@ const UPGRADE_POOL: Upgrade[] = [
   // ⚙️ TURETKY (jen inženýr) - vylepšení autonomních turetek
   {
     id: "turret_flame",
-    emoji: "🔥",
+    emoji: "",
     name: "Plamenomety",
     desc: "Turetky střílí souvislé proudy plamenů (rychleji, na blízko)",
     rarity: 3,
@@ -3171,7 +3193,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "turret_wind",
-    emoji: "🌪️",
+    emoji: "️",
     name: "Větrné turetky",
     desc: "Turetky navíc poryvem větru odhazují nepřátele od sebe",
     rarity: 3,
@@ -3205,38 +3227,38 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "turret_sniper",
-    emoji: "🎯",
+    emoji: "",
     name: "Ostřelovací turetky",
     desc: "Nový druh: obří dosah a ráže, střela probodne řadu nepřátel",
     rarity: 3,
     avail: (g) => g.cls === "engineer" && !g.tKinds.includes("sniper"),
     apply: (g) => {
       g.tKinds.push("sniper");
-      addText(g, g.hero.x, g.hero.y - 44, "🎯 NOVÝ DRUH TURETKY!", 60, 16);
+      addText(g, g.hero.x, g.hero.y - 44, " NOVÝ DRUH TURETKY!", 60, 16);
     },
   },
   {
     id: "turret_mortar",
-    emoji: "💣",
+    emoji: "",
     name: "Minometné turetky",
     desc: "Nový druh: vrhají granáty s plošnou explozí do davu",
     rarity: 3,
     avail: (g) => g.cls === "engineer" && !g.tKinds.includes("mortar"),
     apply: (g) => {
       g.tKinds.push("mortar");
-      addText(g, g.hero.x, g.hero.y - 44, "💣 NOVÝ DRUH TURETKY!", 60, 16);
+      addText(g, g.hero.x, g.hero.y - 44, " NOVÝ DRUH TURETKY!", 60, 16);
     },
   },
   {
     id: "turret_scatter",
-    emoji: "🔱",
+    emoji: "",
     name: "Brokovnicové turetky",
     desc: "Nový druh: na blízko rozstřílí vějíř tří nábojů",
     rarity: 3,
     avail: (g) => g.cls === "engineer" && !g.tKinds.includes("scatter"),
     apply: (g) => {
       g.tKinds.push("scatter");
-      addText(g, g.hero.x, g.hero.y - 44, "🔱 NOVÝ DRUH TURETKY!", 60, 16);
+      addText(g, g.hero.x, g.hero.y - 44, " NOVÝ DRUH TURETKY!", 60, 16);
     },
   },
   {
@@ -3253,7 +3275,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "turret_plasma",
-    emoji: "💥",
+    emoji: "",
     name: "PLAZMOVÁ TURETKA",
     desc: "ULTIMÁTNÍ druh: plazmové koule s explozí. Všechny položené turetky se přestaví!",
     rarity: 6,
@@ -3265,7 +3287,7 @@ const UPGRADE_POOL: Upgrade[] = [
       g.tKinds.push("plasma");
       for (const tu of g.turrets) tu.type = "plasma";
       burst(g, g.hero.x, g.hero.y, 26, 300, 40);
-      addText(g, g.hero.x, g.hero.y - 48, "💥 ULTIMÁTNÍ PLAZMOVÁ TURETKA!", 80, 20);
+      addText(g, g.hero.x, g.hero.y - 48, " ULTIMÁTNÍ PLAZMOVÁ TURETKA!", 80, 20);
       g.shake = Math.max(g.shake, 6);
     },
   },
@@ -3282,7 +3304,7 @@ const UPGRADE_POOL: Upgrade[] = [
   },
   {
     id: "turret_dmg",
-    emoji: "🎯",
+    emoji: "",
     name: "Silnější ráže",
     desc: "+60 % poškození všech turetek (lze opakovat)",
     rarity: 2,
@@ -3306,39 +3328,39 @@ function killEnemy(g: Game, e: Enemy): void {
   }
   e.dead = true;
   g.kills += 1;
-  // 🪙 peníze za hlídku: každé druhé zabití vysype jeden peníz
+  // 滋 peníze za hlídku: každé druhé zabití vysype jeden peníz
   if (g.kills % 2 === 0) {
     g.coins += 1;
-    addText(g, e.x, e.y - e.r - 26, "🪙 +1", 40, 14);
+    addText(g, e.x, e.y - e.r - 26, "滋 +1", 40, 14);
   }
   if (g.night) g.nightKills += 1;
   if (g.stats.lifesteal > 0) {
     g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + g.stats.lifesteal);
   }
-  // 🔥 combo - řetěz killů zvyšuje dmg i XP, rozpadne se po 3 s bez zabití
+  //  combo - řetěz killů zvyšuje dmg i XP, rozpadne se po 3 s bez zabití
   g.combo += 1;
   g.comboT = 3;
   g.comboBest = Math.max(g.comboBest, g.combo);
   if (g.combo % 5 === 0) {
-    addText(g, e.x, e.y - e.r - 22, `🔥 COMBO ×${g.combo}!`, 25, 15);
+    addText(g, e.x, e.y - e.r - 22, ` COMBO ×${g.combo}!`, 25, 15);
     playSfx(g, "combo");
   }
-  // 🔥 FEVER - při kombu 15 se rozjede hype režim: fanfára, zlatá vlna a fever hudba
+  //  FEVER - při kombu 15 se rozjede hype režim: fanfára, zlatá vlna a fever hudba
   if (g.combo === 15) {
-    addText(g, g.hero.x, g.hero.y - 40, "🔥 FEVER MODE! 🔥", 45, 21);
+    addText(g, g.hero.x, g.hero.y - 40, " FEVER MODE! ", 45, 21);
     shock(g, g.hero.x, g.hero.y, 220, 45, 0.55, 9, 0.28);
     playSfx(g, "fever");
   }
-  // 🌟 každé desáté combo vystřelí zlatý prstenec kolem hrdiny
+  //  každé desáté combo vystřelí zlatý prstenec kolem hrdiny
   if (g.combo > 0 && g.combo % 10 === 0) shock(g, g.hero.x, g.hero.y, 150, 45, 0.4, 6, 0.18);
   playSfx(g, "kill");
-  // 💥 elitní vlastnost "boom" - korunka vybuchne a zraní i tebe
+  //  elitní vlastnost "boom" - korunka vybuchne a zraní i tebe
   if (e.elite === "boom" && !e.boss && !e.minib) {
     burst(g, e.x, e.y, 18, 25, 240);
     playSfx(g, "boom");
     if (dist2(e.x, e.y, g.hero.x, g.hero.y) < 130 * 130 && g.hero.invuln <= 0) damageHero(g, Math.round(e.dmg * 0.8));
   }
-  // 🫧 rozpuk: po smrti se rozpadne na tři menší kopie - ale už jen JEDNOU generaci
+  // 﫧 rozpuk: po smrti se rozpadne na tři menší kopie - ale už jen JEDNOU generaci
   // (děti i princové dostanou noSplit, ať se lavina nerozmnoží exponenciálně)
   if (e.kind === 18 && !e.boss && !e.minib && !e.noSplit) {
     for (let s = 0; s < 3; s++) {
@@ -3370,32 +3392,32 @@ function killEnemy(g: Game, e: Enemy): void {
         phase: 1,
       });
     }
-    addText(g, e.x, e.y - 20, "🫧🫧🫧", 300, 13);
+    addText(g, e.x, e.y - 20, "﫧﫧﫧", 300, 13);
   }
   if (e.boss) {
     // boss upustí bednu s 5 upgrady (finální boss hned dvě!); pakt lovce přidá třetí
     g.bossKills += 1;
     g.hitStop = 0.14;
     burst(g, e.x, e.y, e.final ? 60 : 40, 350, 300);
-    // 💥 pád bosse otřese celou loukou - trojitá vlna v barvě bosse
+    //  pád bosse otřese celou loukou - trojitá vlna v barvě bosse
     shock(g, e.x, e.y, e.final ? 560 : 420, e.hue, 0.8, 14, 0.3);
     shock(g, e.x, e.y, 260, 48, 0.6, 8, 0.2);
     shock(g, e.x, e.y, 130, 0, 0.4, 5, 0.25);
     g.shake = e.final ? 18 : 14;
-    // 🏆 zlatý záblesk přes celou obrazovku - pád bosse musí být vidět na orbitek
+    //  zlatý záblesk přes celou obrazovku - pád bosse musí být vidět na orbitek
     g.goldFlash = 1;
     playSfx(g, "boom");
-    // 🎺 hrdinná fanfára - pád bosse musí znít jako vítězství
+    //  hrdinná fanfára - pád bosse musí znít jako vítězství
     playSfx(g, "fanfare");
     g.crates.push({ x: e.x, y: e.y, t: 0 });
     if (e.final) g.crates.push({ x: e.x + 40, y: e.y + 24, t: 0 });
     if (g.pactTaken.includes("pact_hunter")) g.crates.push({ x: e.x - 40, y: e.y - 20, t: 0 });
-    // 👑 finální boss padl = koruna do stromu dovedností
+    //  finální boss padl = koruna do stromu dovedností
     if (e.final && !g.sandbox) {
       g.crownsEarned += 1;
-      addText(g, e.x, e.y - 78, "👑 +1 KORUNA!", 52, 24);
+      addText(g, e.x, e.y - 78, " +1 KORUNA!", 52, 24);
     }
-    addText(g, e.x, e.y - 44, e.final ? "☠️ FINÁLNÍ BOSS PADL! 2× 📦" : "📦 BEDNA!", 48, e.final ? 24 : 20);
+    addText(g, e.x, e.y - 44, e.final ? "☠️ FINÁLNÍ BOSS PADL! 2× " : " BEDNA!", 48, e.final ? 24 : 20);
     for (let i = 0; i < (e.final ? 12 : 8); i++) {
       spawnOrb(g, e.x + (Math.random() - 0.5) * 70, e.y + (Math.random() - 0.5) * 70, 3 + Math.floor(e.maxHp / 500));
     }
@@ -3403,7 +3425,7 @@ function killEnemy(g: Game, e: Enemy): void {
     // bossové občas upustí i bombu či magnet
     if (Math.random() < 0.35) spawnOrb(g, e.x - 30, e.y + 10, 0, 2);
     if (Math.random() < 0.35) spawnOrb(g, e.x + 34, e.y + 16, 0, 3);
-    // 🫧 rozpuk král drží slovo: i po smrti se rozpadne na tři prince
+    // 﫧 rozpuk král drží slovo: i po smrti se rozpadne na tři prince
     if (e.kind === 18) {
       for (let s = 0; s < 3; s++) {
         const shp = Math.max(14, e.maxHp * 0.06);
@@ -3434,7 +3456,7 @@ function killEnemy(g: Game, e: Enemy): void {
           phase: 1,
         });
       }
-      addText(g, e.x, e.y - 20, "🫧🫧🫧", 300, 13);
+      addText(g, e.x, e.y - 20, "﫧﫧﫧", 300, 13);
     }
     // pokud už nežije žádný jiný boss, aréna padá
     let anyBoss = false;
@@ -3467,7 +3489,7 @@ function killEnemy(g: Game, e: Enemy): void {
     if (Math.random() < 0.15) spawnOrb(g, e.x + 24, e.y + 12, 0, 3);
     return;
   }
-  // 🎨 druhová barevná smrt - kosti, střepy ledu, plameny, zelené lístky
+  //  druhová barevná smrt - kosti, střepy ledu, plameny, zelené lístky
   const KILL_FX: Record<number, [number, number]> = { 14: [220, 8], 15: [25, 10], 16: [195, 10], 17: [145, 10], 18: [300, 8], 19: [100, 8], 12: [55, 6], 13: [30, 6] };
   const kfx = KILL_FX[e.kind];
   if (kfx) burst(g, e.x, e.y, kfx[1], kfx[0], 190);
@@ -3502,10 +3524,10 @@ function killEnemy(g: Game, e: Enemy): void {
         phase: 1,
       });
     }
-    addText(g, e.x, e.y - 20, "🫧🫧", 300, 13);
+    addText(g, e.x, e.y - 20, "﫧﫧", 300, 13);
   }
   const drops = e.big ? 4 : 1 + (Math.random() < 0.5 ? 1 : 0);
-  // 💡 silnější nepřítel = víc XP (POZOR: maxHp roste s časem, takže pozdější vlny vydělávají víc)
+  //  silnější nepřítel = víc XP (POZOR: maxHp roste s časem, takže pozdější vlny vydělávají víc)
   const orbXp = 1 + Math.floor(e.maxHp / 20);
   for (let i = 0; i < drops; i++) {
     spawnOrb(g, e.x + (Math.random() - 0.5) * 24, e.y + (Math.random() - 0.5) * 24, orbXp);
@@ -3513,9 +3535,9 @@ function killEnemy(g: Game, e: Enemy): void {
   // vzácné dropy - všechno s malým droprate
   const roll = Math.random();
   if (roll < 0.02) {
-    spawnOrb(g, e.x, e.y, 0, 2); // 💣 bomba
+    spawnOrb(g, e.x, e.y, 0, 2); //  bomba
   } else if (roll < 0.04) {
-    spawnOrb(g, e.x, e.y, 0, 3); // 🧲 magnet
+    spawnOrb(g, e.x, e.y, 0, 3); // 鱗 magnet
   } else if (roll < 0.1) {
     spawnOrb(g, e.x, e.y, 0, 1); // ❤️ srdíčko
   }
@@ -3524,12 +3546,12 @@ function killEnemy(g: Game, e: Enemy): void {
 // poškození hrdiny se zbrojí, fénixem a smrtí
 function damageHero(g: Game, dmg: number): void {
   const h = g.hero;
-  // 🌙 v noci útočí nepřátelé o polovinu silněji
+  //  v noci útočí nepřátelé o polovinu silněji
   const real = dmg * (g.night ? 1.5 : 1);
-  // 🛡️ Železná disciplína (rytíř) - vestoj přes 0,25 s: rány přichází o 40 % slabší
+  // ️ Železná disciplína (rytíř) - vestoj přes 0,25 s: rány přichází o 40 % slabší
   const braced = g.cls === "knight" && (h.stillT ?? 0) > 0.25;
   if (braced) burst(g, h.x, h.y, 6, 210, 130);
-  // 🛡️ zbroj pohltí část rány - floating text ukáže skutečnou ztrátu HP
+  // ️ zbroj pohltí část rány - floating text ukáže skutečnou ztrátu HP
   const after = real * (1 - Math.min(0.7, g.stats.armor + (braced ? 0.4 : 0)));
   h.hp -= after;
   h.invuln = 0.9;
@@ -3539,12 +3561,12 @@ function damageHero(g: Game, dmg: number): void {
   addText(g, h.x, h.y - 24, `-${Math.round(after)}`, 0, 17);
   if (h.hp <= 0) {
     if (g.revive) {
-      // 🌈 Fénixovo peří - jednorázové oživení
+      //  Fénixovo peří - jednorázové oživení
       g.revive = false;
       h.hp = Math.ceil(h.maxHp * 0.5);
       h.invuln = 2.5;
       g.shake = 12;
-      addText(g, h.x, h.y - 34, "🌈 FÉNIX! OŽIVUJI", 330, 18);
+      addText(g, h.x, h.y - 34, " FÉNIX! OŽIVUJI", 330, 18);
       burst(g, h.x, h.y, 24, 330, 220);
       burst(g, h.x, h.y, 16, 48, 180);
     } else {
@@ -3557,7 +3579,7 @@ function damageHero(g: Game, dmg: number): void {
   }
 }
 
-// 🏰 rána do hradby - hrad drží, dokud jeho HP neklesne na nulu; pak běh končí
+//  rána do hradby - hrad drží, dokud jeho HP neklesne na nulu; pak běh končí
 function damageCastle(g: Game, dmg: number): void {
   const c = g.castle;
   if (c.hp <= 0) return; // dobořený hrad už necouvá
@@ -3571,7 +3593,7 @@ function damageCastle(g: Game, dmg: number): void {
     g.over = true;
     g.running = false;
     g.shake = 22;
-    addText(g, c.x, c.y - 210, "🏰 HRAD PADL!", 0, 34);
+    addText(g, c.x, c.y - 210, " HRAD PADL!", 0, 34);
     burst(g, c.x, c.y - 60, 42, 25, 260);
     burst(g, c.x, c.y + 40, 30, 0, 220);
     playSfx(g, "boss");
@@ -3580,7 +3602,7 @@ function damageCastle(g: Game, dmg: number): void {
   }
 }
 
-// 🗼 rána do zdiva strážní věže - věž drží, dokud neklesne na nulu; pak se sesype na rozpadlinu
+//  rána do zdiva strážní věže - věž drží, dokud neklesne na nulu; pak se sesype na rozpadlinu
 function damageTower(g: Game, tw: Tower, dmg: number): void {
   if (tw.hp <= 0) return;
   tw.hp -= dmg;
@@ -3591,11 +3613,11 @@ function damageTower(g: Game, tw: Tower, dmg: number): void {
     tw.hp = 0;
     g.shake = Math.max(g.shake, 6);
     burst(g, tw.x, tw.y - tw.r, 26, 20, 200);
-    addText(g, tw.x, tw.y - tw.r - 44, "🗼 VĚŽ PADLA!", 0, 20);
+    addText(g, tw.x, tw.y - tw.r - 44, " VĚŽ PADLA!", 0, 20);
   }
 }
 
-// 🗼 věž nejblíž hrdinovi (na dosah ruky)
+//  věž nejblíž hrdinovi (na dosah ruky)
 function towerNear(g: Game): Tower | null {
   let best: Tower | null = null;
   let bds = 160 * 160;
@@ -3611,15 +3633,15 @@ function towerNear(g: Game): Tower | null {
 
 type TowerPlan = { kind: "build" | "fix" | "up"; cost: number; label: string };
 
-// 🪙 co se s věží dá právě teď dělat a kolik to stojí
+// 滋 co se s věží dá právě teď dělat a kolik to stojí
 function towerPlan(tw: Tower): TowerPlan | null {
-  if (tw.tier <= 0) return { kind: "build", cost: TOWER_BUILD_COST, label: `🔧 Postavit věž · ${TOWER_BUILD_COST} 🪙` };
-  if (tw.hp <= 0 || tw.hp < tw.maxHp) return { kind: "fix", cost: TOWER_FIX_COST, label: `🔧 Opravit věž · ${TOWER_FIX_COST} 🪙` };
-  if (tw.tier < TOWER_MAX_TIER) return { kind: "up", cost: TOWER_UP_COST[tw.tier] ?? 8, label: `⬆️ Vylepšit věž (T${tw.tier + 1}) · ${TOWER_UP_COST[tw.tier] ?? 8} 🪙` };
+  if (tw.tier <= 0) return { kind: "build", cost: TOWER_BUILD_COST, label: ` Postavit věž · ${TOWER_BUILD_COST} 滋` };
+  if (tw.hp <= 0 || tw.hp < tw.maxHp) return { kind: "fix", cost: TOWER_FIX_COST, label: ` Opravit věž · ${TOWER_FIX_COST} 滋` };
+  if (tw.tier < TOWER_MAX_TIER) return { kind: "up", cost: TOWER_UP_COST[tw.tier] ?? 8, label: `⬆️ Vylepšit věž (T${tw.tier + 1}) · ${TOWER_UP_COST[tw.tier] ?? 8} 滋` };
   return null;
 }
 
-// 🗼 hlavní kouzlo s věží: postavit / opravit / vylepšit přímo v runu za peníze (tlačítko nebo klávesa F)
+//  hlavní kouzlo s věží: postavit / opravit / vylepšit přímo v runu za peníze (tlačítko nebo klávesa F)
 function towerAct(g: Game): void {
   if (!g || !g.running || g.over || g.userPaused || g.paused) return;
   const tw = towerNear(g);
@@ -3630,7 +3652,7 @@ function towerAct(g: Game): void {
     return;
   }
   if (g.coins < plan.cost) {
-    addText(g, g.hero.x, g.hero.y - 56, "🪙 Nemáš dost peněz!", 0, 15);
+    addText(g, g.hero.x, g.hero.y - 56, "滋 Nemáš dost peněz!", 0, 15);
     playSfx(g, "tower");
     return;
   }
@@ -3646,7 +3668,7 @@ function towerAct(g: Game): void {
   tw.cd = 0.35;
   burst(g, tw.x, tw.y - tw.r, 18, 40, 170);
   g.shake = Math.max(g.shake, 4);
-  addText(g, tw.x, tw.y - tw.r - 58, plan.kind === "up" ? `⬆️ VĚŽ T${tw.tier}!` : plan.kind === "build" ? "🗼 POSTAVENO!" : "🔧 OPRAVENO!", 40, 17);
+  addText(g, tw.x, tw.y - tw.r - 58, plan.kind === "up" ? `⬆️ VĚŽ T${tw.tier}!` : plan.kind === "build" ? " POSTAVENO!" : " OPRAVENO!", 40, 17);
   playSfx(g, "tower");
 }
 
@@ -3655,7 +3677,7 @@ function hasWeapon(g: Game, id: string): boolean {
   return false;
 }
 
-// ⚡ ULTIMÁTNÍ SCHOPNOST TŘÍDY - klávesa E / tlačítko 💥, cooldown dle classy
+// ⚡ ULTIMÁTNÍ SCHOPNOST TŘÍDY - klávesa E / tlačítko , cooldown dle classy
 function castUlt(g: Game): void {
   if (g.ultCd > 0 || g.over || !g.running || g.paused || g.userPaused) return;
   const u = ULTS[g.cls];
@@ -3697,7 +3719,7 @@ function castUlt(g: Game): void {
   };
   switch (g.cls) {
     case "archer": {
-      // 🏹 Déšť šípů - doopravdy z nebe: každý šíp padá na jiného netvora v okolí
+      //  Déšť šípů - doopravdy z nebe: každý šíp padá na jiného netvora v okolí
       // (ninjova kruhová salva zůstává jediná svého druhu)
       const targets: Enemy[] = [];
       for (const e of g.enemies) {
@@ -3730,7 +3752,7 @@ function castUlt(g: Game): void {
           })
         );
       }
-      // 🏹 zlatá rázová vlna od hrdiny + větrné víry
+      //  zlatá rázová vlna od hrdiny + větrné víry
       shock(g, h.x, h.y, 170, 48, 0.5, 7, 0.2);
       shock(g, h.x, h.y, 90, 200, 0.35, 4, 0.12);
       burst(g, h.x, h.y, 12, 48, 260);
@@ -3742,7 +3764,7 @@ function castUlt(g: Game): void {
       //  zleva doprava a každá dopadne přesně v okamžiku, kdy její zóna vybuchne)
       const startX = h.x - VW / 2 - 80;
       const planeY = h.y - VH / 2 + 70;
-      // 🐢 bombardér přeletí louku na půlku rychlosti - nálet trvá půlku déle
+      //  bombardér přeletí louku na půlku rychlosti - nálet trvá půlku déle
       const pvx = 280;
       const tgts: { x: number; y: number }[] = [];
       for (let i = 0; i < 6; i++) {
@@ -3763,14 +3785,14 @@ function castUlt(g: Game): void {
       }
       g.planes.push({ x: startX, y: planeY, vx: pvx, t: 0, dur: (VW + 160) / pvx });
       playSfx(g, "plane");
-      // 💥 dvojitá výbušná vlna - tlumená oranžová + jiskřivá jantarová
+      //  dvojitá výbušná vlna - tlumená oranžová + jiskřivá jantarová
       shock(g, h.x, h.y, 340, 25, 0.55, 11, 0.28);
       shock(g, h.x, h.y, 220, 40, 0.4, 7, 0.18);
       burst(g, h.x, h.y, 16, 40, 380);
       break;
     }
     case "ninja":
-      // 🥷 kouřová bomba: ninja se rozplyne ve stínu - 3 s ho nepřátelé nevidí,
+      // 亮 kouřová bomba: ninja se rozplyne ve stínu - 3 s ho nepřátelé nevidí,
       // ránou se k němu nedostanou a z stínu útočí trojnásobnou silou (viz heroDmgMul)
       h.invis = Math.max(h.invis, 3);
       h.invuln = Math.max(h.invuln, 3);
@@ -3779,7 +3801,7 @@ function castUlt(g: Game): void {
       shock(g, h.x, h.y, 110, 290, 0.32, 4, 0.2);
       break;
     case "knight": {
-      // 🛡️ Štítová vlna - poškození je drobné, ale vše živé odletí půlku mapy daleko
+      // ️ Štítová vlna - poškození je drobné, ale vše živé odletí půlku mapy daleko
       // (na rozdíl od upírovy hostiny: tady je hlavní odhoz, ne vysávání)
       for (const e of g.enemies) {
         if (e.dead || (e.immT ?? 0) > 0 || (e.subT ?? 0) > 0) continue;
@@ -3794,10 +3816,10 @@ function castUlt(g: Game): void {
           if (e.hp <= 0) killEnemy(g, e);
         }
       }
-      // 🛡️ rytíř zvedne štítovou zeď: 5 s je nesmrtelný, ale bez spěchu (−50 % rychlost)
+      // ️ rytíř zvedne štítovou zeď: 5 s je nesmrtelný, ale bez spěchu (−50 % rychlost)
       h.shieldT = Math.max(h.shieldT, 5);
       h.invuln = Math.max(h.invuln, 5);
-      // 🛡️ svatá aura - modré a blankytné prstence jako štítová bariéra
+      // ️ svatá aura - modré a blankytné prstence jako štítová bariéra
       shock(g, h.x, h.y, 380, 210, 0.6, 9, 0.2);
       shock(g, h.x, h.y, 250, 190, 0.45, 6, 0.14);
       burst(g, h.x, h.y, 18, 210, 240);
@@ -3848,7 +3870,7 @@ function weaponLvl(g: Game, id: string): number {
   return 0;
 }
 
-// 🎒 kolik zbraní smíš nést: 1 základní + extra sloty ze stromu dovedností (sandbox = neomezeně)
+//  kolik zbraní smíš nést: 1 základní + extra sloty ze stromu dovedností (sandbox = neomezeně)
 function maxWeapons(g: Game): number {
   return g.sandbox ? 99 : 1 + (g.weaponBonus || 0);
 }
@@ -3861,7 +3883,7 @@ function weaponAvail(g: Game, id: string): boolean {
 }
 
 // classa povoluje jen své karty - fyzické classy neberou magii a naopak
-// (🔓 speciál "Všechny zbraně" třídní omezení zbraní ruší; inženýr zbraně nebere nikdy)
+// ( speciál "Všechny zbraně" třídní omezení zbraní ruší; inženýr zbraně nebere nikdy)
 function upgradeAllowed(g: Game, u: Upgrade): boolean {
   const cls = CLASSES.find((c) => c.id === g.cls) || CLASSES[0];
   if (u.id.startsWith("w_")) {
@@ -3961,7 +3983,7 @@ function fireWeapon(g: Game, w: WSlot, tgt: Enemy): void {
     for (const e of g.enemies) {
       if (e.dead) continue;
       if (e.immT && e.immT > 0) continue; // boss v imunitě mezi fázemi
-      if ((e.subT ?? 0) > 0) continue; // 🦡 zahrabaný jezevec - pod zemí nezranitelný
+      if ((e.subT ?? 0) > 0) continue; // 說 zahrabaný jezevec - pod zemí nezranitelný
       const dx = e.x - h.x;
       const dy = e.y - h.y;
       const d2v = dx * dx + dy * dy;
@@ -3987,7 +4009,7 @@ function fireWeapon(g: Game, w: WSlot, tgt: Enemy): void {
     return;
   }
   let dmgMul = 1 + 0.2 * (lvl - 1);
-  // 🌲 třístí mají per 0,5 - multishot jim přidává střelu až každou druhou kartu
+  //  třístí mají per 0,5 - multishot jim přidává střelu až každou druhou kartu
   let count = def.count + Math.floor(g.stats.multishot * def.per);
   let pierce = def.pierceBase + g.stats.pierce;
   let chain = def.chain || 0;
@@ -4073,7 +4095,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   g.magT = Math.max(0, g.magT - dt);
   h.invuln = Math.max(0, h.invuln - dt);
   h.dashCd = Math.max(0, h.dashCd - dt);
-  // 🌿 regenerace ze stromu dovedností - pomalé doplňování HP každý snímek
+  //  regenerace ze stromu dovedností - pomalé doplňování HP každý snímek
   if (g.stats.regen > 0) h.hp = Math.min(h.maxHp, h.hp + g.stats.regen * dt);
   // ⏱ časovače nových systémů: ultimátum, combo
   g.ultCd = Math.max(0, g.ultCd - dt);
@@ -4081,28 +4103,28 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     g.comboT -= dt;
     if (g.comboT <= 0) g.combo = 0;
   }
-  // 🌙☀️ střídání dne a noci - den 5 minut, pak noc 5 minut, a tak dokola
+  // ☀️ střídání dne a noci - den 5 minut, pak noc 5 minut, a tak dokola
   const night = Math.floor(g.time / 300) % 2 === 1;
   if (night !== g.night) {
     g.night = night;
-    addText(g, h.x, h.y - 60, night ? "🌙 NOC! Nepřátelé silnější a rychlejší!" : "☀️ SVÍTÁ! Nepřátelé oslabli.", night ? 270 : 45, 22);
+    addText(g, h.x, h.y - 60, night ? " NOC! Nepřátelé silnější a rychlejší!" : "☀️ SVÍTÁ! Nepřátelé oslabli.", night ? 270 : 45, 22);
     g.shake = night ? 10 : 4;
     playSfx(g, night ? "night" : "day");
     burst(g, h.x, h.y, night ? 20 : 14, night ? 270 : 45, 200);
   }
-  // ❄️🤢 statusy hrdiny - zpomalení od ledovce a jed od vosy
+  // ❄️濫 statusy hrdiny - zpomalení od ledovce a jed od vosy
   h.slowT = Math.max(0, h.slowT - dt);
   h.invis = Math.max(0, h.invis - dt);
   h.shieldT = Math.max(0, h.shieldT - dt);
 
-  // 🏰 hrad: rány do hradeb se zahojí jen s Královským donjonem (regen), indikátor útoku
+  //  hrad: rány do hradeb se zahojí jen s Královským donjonem (regen), indikátor útoku
   g.castle.flash = Math.max(0, g.castle.flash - dt);
   g.castle.hitT = Math.max(0, g.castle.hitT - dt);
   if (g.castle.regen > 0 && g.castle.hp > 0) g.castle.hp = Math.min(g.castle.maxHp, g.castle.hp + g.castle.regen * dt);
   if (h.poisT > 0) {
     h.poisT = Math.max(0, h.poisT - dt);
     h.hp -= 3.5 * dt;
-    if (Math.random() < dt * 1.2) addText(g, h.x + (Math.random() - 0.5) * 18, h.y - 16, "🤢", 100, 12);
+    if (Math.random() < dt * 1.2) addText(g, h.x + (Math.random() - 0.5) * 18, h.y - 16, "濫", 100, 12);
     if (h.hp <= 0) damageHero(g, 1);
   }
 
@@ -4112,18 +4134,18 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     h.angle = Math.atan2(move.y, move.x);
     h.dashDir = { x: move.x / mlen, y: move.y / mlen };
   }
-  // 🛡️ Železná disciplína (rytíř) - vestoj se počítá jako pevný postoj
+  // ️ Železná disciplína (rytíř) - vestoj se počítá jako pevný postoj
   h.stillT = mlen > 0.01 || h.dashT > 0 ? 0 : h.stillT + dt;
   if (wantDash && h.dashCd <= 0 && h.dashT <= 0) {
     h.dashT = HERO.dashDur;
     h.dashCd = HERO.dashCd * g.stats.dashMul;
-    // 🌫️ Stínový úhyb (ninja) - po úhybu zůstaneš půl vteřiny v kouřovém stínu
+    // ️ Stínový úhyb (ninja) - po úhybu zůstaneš půl vteřiny v kouřovém stínu
     h.invuln = Math.max(h.invuln, g.cls === "ninja" ? 0.55 : HERO.dashDur + 0.06);
     playSfx(g, "dash");
     burst(g, h.x, h.y, 8, 195, 120);
     if (g.cls === "ninja") {
       burst(g, h.x, h.y, 16, 275, 150);
-      addText(g, h.x, h.y - 32, "🌫️", 275, 14);
+      addText(g, h.x, h.y - 32, "️", 275, 14);
     }
   }
   let vx = 0;
@@ -4133,30 +4155,23 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     vx = h.dashDir.x * HERO.dashSpeed;
     vy = h.dashDir.y * HERO.dashSpeed;
   } else {
-    // 🐢 rytíř se vztyčeným štítem se valí jen poloviční rychlostí (dash zůstává plný)
+    //  rytíř se vztyčeným štítem se valí jen poloviční rychlostí (dash zůstává plný)
     const sp = HERO.speed * (1 + g.stats.speedMul) * (h.slowT > 0 ? 0.55 : 1) * (h.shieldT > 0 ? 0.5 : 1);
     vx = move.x * sp;
     vy = move.y * sp;
   }
   h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + vx * dt));
   h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + vy * dt));
-  // 🌬️ silný vítr postrkuje i tebe
+  // ️ silný vítr postrkuje i tebe
   if (g.weather === "wind") {
     h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + Math.cos(g.windA) * 16 * dt));
     h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + Math.sin(g.windA) * 16 * dt));
   }
-  // 🏟️ boss aréna - hrdina nemůže ven
+  // ️ boss aréna - hrdina nemůže ven
 
-  // 🏰 hrdina nechodí po hradě - zůstává před hradbou jako každý pořádný obránce
-  {
-    const hcd = Math.hypot(h.x - g.castle.x, h.y - g.castle.y);
-    if (hcd < g.castle.r) {
-      const cAng = Math.atan2(h.y - g.castle.y, h.x - g.castle.x);
-      h.x = g.castle.x + Math.cos(cAng) * g.castle.r;
-      h.y = g.castle.y + Math.sin(cAng) * g.castle.r;
-    }
-  }
-  // 🗼 hrdina se taky nevejde do zdiva strážních věží - vždycky se dá obejít
+  //  hrdina nechodí po hradě - zeď stojí po celé pravé straně, brání se před ní
+  if (h.x > CASTLE_FRONT - 18) h.x = CASTLE_FRONT - 18;
+  //  hrdina se taky nevejde do zdiva strážních věží - vždycky se dá obejít
   for (const tw of g.towers) {
     if (tw.tier <= 0 || tw.hp <= 0) continue;
     const thd = Math.hypot(h.x - tw.x, h.y - tw.y);
@@ -4167,7 +4182,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // 🏟️ (v1.16: hrdinovo uvěznění v boss aréně zrušeno)
+  // ️ (v1.16: hrdinovo uvěznění v boss aréně zrušeno)
 
   // každá zbraň střílí sama na nejbližšího nepřítele ve svém dosahu
   for (const w of g.weapons) {
@@ -4195,7 +4210,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     let bd = def.range * def.range;
     for (const e of g.enemies) {
       if (e.dead) continue;
-      // 🦡 zahrabaný jezevec - zbraně do něj netrefí, počkej, až vyleze
+      // 說 zahrabaný jezevec - zbraně do něj netrefí, počkej, až vyleze
       if ((e.subT ?? 0) > 0) continue;
       const d2 = dist2(h.x, h.y, e.x, e.y);
       if (d2 < bd) {
@@ -4270,7 +4285,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         tu.cd = 0.25; // žádný cíl - jen projdi smyčku a hledej dál
       }
     }
-    // 🌪️ větrná turetka - poryv odhodí nepřátele od turetky
+    // ️ větrná turetka - poryv odhodí nepřátele od turetky
     if (g.tcfg.wind) {
       tu.windCd -= dt;
       if (tu.windCd <= 0) {
@@ -4298,7 +4313,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   }
 
   // šípy
-  // 🕸️ nejdřív mřížka nepřátel - kolize šípů pak běží jen v sousedství, ne přes celou mapu
+  // ️ nejdřív mřížka nepřátel - kolize šípů pak běží jen v sousedství, ne přes celou mapu
   buildGrid(g);
   for (let i = g.arrows.length - 1; i >= 0; i--) {
     const a = g.arrows[i];
@@ -4306,7 +4321,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     const ppy = a.y;
     a.x += a.vx * dt;
     a.y += a.vy * dt;
-    // 🧿 naváděcí runa - střela se přitáčí k nejbližšímu nepříteli v dohledu
+    // 刺 naváděcí runa - střela se přitáčí k nejbližšímu nepříteli v dohledu
     if (g.stats.home > 0 && Math.hypot(a.vx, a.vy) > 1) {
       let htgt: Enemy | null = null;
       let hbest = 260 * 260;
@@ -4331,7 +4346,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         a.vy = Math.sin(hcA + hturn) * hsp;
       }
     }
-    // 🌬️ vítr žene i projektil
+    // ️ vítr žene i projektil
     if (g.weather === "wind") {
       a.x += Math.cos(g.windA) * 60 * dt;
       a.y += Math.sin(g.windA) * 60 * dt;
@@ -4343,14 +4358,14 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       gridEach(a.x, a.y, 170, (e) => {
         if (hit) return;
         if (e.dead || a.hits.indexOf(e.id) !== -1) return;
-        // 🛡️ boss v imunitě - projektily ho proletí bez poškození
+        // ️ boss v imunitě - projektily ho proletí bez poškození
         if (e.immT && e.immT > 0) return;
-        // 👻 duch ve fázi - prolnul skrze střely
+        //  duch ve fázi - prolnul skrze střely
         if (e.kind === 6 && !e.boss && e.lungeT > 0) return;
-        // 🦡 zahrabaný jezevec - pod zemí nezranitelný
+        // 說 zahrabaný jezevec - pod zemí nezranitelný
         if ((e.subT ?? 0) > 0) return;
         const rr = e.r + 5;
-        // 🧙‍♂️ swept kolize po celé úsečce letu - při výkyvu dt projektil cíl nesmí přeskočit nezasažený
+        // 慄‍♂️ swept kolize po celé úsečce letu - při výkyvu dt projektil cíl nesmí přeskočit nezasažený
         if (segHit(ppx, ppy, a.x, a.y, e.x, e.y, rr)) {
           a.hits.push(e.id);
           e.hp -= a.dmg;
@@ -4359,7 +4374,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             e.slow = a.lvl >= 5 ? 2.6 : 1.6;
             playSfx(g, "freeze");
           }
-          // 🌲 dřevěné třístí při zásahu vysype zelené lístečky
+          //  dřevěné třístí při zásahu vysype zelené lístečky
           if (a.kind === 16) burst(g, a.x, a.y, 2, 100, 80);
           const kb = (e.big ? 40 : 130) * a.knock * (e.boss ? 0.12 : 1);
           const al = Math.atan2(a.vy, a.vx);
@@ -4369,7 +4384,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           playSfx(g, a.crit ? "crit" : "hit");
           if (e.hp <= 0) killEnemy(g, e);
           if (a.expl) {
-            // 🔥 ohnivá koule - plošná exploze (ultimate = větší radius)
+            //  ohnivá koule - plošná exploze (ultimate = větší radius)
             const aoe = a.lvl >= 5 ? 100 : 64;
             burst(g, a.x, a.y, 12, 20, 210);
             g.shake = Math.max(g.shake, 3);
@@ -4426,7 +4441,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // 🗼 strážní věže: každá postavená věž sama pálí šípy na netvory v dosahu (cílí na nejodlehlejší k hradu)
+  //  strážní věže: každá postavená věž sama pálí šípy na netvory v dosahu (cílí na nejodlehlejší k hradu)
   if (!g.over) {
     for (const tw of g.towers) {
       tw.flash = Math.max(0, tw.flash - dt);
@@ -4463,7 +4478,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // 🏰 střílny ze stromu dovedností: lučištníci na hradbách střílí na netvory pod hradbami
+  //  střílny ze stromu dovedností: lučištníci na hradbách střílí na netvory pod hradbami
   if (g.castle.bows > 0 && !g.over) {
     g.castle.cd -= dt;
     if (g.castle.cd <= 0) {
@@ -4471,16 +4486,17 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       const tg: Enemy[] = [];
       for (const e of g.enemies) {
         if (e.dead || (e.subT ?? 0) > 0) continue;
-        if (dist2(e.x, e.y, g.castle.x, g.castle.y) < 780 * 780) tg.push(e);
+        if (dist2(e.x, e.y, CASTLE_FRONT - 30, g.castle.y) < 780 * 780) tg.push(e);
         if (tg.length >= g.castle.bows * 2) break;
       }
       const bDmg = Math.round((26 + g.time * 0.5) * (1 + 0.35 * (g.castle.bows - 1)) * (g.castle.keep ? 1.4 : 1));
       let fired = 0;
       for (const e of tg) {
         if (fired >= g.castle.bows) break;
+        const byy = castleBowY(g, fired);
+        const ba = Math.atan2(e.y - byy, e.x - (CASTLE_FRONT - 30));
+        g.arrows.push({ x: CASTLE_FRONT - 44, y: byy, vx: Math.cos(ba) * 820, vy: Math.sin(ba) * 820, dmg: bDmg, pierce: 0, crit: false, life: 1.3, hits: [e.id], kind: 1, knock: 60, chain: 0, expl: false, frost: false, lvl: 1, src: "castle" });
         fired++;
-        const ba = Math.atan2(e.y - (g.castle.y - 46), e.x - g.castle.x);
-        g.arrows.push({ x: g.castle.x - 60 + Math.cos(ba) * 30, y: g.castle.y - 46 + Math.sin(ba) * 30, vx: Math.cos(ba) * 820, vy: Math.sin(ba) * 820, dmg: bDmg, pierce: 0, crit: false, life: 1.3, hits: [e.id], kind: 1, knock: 60, chain: 0, expl: false, frost: false, lvl: 1, src: "castle" });
       }
       if (fired > 0) playSfx(g, "shoot");
     }
@@ -4490,7 +4506,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     if (e.dead) continue;
     e.flash = Math.max(0, e.flash - dt);
     e.slow = Math.max(0, e.slow - dt);
-    // 🔢 vylití sčítaného poškození nad hlavu
+    //  vylití sčítaného poškození nad hlavu
     if ((e.dmgAccT ?? 0) > 0) {
       e.dmgAccT -= dt;
       if ((e.dmgAccT ?? 0) <= 0) {
@@ -4499,7 +4515,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         e.dmgAccCrit = false;
       }
     }
-    // 🛡️ imunita bosse mezi fázemi
+    // ️ imunita bosse mezi fázemi
     if (e.immT && e.immT > 0) e.immT -= dt;
     const dx = h.x - e.x;
     const dy = h.y - e.y;
@@ -4508,7 +4524,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     let sp = e.speed * (e.slow > 0 ? 0.45 : 1) * (g.night ? 1.6 : 1) * g.enemySpdMul * (g.weather === "rain" ? 0.85 : 1) * (e.elite === "swift" ? 1.5 : 1);
     let dirx = dx / d;
     let diry = dy / d;
-    // 🏰 pochod na hrad: bossové i běžní netvoři míří na východ, po tobě jdou jen mini-bossové
+    //  pochod na hrad: bossové i běžní netvoři míří na východ, po tobě jdou jen mini-bossové
     // (jezevec zahrabaný, rozpulec se teleportuje za tebe a dravec číhá - ti zůstávají lovecké)
     const cdx = g.castle.x - e.x;
     const cdy = g.castle.y - e.y;
@@ -4522,12 +4538,12 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       // daleko od hradu jdou vojenským pochodem, ať loukou neutáhnou celou věčnost
       if (cd > 2600) sp *= 2.6;
       else if (cd > 1300) sp *= 1.6;
-      // 🏰 u hradby se zastaví a sekají do brány
-      if (cd < g.castle.r + e.r + 6) {
+      //  u hradby se zastaví a sekají do zdi/brány (zeď vede po celé pravé straně)
+      if (e.x + e.r >= CASTLE_FRONT - 6) {
         attackingCastle = true;
         sp = 0;
       } else {
-        // 🗼 postavená strážní věž zastaví pochod - netvor u ní zastyde a seká do zdiva
+        //  postavená strážní věž zastaví pochod - netvor u ní zastyde a seká do zdiva
         for (const tw of g.towers) {
           if (tw.tier <= 0 || tw.hp <= 0) continue;
           if (dist2(e.x, e.y, tw.x, tw.y) < (tw.r + e.r + 6) * (tw.r + e.r + 6)) {
@@ -4558,7 +4574,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         sp *= 1.25;
       }
     }
-    // 🌟 elitní korunky: "shield" občas zneviditelní rány, "vamp" léčí okolí
+    //  elitní korunky: "shield" občas zneviditelní rány, "vamp" léčí okolí
     if (e.elite === "shield") {
       e.eliteT = (e.eliteT ?? 0) - dt;
       if ((e.eliteT ?? 0) <= 0) {
@@ -4577,7 +4593,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         }
       }
     }
-    // 🐍 dravec: číhá nehybně schovaný v trávě, na dohled telegrafovaně skočí
+    //  dravec: číhá nehybně schovaný v trávě, na dohled telegrafovaně skočí
     if (e.kind === 19 && !e.boss && !e.minib) {
       e.lungeCd -= dt;
       if (e.lungeT > 0) {
@@ -4593,7 +4609,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         }
       }
     }
-    // 🌷 květomil: drží odstup a doléčuje zraněné nepřátele v okolí - zabij ho nejdřív!
+    //  květomil: drží odstup a doléčuje zraněné nepřátele v okolí - zabij ho nejdřív!
     if (e.kind === 17 && !e.boss && !e.minib) {
       if (d < 230) {
         dirx = -dirx;
@@ -4619,7 +4635,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           ht.hp = Math.min(ht.maxHp, ht.hp + hAmt);
           ht.flash = 0.06;
           g.particles.push({ x: e.x, y: e.y - e.r, vx: (ht.x - e.x) * 0.9, vy: (ht.y - e.y) * 0.9 - 20, life: 0.45, maxLife: 0.45, r: 2.2, hue: 145 });
-          addText(g, ht.x, ht.y - ht.r - 8, "💚", 145, 12);
+          addText(g, ht.x, ht.y - ht.r - 8, "", 145, 12);
         }
       }
     }
@@ -4656,10 +4672,10 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         e.dmg = Math.round(e.dmg * (e.phase / (e.phase - 1)));
         g.shake = 12;
         burst(g, e.x, e.y, 30, e.hue, 240);
-        addText(g, e.x, e.y - e.r - 16, `🛡️ FÁZE ${e.phase}! IMUNITA!`, 195, 20);
+        addText(g, e.x, e.y - e.r - 16, `️ FÁZE ${e.phase}! IMUNITA!`, 195, 20);
       }
       const phMul = 1 / e.phase; // fáze N = N× rychlejší kadence útoků
-      // 🌷 květomil král se sám dotahuje - zabij ho dřív, než tě přeběhá
+      //  květomil král se sám dotahuje - zabij ho dřív, než tě přeběhá
       if (e.kind === 17 && e.hp < e.maxHp && (e.immT ?? 0) <= 0) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.012 * dt);
       // mumie král & král duchů - prudký výpad (dash) k hrdinovi
       if (e.kind === 2 || e.kind === 6) {
@@ -4814,7 +4830,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         }
         burst(g, e.x, e.y, 5, e.hue, 120);
       }
-      // 🏟️ (v1.16: boss už není držen v aréně - volně táhne na hrad)
+      // ️ (v1.16: boss už není držen v aréně - volně táhne na hrad)
     }
     // šaman: drží odstup a střílí koule (boss-arcišaman má vlastní režim)
     if (e.kind === 5 && !e.boss) {
@@ -4830,7 +4846,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         burst(g, e.x, e.y, 3, 195, 90);
       }
     }
-    // 🌟 elitní příšera: drží odstup a pálí dávku tří rychlých kouli
+    //  elitní příšera: drží odstup a pálí dávku tří rychlých kouli
     if (e.kind === 9) {
       if (d < 240) {
         dirx = -dirx;
@@ -4846,23 +4862,23 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         burst(g, e.x, e.y, 4, 265, 110);
       }
     }
-    // 💣 dynamiter: drží střední odstup, obchází tě a háže dynamit (polovina HP!)
-    // 🧟 mumie: obvazy se stahují a rány se samy zacelují
+    //  dynamiter: drží střední odstup, obchází tě a háže dynamit (polovina HP!)
+    // 履 mumie: obvazy se stahují a rány se samy zacelují
     if (e.kind === 2 && !e.boss && !e.minib && e.hp < e.maxHp) {
       e.hp = Math.min(e.maxHp, e.hp + 2.5 * dt);
     }
-    // 👹 brut: rozřízené dupnutí - rázová vlnka zraní blízko stojícího hrdinu
+    //  brut: rozřízené dupnutí - rázová vlnka zraní blízko stojícího hrdinu
     if (e.kind === 4 && !e.boss && !e.minib) {
       e.lungeCd -= dt;
       if (e.lungeCd <= 0 && d < 180) {
         e.lungeCd = 4.5;
         g.shake = Math.max(g.shake, 5);
         burst(g, e.x, e.y, 16, e.hue, 200);
-        addText(g, e.x, e.y - e.r - 12, "💢", 70, 17);
+        addText(g, e.x, e.y - e.r - 12, "", 70, 17);
         if (d < 150 && h.invuln <= 0) damageHero(g, Math.round(e.dmg * 0.7));
       }
     }
-    // 👻 duch: fáze - prolnul skrze hrdinu i střely
+    //  duch: fáze - prolnul skrze hrdinu i střely
     if (e.kind === 6 && !e.boss) {
       e.lungeCd -= dt;
       if (e.lungeT > 0) {
@@ -4871,10 +4887,10 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         e.lungeT = 1.6;
         e.lungeCd = 5 + Math.random() * 2;
         burst(g, e.x, e.y, 7, 175, 90);
-        addText(g, e.x, e.y - e.r - 10, "🌀", 60, 14);
+        addText(g, e.x, e.y - e.r - 10, "", 60, 14);
       }
     }
-    // 🗿 kamenáč: mrští balvanem po hrdinovi
+    //  kamenáč: mrští balvanem po hrdinovi
     if (e.kind === 7 && !e.boss && !e.minib) {
       e.shootCd -= dt;
       if (e.shootCd <= 0 && d < 520) {
@@ -4882,10 +4898,10 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         const ra = Math.atan2(h.y - e.y, h.x - e.x);
         g.eBolts.push({ x: e.x, y: e.y, vx: Math.cos(ra) * 240, vy: Math.sin(ra) * 240, life: 4, dmg: Math.round(e.dmg * 0.6) });
         burst(g, e.x, e.y, 7, e.hue, 130);
-        addText(g, e.x, e.y - e.r - 12, "🪨", 60, 15);
+        addText(g, e.x, e.y - e.r - 12, "直", 60, 15);
       }
     }
-    // 😈 rozpulc: blik-teleport blízko hrdiny
+    //  rozpulc: blik-teleport blízko hrdiny
     if (e.kind === 8 && !e.boss && !e.minib) {
       e.lungeCd -= dt;
       if (e.lungeCd <= 0 && d > 90) {
@@ -4914,9 +4930,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       e.shootCd -= dt;
       if (e.shootCd <= 0 && d < 620) {
         e.shootCd = 3.2;
-        // 💣 zóna dopadu: rudá → zežloutne těsně před výbuchem, dmg = polovina max HP
+        //  zóna dopadu: rudá → zežloutne těsně před výbuchem, dmg = polovina max HP
         g.telegraphs.push({ x: h.x + (Math.random() - 0.5) * 40, y: h.y + (Math.random() - 0.5) * 40, r: 58, t: 0, dur: 1.1, dmg: h.maxHp * 0.5, dyn: true });
-        addText(g, e.x, e.y - e.r - 10, "💣", 20, 15);
+        addText(g, e.x, e.y - e.r - 10, "", 20, 15);
       }
     }
     if (e.kind === 11) {
@@ -4934,7 +4950,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         addText(g, e.x, e.y - e.r - 10, "⛏️", 20, 15);
       }
     }
-    // 🐝 vosa: kličkuje ze strany na stranu (úhyb se musí předvídat)
+    //  vosa: kličkuje ze strany na stranu (úhyb se musí předvídat)
     if (e.kind === 12) {
       const sw = Math.sin(g.gtime * 8 + e.id * 3.1) * 0.85;
       const nx = dirx - diry * sw;
@@ -4942,13 +4958,13 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       dirx = nx;
       diry = ny;
     }
-    // 🦡 jezevec: zahrabe se, proběhne pod zemí k hrdinovi a vyletí výbuchem
+    // 說 jezevec: zahrabe se, proběhne pod zemí k hrdinovi a vyletí výbuchem
     if (e.kind === 13) {
       e.lungeCd -= dt;
       if ((e.subT ?? 0) <= 0 && e.lungeCd <= 0) {
         e.subT = 2.4;
         burst(g, e.x, e.y, 10, 30, 120);
-        addText(g, e.x, e.y - e.r - 10, "🕳️", 60, 14);
+        addText(g, e.x, e.y - e.r - 10, "️", 60, 14);
       }
       if ((e.subT ?? 0) > 0) {
         e.subT = (e.subT ?? 0) - dt;
@@ -4964,7 +4980,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       }
     }
     // ☠️ kostlivec: schopnost povstat řeší killEnemy (jeden restart za život)
-    // 🔥 sopkaš: za sebou nechává hořící stopu z malých zón
+    //  sopkaš: za sebou nechává hořící stopu z malých zón
     if (e.kind === 15) {
       e.shootCd -= dt;
       if (e.shootCd <= 0 && d < 700) {
@@ -4990,18 +5006,18 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     e.y += (diry * sp + e.kby) * dt;
     e.kbx *= 0.86;
     e.kby *= 0.86;
-    // 🏰 směr, kterým netvor letí - podle něj se orientují siluety na pochodu
+    //  směr, kterým netvor letí - podle něj se orientují siluety na pochodu
     if (sp > 1) e.fa = Math.atan2(diry, dirx);
-    // 🏰 útok na hradbu: dokud hrad stojí, buší sekána do brány
+    //  útok na hradbu: dokud hrad stojí, buší sekána do brány
     if (attackingCastle) {
       e.castleCd = (e.castleCd ?? 0.6) - dt;
       if (e.castleCd <= 0) {
         e.castleCd = 1.1;
         damageCastle(g, Math.max(2, Math.round(e.dmg * 0.45)));
-        addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "🔨", 30, 13);
+        addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "", 30, 13);
       }
     }
-    // 🗼 útok na strážní věž: zdivo věže je měkčí než hradba hradeb
+    //  útok na strážní věž: zdivo věže je měkčí než hradba hradeb
     if (attackingTower) {
       e.twCd = (e.twCd ?? 0.5) - dt;
       if (e.twCd <= 0) {
@@ -5010,23 +5026,17 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "⛏️", 30, 13);
       }
     }
-    // 🌬️ silný vítr postrkuje i nepřátele
+    // ️ silný vítr postrkuje i nepřátele
     if (g.weather === "wind") {
       e.x += Math.cos(g.windA) * 26 * dt;
       e.y += Math.sin(g.windA) * 26 * dt;
     }
     e.x = Math.max(e.r, Math.min(ARENA_W - e.r, e.x));
     e.y = Math.max(e.r, Math.min(ARENA_H - e.r, e.y));
-    // 🏰 za hradbu nikdo nevleze - posun zpět k vnějšímu okraji
+    //  za hradbu nikdo nevleze - zeď stojí po celé pravé straně mapy
+    if (e.x > CASTLE_FRONT - e.r) e.x = CASTLE_FRONT - e.r;
     if (marches) {
-      const ocx = e.x - g.castle.x;
-      const ocy = e.y - g.castle.y;
-      const ocd = Math.hypot(ocx, ocy) || 1;
-      if (ocd < g.castle.r + e.r) {
-        e.x = g.castle.x + (ocx / ocd) * (g.castle.r + e.r);
-        e.y = g.castle.y + (ocy / ocd) * (g.castle.r + e.r);
-      }
-      // 🗼 ani zdivem postavenou věží se neproejde - couvne se ven z kruhu
+      //  ani zdivem postavenou věží se neproejde - couvne se ven z kruhu
       for (const tw of g.towers) {
         if (tw.tier <= 0 || tw.hp <= 0) continue;
         const tcx = e.x - tw.x;
@@ -5044,16 +5054,16 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     const subbed13 = (e.subT ?? 0) > 0;
     if (!phased6 && !subbed13 && dist2(e.x, e.y, h.x, h.y) < rr * rr && h.invuln <= 0) {
       damageHero(g, e.dmg);
-      // 🩸 netopýr-upír: při kousnutí se napije a vzpamatuje se
+      // 喝 netopýr-upír: při kousnutí se napije a vzpamatuje se
       if (e.kind === 1 && !e.dead) {
         e.hp = Math.min(e.maxHp, e.hp + 6);
         burst(g, e.x, e.y, 5, 350, 110);
-        addText(g, e.x, e.y - e.r - 10, "🩸", 45, 14);
+        addText(g, e.x, e.y - e.r - 10, "喝", 45, 14);
       }
-      // 🐝 vosa: žihadlo otráví - jed tická pár sekund
+      //  vosa: žihadlo otráví - jed tická pár sekund
       if (e.kind === 12) {
         h.poisT = 3;
-        addText(g, h.x, h.y - 34, "🤢 OTRAVEN!", 100, 14);
+        addText(g, h.x, h.y - 34, "濫 OTRAVEN!", 100, 14);
       }
     }
     // ⚙️ nepřátelé ničí turetky dotykem (v noci dvakrát rychleji)
@@ -5074,7 +5084,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     const tl = g.telegraphs[i];
     tl.t += dt;
     if (tl.t >= tl.dur) {
-      // 💥 dopad - výbuch
+      //  dopad - výbuch
       burst(g, tl.x, tl.y, 14, 0, 240);
       burst(g, tl.x, tl.y, 8, 30, 160);
       g.shake = Math.max(g.shake, 6);
@@ -5082,9 +5092,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         g.lastBoomSfx = g.gtime;
         playSfx(g, "boom");
       }
-      // 💣 přátelská bomba (náletek vojáka) - pálení platí netvorům, ne tobě
+      //  přátelská bomba (náletek vojáka) - pálení platí netvorům, ne tobě
       if (tl.friendly) {
-        // 🕸️ jen nepřátelé v dosahu zóny
+        // ️ jen nepřátelé v dosahu zóny
         gridEach(tl.x, tl.y, tl.r + 120, (e) => {
           if (e.dead || (e.immT ?? 0) > 0 || (e.subT ?? 0) > 0) return;
           if (dist2(e.x, e.y, tl.x, tl.y) < (tl.r + e.r) * (tl.r + e.r)) {
@@ -5142,7 +5152,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       let dA = tA - cA;
       while (dA > Math.PI) dA -= Math.PI * 2;
       while (dA < -Math.PI) dA += Math.PI * 2;
-      // 🧭 síla navádění: finální bossové 60 % (dřív 40 %); samotné navádění točí o půlku víc (2.2 → 3.3)
+      // 吝 síla navádění: finální bossové 60 % (dřív 40 %); samotné navádění točí o půlku víc (2.2 → 3.3)
       const turn = Math.max(-3.3 * (b.home || 0) * dt, Math.min(3.3 * (b.home || 0) * dt, dA));
       b.vx = Math.cos(cA + turn) * sp;
       b.vy = Math.sin(cA + turn) * sp;
@@ -5162,8 +5172,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       burst(g, b.x, b.y, 8, 195, 150);
       remove = true;
     }
-    // 🏰 koule, které přeletí hrdinu, naráz do hradby
-    if (!remove && dist2(b.x, b.y, g.castle.x, g.castle.y) < 110 * 110) {
+    //  koule, které přeletí hrdinu, naráz do hradby
+    if (!remove && b.x + 10 > CASTLE_FRONT) {
       damageCastle(g, Math.max(2, Math.round(b.dmg * 0.5)));
       burst(g, b.x, b.y, 6, 30, 130);
       remove = true;
@@ -5177,7 +5187,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   const es = g.enemies;
   // při zácpě přes 110 nepřátel řešíme jen bossy/minibossy (O(n²) by zaseklo FPS)
   const heavy = es.length > 110;
-  // 🕸️ mřížka se přestaví podle aktuálních pozic - separace běží jen mezi sousedy
+  // ️ mřížka se přestaví podle aktuálních pozic - separace běží jen mezi sousedy
   buildGrid(g);
   for (let i = 0; i < es.length; i++) {
     const a = es[i];
@@ -5204,8 +5214,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     if (es[i].dead) es.splice(i, 1);
   }
 
-  // 🔗 slučování XP orbů (v1.13): dotknou-li se jejich barevné zóny, pohltí jedna druhou
-  // a XP se sečtou - koule tak na louce postupně roste 🟡 → 🔴 (64 XP) → 🔵 (16 384 XP)
+  //  slučování XP orbů (v1.13): dotknou-li se jejich barevné zóny, pohltí jedna druhou
+  // a XP se sečtou - koule tak na louce postupně roste  →  (64 XP) →  (16 384 XP)
   for (let oi = 0; oi < g.orbs.length; oi++) {
     const a = g.orbs[oi];
     if (a.pk !== 0) continue;
@@ -5247,7 +5257,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     o.y += o.vy * dt;
     o.vx *= 0.94;
     o.vy *= 0.94;
-    // 🟠 zóna sběru = celá barevná plocha orbu (halo 2.2× poloměr), ne jen bod v centru
+    //  zóna sběru = celá barevná plocha orbu (halo 2.2× poloměr), ne jen bod v centru
     const takeR = o.r * 2.2;
     if (d2 < takeR * takeR) {
       if (o.pk === 1) {
@@ -5257,7 +5267,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
         burst(g, o.x, o.y, 6, 130, 90);
         playSfx(g, "ding");
       } else if (o.pk === 2) {
-        // 💣 bomba - velký plošný výbuch, okruh označí dosah
+        //  bomba - velký plošný výbuch, okruh označí dosah
         const br = 260;
         const bdmg = 50 + g.level * 8;
         g.shake = Math.max(g.shake, 12);
@@ -5278,11 +5288,11 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
             hue: 25,
           });
         }
-        addText(g, h.x, h.y - 28, "💣 BUM!", 25, 18);
-        // 💥 mohutná dvojitá rázová vlna výbuchu
+        addText(g, h.x, h.y - 28, " BUM!", 25, 18);
+        //  mohutná dvojitá rázová vlna výbuchu
         shock(g, h.x, h.y, br + 40, 25, 0.6, 12, 0.3);
         shock(g, h.x, h.y, br * 0.55, 40, 0.45, 7, 0.2);
-        // 🕸️ výbuch zasáhne jen nepřátele v dosahu (mřížka místo celé mapy)
+        // ️ výbuch zasáhne jen nepřátele v dosahu (mřížka místo celé mapy)
         gridEach(h.x, h.y, br + 100, (e) => {
           if (e.dead) return;
           if (e.immT && e.immT > 0) return;
@@ -5294,15 +5304,15 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
           }
         });
       } else if (o.pk === 3) {
-        // 🧲 magnet - vysaje všechny koule z celé mapy
+        // 鱗 magnet - vysaje všechny koule z celé mapy
         g.magT = 2.2;
-        addText(g, h.x, h.y - 28, "🧲 MAGNET!", 210, 18);
+        addText(g, h.x, h.y - 28, "鱗 MAGNET!", 210, 18);
         burst(g, h.x, h.y, 14, 210, 160);
         playSfx(g, "magnet");
         // modrá pulzující vlna přitahuje koule k hrdinovi
         shock(g, h.x, h.y, 420, 210, 0.7, 6, 0.1);
       } else {
-        // 🔥 XP s combo bonusem
+        //  XP s combo bonusem
         g.xp += o.xp * g.xpMul * comboXpMul(g);
         playSfx(g, "orb");
         burst(g, o.x, o.y, 4, 48, 90);
@@ -5326,8 +5336,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
 
   // spawn ředitel (během bosse se běžní nepřátelé nerozmnožují; déšť = rychlejší porod)
   g.spawnT -= dt;
-  // 👇 míň nepřátel, ale každý je tvrdší: pomalejší porod + nižší strop + vzácnější dvojité spawny
-  // 👇 v1.12: netvorů polovina, ale každý je 4× tvrdší - pomalý porod, nižší strop
+  //  míň nepřátel, ale každý je tvrdší: pomalejší porod + nižší strop + vzácnější dvojité spawny
+  //  v1.12: netvorů polovina, ale každý je 4× tvrdší - pomalý porod, nižší strop
   const interval = Math.max(0.12, ((1.05 - g.time * 0.005) / 9.6) * (g.weather === "rain" ? 0.6 : 1));
   if (g.spawnT <= 0 && g.enemies.length < (g.time > 600 ? 22 : 28) && !g.arena.active) {
     g.spawnT = interval;
@@ -5336,7 +5346,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     if (Math.random() < Math.min(0.55, 0.06 + g.time * 0.001)) spawnEnemy(g);
   }
 
-  // 🌟 elitní vlna - po 3. minutě každých 35 s přibude skupina extra silných nepřátel (pakt lovce častěji)
+  //  elitní vlna - po 3. minutě každých 35 s přibude skupina extra silných nepřátel (pakt lovce častěji)
   if (g.time > 180 && !g.arena.active) {
     g.waveT -= dt;
     if (g.waveT <= 0) {
@@ -5361,7 +5371,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     playSfx(g, "elite");
   }
 
-  // 🌟 mini-boss každých 45 s (ne uprostřed souboje v aréně)
+  //  mini-boss každých 45 s (ne uprostřed souboje v aréně)
   if (g.time >= g.nextMini && !g.arena.active) {
     g.nextMini += 45;
     spawnMini(g);
@@ -5387,7 +5397,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       playSfx(g, "crate");
       burst(g, c.x, c.y, 16, 48, 190);
       shock(g, c.x, c.y, 140, 48, 0.45, 6, 0.18);
-      addText(g, c.x, c.y - 30, "📦 +5 upgradů!", 48, 17);
+      addText(g, c.x, c.y - 30, " +5 upgradů!", 48, 17);
     }
   }
 
@@ -5397,7 +5407,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     g.level += 1;
     g.need = xpNeed(g.level);
     g.pending += 1;
-    // 🌟 level-up záblesk - zlatý gejzír, vlna světla a doušek adrenalinu
+    //  level-up záblesk - zlatý gejzír, vlna světla a doušek adrenalinu
     burst(g, h.x, h.y, 22, 48, 230);
     shock(g, h.x, h.y, 180, 48, 0.55, 8, 0.22);
     addText(g, h.x, h.y - 44, "⭐ LEVEL UP!", 90, 19);
@@ -5405,7 +5415,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     g.shake = Math.max(g.shake, 2);
   }
 
-  // 🌦️ POČASÍ - náhodné epizody se zvláštními pravidly (déšť/bouřka/vítr)
+  // ️ POČASÍ - náhodné epizody se zvláštními pravidly (déšť/bouřka/vítr)
   g.weatherT -= dt;
   if (g.weatherT <= 0) {
     if (g.weather === "") {
@@ -5422,7 +5432,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     } else {
       g.weather = "";
       g.weatherT = 45 + Math.random() * 30;
-      addText(g, h.x, h.y - 60, "🌤️ Vyjasnilo se", 100, 15);
+      addText(g, h.x, h.y - 60, "️ Vyjasnilo se", 100, 15);
     }
   }
   // ⛈️ bouřka - náhodné blesky bijí kolem hrdiny (telegrafované!)
@@ -5442,9 +5452,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
 
 function updateFx(g: Game, dt: number): void {
   g.shake = Math.max(0, g.shake - dt * 26);
-  // 💀 závěrečný fade - svět po smrti hrdiny pomalu ztmavne
+  //  závěrečný fade - svět po smrti hrdiny pomalu ztmavne
   if (g.over) g.overT = Math.min(1, g.overT + dt * 0.7);
-  // 📣 boss intro banner vydrží 2,6 s a pak tiše zmizí
+  //  boss intro banner vydrží 2,6 s a pak tiše zmizí
   if (g.bossIntroT > 0) g.bossIntroT = Math.max(0, g.bossIntroT - dt);
   // ⚔️ švihy meče dožívají krátce
   for (let i = g.slashes.length - 1; i >= 0; i--) {
@@ -5475,7 +5485,7 @@ function updateFx(g: Game, dt: number): void {
       }
     }
     if (f >= 1) {
-      // 💥 dopad - kráter, dvojitá rázová vlna a hořící trosky
+      //  dopad - kráter, dvojitá rázová vlna a hořící trosky
       burst(g, m.tx, m.ty, 34, 25, 320);
       burst(g, m.tx, m.ty, 14, 12, 260);
       burst(g, m.tx, m.ty - 50, 10, 30, 200);
@@ -5507,7 +5517,7 @@ function updateFx(g: Game, dt: number): void {
     pl.x += pl.vx * dt;
     if (pl.t >= pl.dur) g.planes.splice(i, 1);
   }
-  // 💣 bomby náletku - padají z letadla, pískají a dopadnou se svou zónou
+  //  bomby náletku - padají z letadla, pískají a dopadnou se svou zónou
   for (let i = g.bombs.length - 1; i >= 0; i--) {
     const b = g.bombs[i];
     const wasT = b.t;
@@ -5519,13 +5529,13 @@ function updateFx(g: Game, dt: number): void {
     b.y = b.sy + (b.ty - b.sy) * f2;
     if (f >= 1) g.bombs.splice(i, 1); // výbuch a damage udělá telegraf
   }
-  // 💥 rázové vlny - expandují a doznívají
+  //  rázové vlny - expandují a doznívají
   for (let i = g.shocks.length - 1; i >= 0; i--) {
     const sk = g.shocks[i];
     sk.t += dt;
     if (sk.t >= sk.dur) g.shocks.splice(i, 1);
   }
-  // 💨 duchové stopy za hrdinou při úhybu
+  //  duchové stopy za hrdinou při úhybu
   if (g.hero.dashT > 0 && g.particles.length < 150) {
     const p = PART_POOL.pop() || { x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 0, r: 0, hue: 0 };
     p.x = g.hero.x;
@@ -5560,9 +5570,9 @@ function updateFx(g: Game, dt: number): void {
   }
 }
 
-// 🏰 hrad na východě louky - fiktivní 2.5D fasáda: roste s upgrady ze stromu
-// (Hradby 🧱 = vyšší a širší zdi, Střílny 🏹 = lučištníci, Královský donjon 🏰 = palác + příkop)
-// 🗼 strážní věž podél cesty na hrad - od rozpadliny zdiva po honosnou baštu s vlajkami
+//  hrad na východě louky - fiktivní 2.5D fasáda: roste s upgrady ze stromu
+// (Hradby 隣 = vyšší a širší zdi, Střílny  = lučištníci, Královský donjon  = palác + příkop)
+//  strážní věž podél cesty na hrad - od rozpadliny zdiva po honosnou baštu s vlajkami
 function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   const x = tw.x;
   const y = tw.y;
@@ -5576,7 +5586,7 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   ctx.ellipse(x, y + r * 0.5, r * 1.2, r * 0.42, 0, 0, Math.PI * 2);
   ctx.fill();
   if (broken) {
-    // 🗿 rozpadlina: hromada zdiva, vyčnívající zlomky zdi a mech
+    //  rozpadlina: hromada zdiva, vyčnívající zlomky zdi a mech
     ctx.fillStyle = "#57534a";
     ctx.beginPath();
     ctx.ellipse(x, y - 4, r * 0.92, r * 0.5, 0, 0, Math.PI * 2);
@@ -5741,7 +5751,7 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
       if (plan) {
         ctx.font = "bold 13px system-ui, sans-serif";
         ctx.textAlign = "center";
-        const label = g.coins >= plan.cost ? plan.label : `${plan.label} (málo 🪙)`;
+        const label = g.coins >= plan.cost ? plan.label : `${plan.label} (málo 滋)`;
         ctx.fillStyle = "rgba(0,0,0,0.6)";
         const half = ctx.measureText(label).width / 2 + 10;
         ctx.fillRect(x - half, y - r - (broken ? 76 : 108), half * 2, 20);
@@ -5753,303 +5763,474 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   ctx.restore();
 }
 
+//  hrad zakrývá celou pravou stranu mapy - zeď vede po celé výšce (sever-jih),
+// brána hledí na ZÁPAD, odkud valí netvoři, "výška" staveb se kreslí na východ
 function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
   const c = g.castle;
   const t = g.gtime;
-  const cx = c.x;
-  const baseY = c.y + 120;
+  const F = CASTLE_FRONT;
+  const H2 = ARENA_H;
   const walls = c.walls; // 0 = dřevěná palisáda, 1..5 = kamenné hradby
-  const bw = 208 + walls * 22; // šířka hradby
-  const wh = 52 + walls * 14; // výška hradeb
-  const lx = cx - bw / 2;
-  const rx = cx + bw / 2;
-  const topY = baseY - wh * 2;
-  const stone = walls === 0 ? "#9a6a3d" : "#cfc7ba";
+  const bw = 62 + walls * 12; // "výška" hradby (roste s upgradem Hradby)
+  const stone = walls === 0 ? "#9a6a3d" : "#d6cec0";
   const stoneD = walls === 0 ? "#7a4f2c" : "#a49a89";
+  const stoneDD = walls === 0 ? "#5d3a1f" : "#7d7466";
   const dead = c.hp <= 0;
-  // stín pod celou stavbou
-  ctx.fillStyle = "rgba(0,0,0,0.3)";
-  ctx.beginPath();
-  ctx.ellipse(cx, baseY + 8, bw * 0.62, 26, 0, 0, Math.PI * 2);
-  ctx.fill();
-  // suchý příkop - až s Královským donjonem se napustí vodou
-  if (c.keep) {
-    ctx.fillStyle = "#3f6f9e";
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 46, 96, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "rgba(120,190,240,0.85)";
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 46, 96, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#26523a";
-    ctx.beginPath();
-    ctx.ellipse(cx, baseY - wh * 0.3, bw * 0.62 + 12, 62, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const frac = Math.max(0, c.hp / c.maxHp);
+  const gy = c.y; // brána přesně na středu stezky
+
+  // --- 0) dvůr za hradou: do hloubky tmavne ---
+  const grY = ctx.createLinearGradient(F, 0, ARENA_W, 0);
+  grY.addColorStop(0, "#4a4238");
+  grY.addColorStop(1, "#15110d");
+  ctx.fillStyle = grY;
+  ctx.fillRect(F, -40, ARENA_W - F, H2 + 80);
+
   if (!dead) {
-    // zadní zástavba - s vyššími hradbami vykukují domy za zdí
+    // --- 1) zástavba dvora - domy se šikmými střechami vykukují za hradbami ---
     if (walls >= 2) {
-      ctx.fillStyle = stoneD;
-      ctx.fillRect(lx + 26, topY - 10, bw - 52, 84 + walls * 6);
-      ctx.fillStyle = "#4d4434";
-      for (let hx = lx + 40; hx < rx - 30; hx += 64) ctx.fillRect(hx, topY + 2, 14, 12);
-      ctx.fillStyle = "#1c1917";
-      for (let hx = lx + 44; hx < rx - 34; hx += 64) ctx.fillRect(hx, topY + 4, 8, 10);
+      const roofC = ["#7f1d1d", "#57534e", "#3f3f46"];
+      let hi = 0;
+      for (let hy = 30; hy < H2 - 90; hy += 150) {
+        const hx = F + bw + 30 + (hi % 3) * 22;
+        const hw = 54 + (hi % 2) * 26;
+        ctx.fillStyle = "#6b5f4e";
+        ctx.fillRect(hx, hy, hw, 84);
+        ctx.fillStyle = roofC[hi % 3];
+        ctx.beginPath(); // šikmá střecha směřuje vzhůru (na východ)
+        ctx.moveTo(hx - 6, hy + 88);
+        ctx.lineTo(hx + hw + 6, hy + 88);
+        ctx.lineTo(hx + hw * 0.5 + 8, hy + 120);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = "rgba(253,230,138,0.5)"; // svit oken
+        ctx.fillRect(hx + 10, hy + 34, 7, 10);
+        ctx.fillRect(hx + hw - 17, hy + 34, 7, 10);
+        hi++;
+      }
     }
-    // Královský donjon - velká hranatá věž uprostřed, viditelná nad hradbami
+
+    // --- 2) Královský donjon s korouhví - tyčí se přes celý dvůr ---
     if (c.keep) {
-      const kx = cx - 58;
+      const dkx = F + bw + 40;
+      const dkw = 96;
       ctx.fillStyle = stone;
-      ctx.fillRect(kx - 46, topY - 104, 92, 180 + wh);
+      ctx.fillRect(dkx, gy - 120, dkw, 240);
       ctx.fillStyle = stoneD;
-      ctx.fillRect(kx - 46, topY - 104, 92, 10);
+      ctx.fillRect(dkx, gy - 120, dkw, 12);
       ctx.strokeStyle = stoneD;
-      ctx.lineWidth = 2;
-      for (let ky = topY + 12; ky < baseY - 30; ky += 26) {
+      ctx.lineWidth = 1.6;
+      for (let by = gy - 104; by < gy + 118; by += 26) {
         ctx.beginPath();
-        ctx.moveTo(kx - 46, ky);
-        ctx.lineTo(kx + 46, ky);
+        ctx.moveTo(dkx, by);
+        ctx.lineTo(dkx + dkw, by);
         ctx.stroke();
       }
-      // cimbuří donjonu
       ctx.fillStyle = stone;
-      for (let i2 = 0; i2 < 5; i2++) ctx.fillRect(kx - 46 + i2 * 19 + 2, topY - 116, 10, 12);
-      // štítová okna
-      ctx.fillStyle = "#1c1917";
-      ctx.fillRect(kx - 14, topY - 72, 8, 16);
-      ctx.fillRect(kx + 4, topY - 72, 8, 16);
-      // královská korouhev na stožáru
+      for (let i = 0; i < 5; i++) ctx.fillRect(dkx + dkw, gy - 120 + i * 48, 12, 20); // cimbuří
+      ctx.fillStyle = "#fde68a"; // okna
+      ctx.fillRect(dkx + 16, gy - 76, 9, 18);
+      ctx.fillRect(dkx + dkw - 26, gy - 76, 9, 18);
+      ctx.fillRect(dkx + 16, gy + 40, 9, 18);
+      ctx.fillRect(dkx + dkw - 26, gy + 40, 9, 18);
+      // korouhev na stožáru vlaje na východ
       ctx.strokeStyle = "#57534e";
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(kx, topY - 116);
-      ctx.lineTo(kx, topY - 162);
+      ctx.moveTo(dkx + dkw + 12, gy - 110);
+      ctx.lineTo(dkx + dkw + 66, gy - 104);
       ctx.stroke();
       ctx.fillStyle = "#facc15";
       ctx.beginPath();
-      ctx.moveTo(kx, topY - 162);
-      ctx.lineTo(kx + 32 + Math.sin(t * 3) * 4, topY - 153 + Math.sin(t * 3 + 1) * 3);
-      ctx.lineTo(kx, topY - 140);
+      ctx.moveTo(dkx + dkw + 64, gy - 104);
+      ctx.lineTo(dkx + dkw + 94 + Math.sin(t * 3) * 5, gy - 98 + Math.sin(t * 3 + 1) * 4);
+      ctx.lineTo(dkx + dkw + 64, gy - 86);
       ctx.closePath();
       ctx.fill();
     }
-    // věž - válec s cimbuřím, od 3. úrovně hradeb červená kuželová střecha
-    const drawTower = (tpx: number, thh: number) => {
-      ctx.fillStyle = stone;
-      ctx.fillRect(tpx - 24, baseY - wh * 2 - thh, 48, thh + wh * 2);
+
+    // --- 3) věže: velká věž na hradbě, "výška" míří na východ ---
+    const tower2 = (x0: number, ty: number, tw2: number, tall: number, roof: boolean) => {
+      const top2 = F + bw + tall; // východní konec těla věže = její "vrchol"
+      const grT = ctx.createLinearGradient(0, ty - tw2 / 2, 0, ty + tw2 / 2);
+      grT.addColorStop(0, stoneDD);
+      grT.addColorStop(0.45, stone);
+      grT.addColorStop(1, stoneD);
+      ctx.fillStyle = grT;
+      ctx.fillRect(x0, ty - tw2 / 2, top2 - x0, tw2);
+      // korunní římsa na "vrcholu"
       ctx.fillStyle = stoneD;
-      ctx.fillRect(tpx - 24, baseY - wh * 2 - thh, 48, 8);
-      ctx.strokeStyle = stoneD;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(tpx - 24, baseY - wh * 2 - thh + 4);
-      ctx.lineTo(tpx + 24, baseY - wh * 2 - thh + 4);
-      ctx.stroke();
-      if (c.keep || walls >= 3) {
+      ctx.fillRect(top2 - 8, ty - tw2 / 2 - 6, 8, tw2 + 12);
+      // střílny na čelní stěně věže
+      ctx.fillStyle = "#1c1917";
+      ctx.fillRect(x0 + 5, ty - 26, 5, 15);
+      ctx.fillRect(x0 + 5, ty + 11, 5, 15);
+      if (roof) {
+        // kuželová střecha - hrot míří na východ vzhůru
         ctx.fillStyle = "#b91c1c";
         ctx.beginPath();
-        ctx.moveTo(tpx, baseY - wh * 2 - thh - 44);
-        ctx.lineTo(tpx - 28, baseY - wh * 2 - thh);
-        ctx.lineTo(tpx + 28, baseY - wh * 2 - thh);
+        ctx.moveTo(top2 - 2, ty - tw2 / 2 - 10);
+        ctx.lineTo(top2 - 2, ty + tw2 / 2 + 10);
+        ctx.lineTo(top2 + 56, ty);
         ctx.closePath();
         ctx.fill();
         ctx.fillStyle = "#7f1d1d";
         ctx.beginPath();
-        ctx.moveTo(tpx, baseY - wh * 2 - thh - 44);
-        ctx.lineTo(tpx + 28, baseY - wh * 2 - thh);
-        ctx.lineTo(tpx, baseY - wh * 2 - thh);
+        ctx.moveTo(top2 - 2, ty);
+        ctx.lineTo(top2 + 56, ty);
+        ctx.lineTo(top2 - 2, ty + tw2 / 2 + 10);
         ctx.closePath();
         ctx.fill();
+        // zlatá korouhev na hrotu
         ctx.strokeStyle = "#57534e";
         ctx.lineWidth = 2.5;
         ctx.beginPath();
-        ctx.moveTo(tpx, baseY - wh * 2 - thh - 58);
-        ctx.lineTo(tpx, baseY - wh * 2 - thh - 44);
+        ctx.moveTo(top2 + 56, ty);
+        ctx.lineTo(top2 + 86, ty);
         ctx.stroke();
         ctx.fillStyle = "#facc15";
         ctx.beginPath();
-        ctx.moveTo(tpx, baseY - wh * 2 - thh - 58);
-        ctx.lineTo(tpx - 20 + Math.sin(t * 4 + tpx * 0.05) * 3, baseY - wh * 2 - thh - 52);
-        ctx.lineTo(tpx, baseY - wh * 2 - thh - 46);
+        ctx.moveTo(top2 + 86, ty - 1);
+        ctx.lineTo(top2 + 86 + 20 + Math.sin(t * 4 + ty * 0.05) * 4, ty + 7 + Math.sin(t * 4 + ty * 0.05 + 1) * 3);
+        ctx.lineTo(top2 + 86, ty + 15);
         ctx.closePath();
         ctx.fill();
       } else {
+        // bez střechy jen cimbuří
         ctx.fillStyle = stone;
-        for (let i2 = 0; i2 < 3; i2++) ctx.fillRect(tpx - 24 + i2 * 17 + 3, baseY - wh * 2 - thh - 10, 10, 10);
+        for (let i = 0; i < 3; i++) ctx.fillRect(top2, ty - tw2 / 2 - 18 + i * 22, 10, 22);
       }
     };
-    drawTower(lx + 4, 46);
-    drawTower(rx - 4, 46);
-    if (walls >= 4) drawTower(cx, 78);
-    // přední hradba - palisáda (0) nebo kamenná zeď s vlnitými instemi
-    if (walls === 0) {
-      for (let px2 = lx; px2 <= rx - 12; px2 += 14) {
-        ctx.fillStyle = "#9a6a3d";
-        ctx.fillRect(px2, topY + 8, 11, wh * 2 - 8);
-        ctx.fillStyle = "#7a4f2c";
-        ctx.fillRect(px2, topY + 8, 11, 5);
-        ctx.fillStyle = "#b0793f";
+    // rohové bašty nahoře a dole + věže po stranách brány (vykukují před čelo zdi)
+    tower2(F, 94, 152, 46, walls >= 3);
+    tower2(F, H2 - 94, 152, 46, walls >= 3);
+    tower2(F - 30, gy - 168, 142, 26 + walls * 8, true);
+    tower2(F - 30, gy + 168, 142, 26 + walls * 8, true);
+  }
+
+  // --- 4) kontaktní stín před hradbou ---
+  const grS = ctx.createLinearGradient(F - 74, 0, F - 20, 0);
+  grS.addColorStop(0, "rgba(0,0,0,0)");
+  grS.addColorStop(1, "rgba(0,0,0,0.3)");
+  ctx.fillStyle = grS;
+  ctx.fillRect(F - 74, -20, 56, H2 + 40);
+
+  // --- 5) hradba po celé výšce mapy ---
+  if (walls === 0) {
+    // dřevěná palisáda - svislé špičaté kůly
+    for (let py = 6; py < H2; py += 15) {
+      ctx.fillStyle = "#9a6a3d";
+      ctx.fillRect(F - 8, py, 16, 15);
+      ctx.fillStyle = "#7a4f2c";
+      ctx.fillRect(F - 8, py, 16, 3);
+      ctx.fillStyle = "#b0793f";
+      ctx.beginPath();
+      ctx.moveTo(F - 8, py + 3);
+      ctx.lineTo(F, py - 7);
+      ctx.lineTo(F + 8, py + 3);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#5d3a1f";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(F - 4, 0);
+    ctx.lineTo(F - 4, H2);
+    ctx.stroke();
+  } else {
+    // kamenná zeď s cihelnou vazbou
+    const grW = ctx.createLinearGradient(F - 26, 0, F + bw, 0);
+    grW.addColorStop(0, stoneD);
+    grW.addColorStop(0.35, stone);
+    grW.addColorStop(1, stoneDD);
+    ctx.fillStyle = grW;
+    ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
+    ctx.strokeStyle = "rgba(80,68,52,0.4)";
+    ctx.lineWidth = 1.4;
+    for (let by = -6; by < H2 + 20; by += 26) {
+      ctx.beginPath();
+      ctx.moveTo(F - 26, by);
+      ctx.lineTo(F + bw, by);
+      ctx.stroke();
+      const off = ((by / 26) | 0) % 2 ? 0 : 27;
+      for (let bx = F - 26 + off; bx < F + bw; bx += 54) {
         ctx.beginPath();
-        ctx.moveTo(px2, topY + 10);
-        ctx.lineTo(px2 + 5.5, topY);
-        ctx.lineTo(px2 + 11, topY + 10);
-        ctx.closePath();
-        ctx.fill();
+        ctx.moveTo(bx, by);
+        ctx.lineTo(bx, by + 26);
+        ctx.stroke();
       }
+    }
+    // mech a liány - zeď vypadá, jako tu stojí stovky let
+    ctx.fillStyle = "rgba(74,124,54,0.4)";
+    for (let my = 60; my < H2; my += 260) {
+      ctx.beginPath();
+      ctx.ellipse(F - 18, my, 9, 22, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(60,105,45,0.4)";
+      ctx.beginPath();
+      ctx.ellipse(F + 30, my + 130, 7, 16, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(74,124,54,0.4)";
+    }
+  }
+
+  // --- 6) cimbuří na koruně hradby ---
+  {
+    const toothCol = walls === 0 ? "#7a4f2c" : stoneD;
+    ctx.fillStyle = toothCol;
+    for (let my = 6; my < H2; my += 38) {
+      if (dead && ((my / 38) | 0) % 3 === 1) continue; // zbořené zuby po dobytí
+      ctx.fillRect(F + bw, my, 13, 22);
+    }
+  }
+
+  // --- 7) hlavní brána - hrotitý oblouk hledí na západ k lesu ---
+  const gw2 = 76; // šířka vchodu po ose y
+  // tmavý vchod do hloubky brány
+  ctx.fillStyle = "#14100c";
+  ctx.beginPath();
+  ctx.moveTo(F - 4, gy - gw2);
+  ctx.lineTo(F + 44, gy - gw2 - 8);
+  ctx.lineTo(F + 44, gy + gw2 + 8);
+  ctx.lineTo(F - 4, gy + gw2);
+  ctx.closePath();
+  ctx.fill();
+  if (!dead) {
+    // dubová vrat, pootevřená křídla
+    ctx.fillStyle = "#4a2f18";
+    ctx.fillRect(F, gy - gw2, 13, gw2 * 2);
+    ctx.strokeStyle = "#2c1c0e";
+    ctx.lineWidth = 1.4;
+    for (let dy = gy - gw2 + 10; dy < gy + gw2; dy += 18) {
+      ctx.beginPath();
+      ctx.moveTo(F, dy);
+      ctx.lineTo(F + 13, dy);
+      ctx.stroke();
+    }
+    // padací mříž spuštěná přes vchod
+    ctx.strokeStyle = "#57534e";
+    ctx.lineWidth = 2;
+    for (let m = gy - gw2 + 6; m < gy + gw2 - 2; m += 12) {
+      ctx.beginPath();
+      ctx.moveTo(F - 6, m);
+      ctx.lineTo(F + 30, m);
+      ctx.stroke();
+    }
+    for (const mx of [F - 1, F + 9, F + 21]) {
+      ctx.beginPath();
+      ctx.moveTo(mx, gy - gw2 + 2);
+      ctx.lineTo(mx, gy + gw2 - 2);
+      ctx.stroke();
+    }
+  }
+  // kamenné ostění vchodu (portálový zhloubený rám)
+  ctx.strokeStyle = stoneD;
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.moveTo(F + 4, gy - gw2 - 6);
+  ctx.lineTo(F - 30, gy - gw2 - 24);
+  ctx.moveTo(F + 4, gy + gw2 + 6);
+  ctx.lineTo(F - 30, gy + gw2 + 24);
+  ctx.stroke();
+  ctx.fillStyle = stoneD;
+  // hrotitý oblouk nad vchodem (směřuje na západ ven k netvorům)
+  ctx.beginPath();
+  ctx.moveTo(F - 30, gy - gw2 - 24);
+  ctx.quadraticCurveTo(F - 6, gy - gw2 - 8, F + 4, gy - gw2 - 6);
+  ctx.lineTo(F + 4, gy + gw2 + 6);
+  ctx.quadraticCurveTo(F - 6, gy + gw2 + 8, F - 30, gy + gw2 + 24);
+  ctx.closePath();
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  if (c.keep && !dead) {
+    // Královský donjon - zlatý rám brány
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(F - 34, gy - gw2 - 28, 44, gw2 * 2 + 56);
+  }
+  // znak brány - štít s korunou nad vchodem
+  if (walls >= 1 && !dead) {
+    const shy = gy - gw2 - 46;
+    ctx.fillStyle = "#2d1b4e";
+    ctx.beginPath();
+    ctx.moveTo(F - 10, shy - 15);
+    ctx.lineTo(F + 16, shy - 15);
+    ctx.lineTo(F + 16, shy + 8);
+    ctx.lineTo(F + 3, shy + 17);
+    ctx.lineTo(F - 10, shy + 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#facc15";
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.fillStyle = "#facc15";
+    ctx.beginPath();
+    ctx.moveTo(F - 4, shy - 2);
+    ctx.lineTo(F - 4, shy - 11);
+    ctx.lineTo(F - 1, shy - 7);
+    ctx.lineTo(F + 3, shy - 12);
+    ctx.lineTo(F + 7, shy - 7);
+    ctx.lineTo(F + 10, shy - 11);
+    ctx.lineTo(F + 10, shy - 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // --- 8) pochodně po celé hradbě - plápolají, dokud hrad žije ---
+  if (!dead) {
+    for (let py = 46; py < H2 - 20; py += 236) {
+      if (Math.abs(py - gy) < 130) continue; // u brány hoří samostatné košály
+      const fl2 = 0.6 + 0.35 * Math.sin(t * 9 + py * 0.11);
       ctx.strokeStyle = "#57534e";
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.moveTo(lx, topY + 40);
-      ctx.lineTo(rx, topY + 40);
+      ctx.moveTo(F - 34, py + 8);
+      ctx.lineTo(F - 34, py);
       ctx.stroke();
-    } else {
-      ctx.fillStyle = stone;
-      ctx.fillRect(lx, topY, bw, wh * 2);
-      // kamenné insty - mřížka spár ve zdi
-      ctx.strokeStyle = stoneD;
-      ctx.lineWidth = 1.6;
-      for (let sx = lx; sx <= rx; sx += 26) {
-        ctx.beginPath();
-        ctx.moveTo(sx, topY);
-        ctx.lineTo(sx, baseY);
-        ctx.stroke();
-      }
-      const off = 13;
-      for (let sy = topY + 14; sy < baseY; sy += 15) {
-        ctx.beginPath();
-        ctx.moveTo(lx, sy);
-        ctx.lineTo(rx, sy);
-        ctx.stroke();
-      }
-      // posun spár v plné cihelné vazbě
-      for (let sy = topY + 14; sy < baseY; sy += 30) {
-        ctx.beginPath();
-        ctx.moveTo(lx + off, sy - 15);
-        ctx.lineTo(lx + off, sy);
-        ctx.stroke();
-      }
-      // cimbuří na hradě
-      ctx.fillStyle = stoneD;
-      for (let sx = lx; sx <= rx - 10; sx += 20) ctx.fillRect(sx, topY - 12, 11, 12);
-    }
-    // brána - hrotitý oblouk s padacím mostem (mříž spuštěná přes vchod)
-    const gy = baseY - wh * 0.28;
-    const gx = cx - 30 - walls * 2;
-    const gw = (60 + walls * 4) / 2;
-    ctx.fillStyle = "#1c1917";
-    ctx.beginPath();
-    ctx.moveTo(gx, gy);
-    ctx.lineTo(gx, baseY - 26);
-    ctx.lineTo(gx + gw * 2, baseY - 26);
-    ctx.lineTo(gx + gw * 2, gy);
-    ctx.quadraticCurveTo(cx, gy - 42, gx, gy);
-    ctx.fill();
-    ctx.strokeStyle = stoneD;
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    // mříž - svislice
-    ctx.strokeStyle = dead ? "#3f3527" : "#57534e";
-    ctx.lineWidth = 2;
-    for (let ix = gx + 6; ix < gx + gw * 2 - 4; ix += 9) {
+      ctx.fillStyle = `rgba(251,146,60,${fl2})`;
       ctx.beginPath();
-      ctx.moveTo(ix, gy - 8);
-      ctx.lineTo(ix, baseY - 28);
-      ctx.stroke();
-    }
-    if (c.keep) {
-      ctx.strokeStyle = "#facc15";
-      ctx.lineWidth = 2.5;
-      ctx.strokeRect(gx - 4, gy - 34, gw * 2 + 8, 12 + wh * 0.28 + 4);
-    }
-    // střílny s lučištníky - dřevěné arkýdy na hradbě, palí na netvory pod hradbami
-    if (c.bows > 0) {
-      for (let b = 0; b < c.bows; b++) {
-        const hx = lx + 34 + (b * (bw - 68)) / Math.max(1, c.bows - 1);
-        const hy = topY + 16;
-        ctx.fillStyle = "#78716c";
-        ctx.fillRect(hx - 17, hy - 12, 34, 22);
-        ctx.fillStyle = "#57534e";
-        ctx.fillRect(hx - 17, hy - 16, 34, 6);
-        ctx.fillStyle = "#1c1917";
-        ctx.fillRect(hx - 6, hy - 8, 12, 12);
-        // lučištník - helma, luk a vystřelený záblesk
-        ctx.fillStyle = "#bfdbfe";
-        ctx.beginPath();
-        ctx.arc(hx, hy - 2, 3.4, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.fillStyle = "#3b82f6";
-        ctx.fillRect(hx - 3, hy + 2, 6, 5);
-        ctx.strokeStyle = "#92400e";
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.arc(hx - 12, hy - 4, 6, -1.1, 1.1);
-        ctx.stroke();
-        if (c.cd < 0.12) {
-          ctx.fillStyle = "rgba(254,240,138,0.9)";
-          ctx.beginPath();
-          ctx.arc(hx - 16, hy - 4, 3, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
-    }
-    // pochodně u brány oživují hrad
-    if (walls >= 1) {
-      for (const tpx of [gx - 14, gx + gw * 2 + 16]) {
-        ctx.strokeStyle = "#57534e";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(tpx, topY + 34);
-        ctx.lineTo(tpx, topY + 24);
-        ctx.stroke();
-        ctx.fillStyle = `rgba(251,146,60,${0.65 + 0.3 * Math.sin(t * 9 + tpx)})`;
-        ctx.beginPath();
-        ctx.arc(tpx, topY + 20 + Math.sin(t * 11 + tpx) * 1.5, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-  // dobořený hrad - šedý rubem posypaný troskami
-  if (dead) {
-    ctx.fillStyle = "rgba(28,25,23,0.55)";
-    ctx.fillRect(lx - 6, topY - 60, bw + 12, wh * 2 + 60);
-    ctx.fillStyle = "#57534e";
-    for (let rx2 = lx; rx2 < rx; rx2 += 22) {
+      ctx.arc(F - 34, py - 5 + Math.sin(t * 11 + py) * 1.5, 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(254,240,138,${fl2 * 0.8})`;
       ctx.beginPath();
-      ctx.arc(rx2, baseY - 10 - (rx2 % 3) * 12, 7, 0, Math.PI * 2);
+      ctx.arc(F - 34, py - 6, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // košály po stranách brány
+    for (const byy of [gy - 106, gy + 106]) {
+      ctx.fillStyle = "#3f3f46";
+      ctx.beginPath();
+      ctx.ellipse(F - 40, byy + 10, 8, 4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#57534e";
+      ctx.fillRect(F - 43, byy, 6, 10);
+      const fl3 = 0.65 + 0.3 * Math.sin(t * 8 + byy * 0.07);
+      ctx.fillStyle = `rgba(249,115,22,${fl3})`;
+      ctx.beginPath();
+      ctx.ellipse(F - 40, byy - 6 + Math.sin(t * 10 + byy) * 1.6, 6, 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = `rgba(254,240,138,${fl3 * 0.85})`;
+      ctx.beginPath();
+      ctx.ellipse(F - 40, byy - 5, 2.6, 4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
-  // záblesk rány - bílé přesvětlení zas proběhlo
+
+  // --- 9) lučištníci na hradbě (střílny ze stromu dovedností) ---
+  if (c.bows > 0 && !dead) {
+    for (let b = 0; b < c.bows; b++) {
+      const ay = castleBowY(g, b);
+      const ax = F + bw - 20;
+      ctx.fillStyle = "#1c1917";
+      ctx.fillRect(ax - 13, ay - 13, 26, 26); // tmavý výklenek arkýdy
+      ctx.fillStyle = "#bfdbfe"; // hlava v přilbě
+      ctx.beginPath();
+      ctx.arc(ax, ay - 5, 3.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#2563eb"; // tělo v modrém plášti
+      ctx.fillRect(ax - 4, ay - 1, 8, 10);
+      ctx.strokeStyle = "#92400e"; // luk
+      ctx.lineWidth = 1.8;
+      ctx.beginPath();
+      ctx.arc(ax - 14, ay - 4, 7, -1.1, 1.1);
+      ctx.stroke();
+      if (c.cd < 0.12) {
+        // záblesk výstřelu
+        ctx.fillStyle = "rgba(254,240,138,0.9)";
+        ctx.beginPath();
+        ctx.arc(ax - 18, ay - 4, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  // --- 10) poškození: praskliny, saze a popraskané zuby ---
+  if (!dead && frac < 0.66) {
+    ctx.strokeStyle = "rgba(28,25,23,0.75)";
+    ctx.lineWidth = 2.2;
+    const cracks = frac < 0.33 ? [150, 360, 620, 830] : [220, 720];
+    for (let ci = 0; ci < cracks.length; ci++) {
+      const cy0 = cracks[ci];
+      ctx.beginPath();
+      ctx.moveTo(F - 22, cy0);
+      ctx.lineTo(F + 8, cy0 + 10);
+      ctx.lineTo(F - 4, cy0 + 24);
+      ctx.lineTo(F + 20, cy0 + 30);
+      ctx.stroke();
+    }
+    // saze nad branou
+    ctx.fillStyle = "rgba(20,16,12,0.35)";
+    ctx.beginPath();
+    ctx.ellipse(F + 2, gy - 40, 16, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(F + 2, gy + 40, 16, 30, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // --- 11) dobytý hrad: trosky, protržená brána, dým ---
+  if (dead) {
+    ctx.fillStyle = "rgba(28,25,23,0.5)";
+    ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
+    // hromady kamení před hradbou
+    for (let rI = 0; rI < 26; rI++) {
+      const ry = 40 + ((rI * 383) % (H2 - 60));
+      const rx2 = F - 24 - ((rI * 617) % 46);
+      ctx.fillStyle = rI % 3 === 0 ? "#78716c" : "#57534e";
+      ctx.beginPath();
+      ctx.arc(rx2, ry, 6 + (rI % 4) * 3.2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // protržená brána - zbytky mříže vypadly ven
+    ctx.strokeStyle = "#3f3527";
+    ctx.lineWidth = 2;
+    for (let m = gy - gw2 + 8; m < gy + gw2 - 4; m += 14) {
+      ctx.beginPath();
+      ctx.moveTo(F - 8, m);
+      ctx.lineTo(F - 34, m + 6);
+      ctx.stroke();
+    }
+    // stoupající dým
+    for (let sI = 0; sI < 5; sI++) {
+      const sy = gy - 60 + Math.sin(t * 0.7 + sI * 1.7) * 30;
+      ctx.fillStyle = `rgba(120,113,108,${0.1 + 0.05 * Math.sin(t + sI)})`;
+      ctx.beginPath();
+      ctx.ellipse(F + bw + 30 + sI * 12, sy, 26 + sI * 8, 40, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // --- 12) záblesk rány ---
   if (c.flash > 0) {
     ctx.fillStyle = `rgba(255,80,60,${Math.min(0.45, c.flash * 2.4)})`;
-    ctx.fillRect(lx, topY - 60, bw, wh * 2 + 60);
+    ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
   }
-  // 🔰 nad hradem HP: 🏰 label + bar
-  const bwid = 244;
-  const by = topY - 118 - (walls > 2 ? 26 : 0) - (c.keep ? 40 : 0);
+
+  // --- 13)  HP hradu: svislý bar na koruně hradby u brány ---
+  const bhX = F + bw + 18;
+  const bhY = gy - 176;
+  const bhH = 352;
   ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.fillRect(cx - bwid / 2, by, bwid, 14);
+  ctx.fillRect(bhX, bhY - 14, 14, bhH + 30);
   ctx.strokeStyle = "rgba(255,255,255,0.35)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(cx - bwid / 2, by, bwid, 14);
-  const frac = Math.max(0, c.hp / c.maxHp);
+  ctx.strokeRect(bhX, bhY - 14, 14, bhH + 30);
   const grad = frac > 0.5 ? "#fbbf24" : frac > 0.25 ? "#fb923c" : "#ef4444";
   ctx.fillStyle = grad;
-  ctx.fillRect(cx - bwid / 2 + 2, by + 2, (bwid - 4) * frac, 10);
+  ctx.fillRect(bhX + 2, bhY + bhH - bhH * frac, 10, bhH * frac);
   ctx.font = "bold 13px system-ui, sans-serif";
-  ctx.textAlign = "center";
+  ctx.textAlign = "left";
   ctx.fillStyle = "#fff7ed";
-  ctx.fillText("🏰", cx - bwid / 2 + 12, by + 12);
-  ctx.font = "bold 10px system-ui, sans-serif";
-  ctx.fillText(`${Math.ceil(c.hp)} / ${c.maxHp}`, cx, by + 11);
+  ctx.fillText("", bhX - 1, bhY - 2);
   if (c.hitT > 0 && c.hp > 0) {
     ctx.fillStyle = `rgba(248,113,113,${0.6 + 0.4 * Math.sin(t * 8)})`;
-    ctx.font = "bold 13px system-ui, sans-serif";
-    ctx.fillText("⚔️ HRAD POD ÚTOKEM!", cx, by - 8);
+    ctx.font = "bold 15px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("⚔️ HRAD POD ÚTOKEM!", F + bw + 26, gy - 206);
+    ctx.textAlign = "left";
   }
-  ctx.textAlign = "left";
 }
+
 
 function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   const h = g.hero;
@@ -6065,11 +6246,11 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.beginPath();
   ctx.ellipse(h.x, h.y + 13, 12, 5, 0, 0, Math.PI * 2);
   ctx.fill();
-  // 🥷 stínová záměna - ninja v kouři je skoro nevidět
+  // 亮 stínová záměna - ninja v kouři je skoro nevidět
   if (h.invis > 0) {
     ctx.globalAlpha = 0.32 + 0.08 * Math.sin(t * 9);
   }
-  // 🛡️ rytířova štítová zeď - velký kulatý štít se zlatým hrotem
+  // ️ rytířova štítová zeď - velký kulatý štít se zlatým hrotem
   if (h.shieldT > 0) {
     const sr = 27 + Math.sin(t * 8) * 2.5;
     ctx.save();
@@ -6093,12 +6274,12 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.fill();
     ctx.restore();
   }
-  // 🎨 originální vzhled postavy - každá classa má úplně jiné tělo, hlavu i detaily
+  //  originální vzhled postavy - každá classa má úplně jiné tělo, hlavu i detaily
   const perpX = Math.cos(h.angle + Math.PI / 2);
   const perpY = Math.sin(h.angle + Math.PI / 2);
   const faceY = y - 4;
   if (cls.id === "archer") {
-    // 🏹 LUČIŠTNÍK - tmavě zelený plášť, kožená tunika, toulec se šípy, kapuce s červeným pérem
+    //  LUČIŠTNÍK - tmavě zelený plášť, kožená tunika, toulec se šípy, kapuce s červeným pérem
     const backX = h.x - ex * (17 + Math.sin(t * 6) * 3);
     const backY = y - ey * (17 + Math.sin(t * 6) * 3);
     ctx.fillStyle = "#14532d";
@@ -6179,7 +6360,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.quadraticCurveTo(h.x - ex * 8 - perpX * 7, faceY - 11 + Math.sin(t * 5) * 1.5, h.x - ex * 11 - perpX * 8, faceY - 8);
     ctx.stroke();
   } else if (cls.id === "soldier") {
-    // 🎖️ VOJÁK - žádný plášť: uniforma, ocelová přilbice s okrajem, zlaté epolety
+    // ️ VOJÁK - žádný plášť: uniforma, ocelová přilbice s okrajem, zlaté epolety
     // tělo - hranatá uniforma (šestiúhelník, žádný kruh)
     const bg = ctx.createRadialGradient(h.x - 4, y - 5, 2, h.x, y, 14);
     bg.addColorStop(0, "#3d5a80");
@@ -6248,7 +6429,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.arc(h.x, faceY - 6, 1.4, 0, Math.PI * 2);
     ctx.fill();
   } else if (cls.id === "ninja") {
-    // 🥷 NINJA - celočerný stealth oblek, plná maska, čelenka se dvěma vlajícími pásky
+    // 亮 NINJA - celočerný stealth oblek, plná maska, čelenka se dvěma vlajícími pásky
     // úzká vlnící se šála za krkem
     ctx.fillStyle = "#0f172a";
     ctx.beginPath();
@@ -6428,7 +6609,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.fillStyle = "#b45309";
     ctx.fillRect(h.x - 6.4, faceY - 3.6, 12.8, 0.9);
   } else if (cls.id === "mage") {
-    // 🔮 MÁG - fialová róba se zlatými hvězdami, provazový pás, šedý plnovous, vysoký klobouk
+    //  MÁG - fialová róba se zlatými hvězdami, provazový pás, šedý plnovous, vysoký klobouk
     const hem5 = Math.sin(t * 4) * 1.6;
     // splývavá róba - dole se vlní
     const rg = ctx.createLinearGradient(h.x, y - 12, h.x, y + 14);
@@ -6527,7 +6708,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
   const bx = h.x + ex * 13;
   const by = y + ey * 13;
   if (cls.id === "archer") {
-    // 🏹 lučištník - luk s omotanou rukojetí
+    //  lučištník - luk s omotanou rukojetí
     ctx.strokeStyle = "#d9a066";
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -6566,7 +6747,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.fillRect(5.5, -3.4, 3, 6.8);
     ctx.restore();
   } else if (cls.id === "soldier") {
-    // 🎖️ voják - pistole se zpětným rázem a úsťovou září
+    // ️ voják - pistole se zpětným rázem a úsťovou září
     const px = bx - ex * kick * 3;
     const py = by - ey * kick * 3;
     ctx.save();
@@ -6591,7 +6772,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     }
   } else if (cls.id === "knight") {
     // ⚔️ rytíř - dlouhý meč v ruce, po útoku švihne obloukem
-    // 🛡️ železná disciplína - vestoj: kolem hrdiny se objeví štítová bariéra
+    // ️ železná disciplína - vestoj: kolem hrdiny se objeví štítová bariéra
     if ((h.stillT ?? 0) > 0.25) {
       ctx.strokeStyle = `rgba(147,197,253,${0.45 + 0.2 * Math.sin(t * 6)})`;
       ctx.lineWidth = 2;
@@ -6651,7 +6832,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.stroke();
     }
   } else if (cls.id === "ninja") {
-    // 🥷 ninja - rotující ostří mezi prsty
+    // 亮 ninja - rotující ostří mezi prsty
     const nsx = bx - ex * kick * 3;
     const nsy = by - ey * kick * 3;
     ctx.save();
@@ -6682,7 +6863,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.lineWidth = 1;
     ctx.stroke();
   } else {
-    // 🔮 mág - hůlka s nabíjejícím se krystalem
+    //  mág - hůlka s nabíjejícím se krystalem
     const sx = h.x - ex * 6;
     const sy = y - ey * 6;
     const tx2 = h.x + ex * 17;
@@ -6751,7 +6932,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.fill();
     }
   }
-  // 🤢 otráven vosou - zelené boulíčky
+  // 濫 otráven vosou - zelené boulíčky
   if (h.poisT > 0) {
     ctx.fillStyle = `rgba(134,239,172,${0.5 + 0.3 * Math.sin(t * 7)})`;
     for (let k = 0; k < 3; k++) {
@@ -6761,7 +6942,7 @@ function drawHero(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.fill();
     }
   }
-  // 🥷 návrat plné viditelnosti (i po vypršení záměny)
+  // 亮 návrat plné viditelnosti (i po vypršení záměny)
   ctx.globalAlpha = 1;
 }
 
@@ -6792,7 +6973,7 @@ const KIND_COLORS: Record<number, { base: string; shade: string; line: string }>
 
 function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: number, t: number): void {
   const ea = e.fa !== undefined ? e.fa : Math.atan2(hy - e.y, hx - e.x);
-  // 🦡 zahrabaný jezevec - vidět je jen hromádka hlíny s odhazovanými hrudkami
+  // 說 zahrabaný jezevec - vidět je jen hromádka hlíny s odhazovanými hrudkami
   if ((e.subT ?? 0) > 0) {
     ctx.fillStyle = "rgba(70,48,25,0.9)";
     ctx.beginPath();
@@ -6824,7 +7005,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
   const pal = !e.boss && !e.minib ? KIND_COLORS[e.kind] : undefined;
   const dark = pal ? pal.line : hsla(e.hue, 80, 18, 1);
   const main = e.flash > 0 ? "#ffffff" : pal ? pal.base : e.kind === 6 ? hsla(e.hue, 75, 62, 0.55) : hsla(e.hue, 75, 50, 1);
-  // 🖤 jednotný měkký stín pod siluetou (Brotato/VS styl - každý stojí na zemi)
+  //  jednotný měkký stín pod siluetou (Brotato/VS styl - každý stojí na zemi)
   if (e.kind !== 6) {
     const flying = e.kind === 1 || e.kind === 13;
     ctx.fillStyle = "rgba(0,0,0,0.22)";
@@ -7141,7 +7322,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
   ctx.beginPath();
   ctx.arc(e.x - e.r * 0.35, e.y - e.r * 0.4, e.r * 0.3, 0, Math.PI * 2);
   ctx.fill();
-  // 🌟 rim light - světlá hrana nahoře siluety, tělo vypadá plastické (Survivor.io gloss)
+  //  rim light - světlá hrana nahoře siluety, tělo vypadá plastické (Survivor.io gloss)
   ctx.strokeStyle = "rgba(255,255,255,0.28)";
   ctx.lineWidth = e.r * 0.13;
   ctx.beginPath();
@@ -7516,7 +7697,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.beginPath();
     ctx.arc(e.x + e.r * 0.06, e.y - e.r * 0.08 + sp2 * 1.5, 1.8, 0, Math.PI * 2);
     ctx.fill();
-    // 🫧 pod 35 % HP se nafoukne a chvěje se - varování, že se za chvíli rozpadne
+    // 﫧 pod 35 % HP se nafoukne a chvěje se - varování, že se za chvíli rozpadne
     if (!e.noSplit && e.hp < e.maxHp * 0.35) {
       const puf = e.r * (1 + 0.12 * Math.sin(t * 12 + e.id)) + 3;
       ctx.strokeStyle = `rgba(244,114,182,${0.5 + 0.3 * Math.sin(t * 12 + e.id)})`;
@@ -7550,7 +7731,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
   for (const side of [-1, 1]) {
     const cx = e.x + side * e.r * 0.4;
     const cy = e.y + eyeY * e.r;
-    // 👁️ Vampire Survivors oko - tmavý obrys, bělíčko, zornička sledující hrdinu + jiskřička
+    // ️ Vampire Survivors oko - tmavý obrys, bělíčko, zornička sledující hrdinu + jiskřička
     ctx.strokeStyle = dark;
     ctx.lineWidth = Math.max(1, e.r * 0.055);
     ctx.fillStyle = eyeW;
@@ -7568,7 +7749,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.beginPath();
     ctx.arc(px + e.r * 0.035, py - e.r * 0.045, e.r * 0.035, 0, Math.PI * 2);
     ctx.fill();
-    // 😠 zlobivé obočí šikmo ke středu - duch a netopýr ho nedostávají (jiná tvář)
+    //  zlobivé obočí šikmo ke středu - duch a netopýr ho nedostávají (jiná tvář)
     if (e.kind !== 6 && e.kind !== 1) {
       ctx.lineCap = "round";
       ctx.lineWidth = Math.max(1.5, e.r * 0.095);
@@ -7579,11 +7760,11 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
       ctx.lineCap = "butt";
     }
   }
-  // 🌟 elitní korunka - barva podle vlastnosti (⚡ rychlá / 💥 výbuch / 🩸 léčivá / 🛡️ štít)
+  //  elitní korunka - barva podle vlastnosti (⚡ rychlá /  výbuch / 喝 léčivá / ️ štít)
   if (e.elite) {
     const ec = e.elite === "swift" ? "#fde047" : e.elite === "boom" ? "#f97316" : e.elite === "vamp" ? "#f43f5e" : "#38bdf8";
     if (e.elite === "shield" && (e.immT ?? 0) > 0) {
-      // 🛡️ hexagonový štít kolem celého těla - vidět dřív, než rána odlete
+      // ️ hexagonový štít kolem celého těla - vidět dřív, než rána odlete
       ctx.strokeStyle = `rgba(56,189,248,${0.5 + 0.3 * Math.sin(t * 12)})`;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
@@ -7641,7 +7822,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.lineTo(e.x + 9, cyb);
     ctx.closePath();
     ctx.fill();
-    // 🛡️ imunita mezi fázemi - pulzující štít + odpočet
+    // ️ imunita mezi fázemi - pulzující štít + odpočet
     if (e.immT && e.immT > 0) {
       ctx.strokeStyle = `rgba(103,232,249,${0.55 + 0.35 * Math.sin(t * 10)})`;
       ctx.lineWidth = 4;
@@ -7655,7 +7836,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
       ctx.fillStyle = "#a5f3fc";
       ctx.font = "bold 14px system-ui, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText(`🛡️ ${Math.ceil(e.immT)}`, e.x, e.y - e.r - 20);
+      ctx.fillText(`️ ${Math.ceil(e.immT)}`, e.x, e.y - e.r - 20);
     }
     // fáze bosse - každá další fáze přidá zářivý prstenec
     for (let p = 2; p <= e.phase; p++) {
@@ -7827,7 +8008,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.fill();
     ctx.restore();
   } else if (e.kind === 9) {
-    // 🌟 elitní příšera - zářící fialová aura + rotační hroty
+    //  elitní příšera - zářící fialová aura + rotační hroty
     ctx.strokeStyle = `rgba(192,38,211,${0.45 + 0.3 * Math.sin(t * 6 + e.id)})`;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -7854,7 +8035,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.arc(e.x - e.r * 0.08, e.y - e.r * 0.1, e.r * 0.07, 0, Math.PI * 2);
     ctx.fill();
   } else if (e.kind === 10) {
-    // 💣 dynamiter - horník: svítící lampa na přilbě, knír, kombinéza a svazek dynamitu mířící na hrdinu
+    //  dynamiter - horník: svítící lampa na přilbě, knír, kombinéza a svazek dynamitu mířící na hrdinu
     // svítící lampa na přilbě
     const lampA = 0.6 + 0.3 * Math.sin(t * 8 + e.id);
     ctx.fillStyle = `rgba(253,224,71,${lampA})`;
@@ -7953,7 +8134,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
       ctx.restore();
     }
   } else if (e.kind === 12) {
-    // 🐝 vosa - třepetající křidélka a černé pruhy na těle
+    //  vosa - třepetající křidélka a černé pruhy na těle
     const fl = 0.35 + 0.3 * Math.sin(t * 26 + e.id);
     ctx.fillStyle = `rgba(226,232,240,${fl})`;
     ctx.beginPath();
@@ -7969,7 +8150,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
       ctx.fill();
     }
   } else if (e.kind === 13) {
-    // 🦡 jezevec - černé pruhy přes tvář a rypák
+    // 說 jezevec - černé pruhy přes tvář a rypák
     ctx.fillStyle = "#18181b";
     ctx.beginPath();
     ctx.ellipse(e.x - e.r * 0.32, e.y - e.r * 0.35, e.r * 0.13, e.r * 0.42, 0.2, 0, Math.PI * 2);
@@ -7997,7 +8178,7 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
     ctx.lineTo(e.x + e.r * 0.12, e.y - e.r * 0.68);
     ctx.stroke();
   } else if (e.kind === 15) {
-    // 🔥 sopkaš - plamenová hříva a jiskřičky
+    //  sopkaš - plamenová hříva a jiskřičky
     ctx.fillStyle = "rgba(251,146,60,0.9)";
     ctx.beginPath();
     ctx.moveTo(e.x - e.r * 0.5, e.y - e.r * 0.78);
@@ -8047,14 +8228,213 @@ function drawEnemy(ctx: CanvasRenderingContext2D, e: Enemy, hx: number, hy: numb
   }
 }
 
-// 🚀 optimalizace: statické pozadí louky (tráva, kytičky, pruhy, mřížka) se přerenderuje
+//  pozice lučištníka na hradbě - střílny se rozkládají kolem brány
+function castleBowY(g: Game, b: number): number {
+  return g.castle.y + (b - (g.castle.bows - 1) / 2) * 150;
+}
+
+// deterministický "náhodný" generátor - pozadí je vždy stejně uspořádané
+const bgHash = (i: number) => (((i * 2654435761) % 997) + 997) % 997 / 997;
+
+// ️ stezka od západního lesa k bráně hradu - jemně kličkuje, aby byla živá
+function paintTrail(c: CanvasRenderingContext2D): void {
+  const y0 = ARENA_H / 2;
+  const wob = (x: number) => Math.sin(x * 0.004) * 26;
+  c.lineCap = "round";
+  c.lineJoin = "round";
+  // hlavní pás cesty (udusaná hlína)
+  c.strokeStyle = "rgba(138,106,69,0.85)";
+  c.lineWidth = 84;
+  c.beginPath();
+  c.moveTo(-30, y0);
+  for (let x = 0; x <= CASTLE_FRONT; x += 90) c.lineTo(x, y0 + wob(x));
+  c.lineTo(CASTLE_FRONT + 10, y0);
+  c.stroke();
+  // rozježděné koleje
+  c.strokeStyle = "rgba(94,70,45,0.6)";
+  c.lineWidth = 7;
+  for (const off of [-17, 17]) {
+    c.beginPath();
+    c.moveTo(-30, y0 + off);
+    for (let x = 0; x <= CASTLE_FRONT; x += 90) c.lineTo(x, y0 + off + wob(x));
+    c.stroke();
+  }
+  // rozsypané kamínky a trs trávy po krajích stezky
+  let i = 0;
+  for (let x = 40; x < CASTLE_FRONT - 40; x += 54) {
+    const side = bgHash(i * 3 + 1) > 0.5 ? 1 : -1;
+    const px2 = x + (bgHash(i * 5 + 2) - 0.5) * 30;
+    const py2 = y0 + side * (46 + bgHash(i * 7 + 3) * 22) + wob(x) * side * 0.4;
+    if (bgHash(i * 11 + 4) > 0.45) {
+      c.fillStyle = "rgba(120,110,95,0.5)";
+      c.beginPath();
+      c.ellipse(px2, py2, 3 + bgHash(i * 13 + 5) * 4, 2 + bgHash(i * 17 + 6) * 2, 0, 0, Math.PI * 2);
+      c.fill();
+    } else {
+      c.fillStyle = "rgba(60,120,55,0.6)";
+      c.fillRect(px2, py2, 2, 4 + bgHash(i * 19 + 7) * 4);
+      c.fillRect(px2 + 4, py2 + 2, 2, 3 + bgHash(i * 23 + 8) * 3);
+    }
+    i++;
+  }
+}
+
+//  hučatý jehličnatý les místo plotu - zeď smrků podél celého okraje stezky
+function paintForestWalls(c: CanvasRenderingContext2D): void {
+  const bandSH = 92; // hloubka pásu lesa od okraje
+  // tmavý podrost podél horního okraje (nejtmavší u kraje)
+  let gr = c.createLinearGradient(0, 0, 0, bandSH);
+  gr.addColorStop(0, "rgba(10,32,16,0.95)");
+  gr.addColorStop(1, "rgba(10,32,16,0)");
+  c.fillStyle = gr;
+  c.fillRect(0, 0, CASTLE_FRONT, bandSH);
+  // dolní okraj
+  gr = c.createLinearGradient(0, ARENA_H, 0, ARENA_H - bandSH);
+  gr.addColorStop(0, "rgba(10,32,16,0.95)");
+  gr.addColorStop(1, "rgba(10,32,16,0)");
+  c.fillStyle = gr;
+  c.fillRect(0, ARENA_H - bandSH, CASTLE_FRONT, bandSH);
+  // západní hlubina lesa - odtud vyrážejí netvoři
+  gr = c.createLinearGradient(0, 0, 216, 0);
+  gr.addColorStop(0, "rgba(8,26,14,0.95)");
+  gr.addColorStop(1, "rgba(8,26,14,0)");
+  c.fillStyle = gr;
+  c.fillRect(0, 0, 216, ARENA_H);
+  // dvě prosázené řady smrků na každém okraji (zadní menší, přední větší)
+  const row = (yEdge: number, dir: number, seed: number, big: boolean) => {
+    let i = 0;
+    for (let x = -40; x < CASTLE_FRONT + 40; x += big ? 64 : 44) {
+      const jx = (bgHash(seed * 31 + i * 3) - 0.5) * 28;
+      const jy = (bgHash(seed * 37 + i * 7 + 1) - 0.5) * 16;
+      const r = (big ? 34 : 24) + bgHash(seed * 41 + i * 11 + 2) * (big ? 22 : 14);
+      paintTree(c, { x: x + jx, y: yEdge + dir * (big ? 13 : 36) + jy, r, k: 0, rn: bgHash(seed * 43 + i * 13 + 3) });
+      i++;
+    }
+  };
+  row(8, 1, 11, false); // horní zadní řada
+  row(22, 1, 23, true); // horní přední řada
+  row(ARENA_H - 8, -1, 37, false); // dolní zadní řada
+  row(ARENA_H - 22, -1, 53, true); // dolní přední řada
+  // hustý háj na západním okraji mapy
+  let i2 = 0;
+  for (let y = -30; y < ARENA_H + 30; y += 50) {
+    for (let d = 0; d < 3; d++) {
+      const jy = (bgHash(701 + i2 * 5) - 0.5) * 28;
+      const r = 30 + bgHash(703 + i2 * 9 + d) * 20;
+      paintTree(c, { x: 8 + d * 36 + (bgHash(709 + i2 * 3 + d) - 0.5) * 14, y: y + jy, r, k: 0, rn: bgHash(713 + i2 * 7 + d) });
+      i2++;
+    }
+  }
+}
+
+//  spáleniště - od 3/4 stezky k hradbám vyhořel les, zbylo doutnající popel
+function paintBurn(c: CanvasRenderingContext2D): void {
+  const x0 = BURN_X - 700; // plynulý přechod od louky
+  // čím blíž k hradu, tím černější popel (průhledný nátěr pohltil i okrajové stromy)
+  const gr = c.createLinearGradient(x0, 0, CASTLE_FRONT, 0);
+  gr.addColorStop(0, "rgba(26,22,12,0)");
+  gr.addColorStop(0.35, "rgba(24,20,12,0.5)");
+  gr.addColorStop(1, "rgba(22,17,10,0.9)");
+  c.fillStyle = gr;
+  c.fillRect(x0, 0, CASTLE_FRONT - x0 + 40, ARENA_H);
+  // vypálené placky a plochy popela
+  for (let i = 0; i < 130; i++) {
+    const bx = BURN_X - 400 + bgHash(i * 3 + 301) * (CASTLE_FRONT - BURN_X + 300);
+    const by = bgHash(i * 5 + 307) * ARENA_H;
+    const br = 30 + bgHash(i * 7 + 313) * 90;
+    c.fillStyle = i % 3 === 0 ? "rgba(16,12,8,0.5)" : "rgba(52,44,36,0.4)";
+    c.beginPath();
+    c.ellipse(bx, by, br, br * (0.3 + bgHash(i * 11 + 317) * 0.4), bgHash(i * 13 + 319) * Math.PI, 0, Math.PI * 2);
+    c.fill();
+  }
+  // spálené kmeny - některé stojí jako obelisky, jiné popadaly
+  for (let i = 0; i < 46; i++) {
+    const bx = BURN_X - 250 + bgHash(i * 3 + 331) * (CASTLE_FRONT - BURN_X + 150);
+    const by = 60 + bgHash(i * 5 + 337) * (ARENA_H - 120);
+    const hgt = 26 + bgHash(i * 7 + 341) * 46;
+    const fallen = bgHash(i * 11 + 347) > 0.72;
+    c.save();
+    c.translate(bx, by);
+    c.rotate(fallen ? bgHash(i * 13 + 349) * Math.PI * 2 : (bgHash(i * 13 + 349) - 0.5) * 0.3);
+    const grT = c.createLinearGradient(0, -3, 0, 3);
+    grT.addColorStop(0, "#2c241c");
+    grT.addColorStop(0.5, "#191310");
+    grT.addColorStop(1, "#0d0a07");
+    c.fillStyle = grT;
+    c.beginPath();
+    c.moveTo(0, -3.2);
+    c.lineTo(hgt, -2.2);
+    c.lineTo(hgt, 2.2);
+    c.lineTo(0, 3.2);
+    c.closePath();
+    c.fill();
+    if (!fallen) {
+      // zlomené větévky u stojícího kmene
+      c.strokeStyle = "#0f0c09";
+      c.lineWidth = 1.6;
+      c.beginPath();
+      c.moveTo(hgt * 0.62, -2);
+      c.lineTo(hgt * 0.62 - 8, -9);
+      c.moveTo(hgt * 0.8, -1);
+      c.lineTo(hgt * 0.8 - 7, 8);
+      c.stroke();
+    }
+    c.restore();
+  }
+  // pařezy po vypálených stromech - některá jádra ještě žhnou
+  for (let i = 0; i < 40; i++) {
+    const bx = BURN_X - 200 + bgHash(i * 3 + 353) * (CASTLE_FRONT - BURN_X + 100);
+    const by = 40 + bgHash(i * 5 + 359) * (ARENA_H - 80);
+    const sr = 5 + bgHash(i * 7 + 367) * 7;
+    c.fillStyle = "#191310";
+    c.beginPath();
+    c.ellipse(bx, by, sr, sr * 0.55, 0, 0, Math.PI * 2);
+    c.fill();
+    c.fillStyle = "#332a20";
+    c.beginPath();
+    c.ellipse(bx, by, sr * 0.62, sr * 0.34, 0, 0, Math.PI * 2);
+    c.fill();
+    if (bgHash(i * 11 + 373) > 0.55) {
+      const em = c.createRadialGradient(bx, by, 0, bx, by, sr * 0.5);
+      em.addColorStop(0, "rgba(251,120,40,0.7)");
+      em.addColorStop(1, "rgba(251,120,40,0)");
+      c.fillStyle = em;
+      c.beginPath();
+      c.ellipse(bx, by, sr * 0.5, sr * 0.3, 0, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  // uhlíky a žhavé iskry po celém popelu
+  for (let i = 0; i < 220; i++) {
+    const bx = BURN_X - 350 + bgHash(i * 3 + 383) * (CASTLE_FRONT - BURN_X + 250);
+    const by = bgHash(i * 5 + 389) * ARENA_H;
+    if (bgHash(i * 7 + 397) > 0.4) {
+      c.fillStyle = "rgba(20,16,12,0.8)";
+      c.fillRect(bx, by, 2.2, 1.6);
+    } else {
+      c.fillStyle = "rgba(251,130,50,0.55)";
+      c.fillRect(bx, by, 1.8, 1.8);
+    }
+  }
+  // jemné šmouhy dýmu nad spáleništěm
+  for (let i = 0; i < 22; i++) {
+    const bx = BURN_X - 200 + bgHash(i * 3 + 401) * (CASTLE_FRONT - BURN_X + 150);
+    const by = 50 + bgHash(i * 5 + 409) * (ARENA_H - 100);
+    c.fillStyle = "rgba(90,86,80,0.07)";
+    c.beginPath();
+    c.ellipse(bx, by, 60 + bgHash(i * 7 + 419) * 50, 16 + bgHash(i * 11 + 421) * 10, 0, 0, Math.PI * 2);
+    c.fill();
+  }
+}
+
+//  optimalizace: statické pozadí louky (tráva, kytičky, pruhy, mřížka) se přerenderuje
 // jen jednou za run do offscreen canvasu - při hře se jen jednou blitne, místo stovek kreseb za frame
 let worldBg: { cv: HTMLCanvasElement | null; stars: Star[] | null } = { cv: null, stars: null };
 function getWorldBg(g: Game): HTMLCanvasElement | null {
   if (worldBg.cv && worldBg.stars === g.stars) return worldBg.cv;
   if (typeof document === "undefined") return null;
   const cv = document.createElement("canvas");
-  // 🚀 poloviční rozlišení + škálování při kreslení - 6000×6000 px by žralo ~144 MB RAM,
+  //  poloviční rozlišení + škálování při kreslení - 6000×6000 px by žralo ~144 MB RAM,
   // v polovině žere čtvrtinu a tráva je stejně jen měkká textura
   const BG_SCALE = 0.5;
   cv.width = ARENA_W * BG_SCALE;
@@ -8101,14 +8481,18 @@ function getWorldBg(g: Game): HTMLCanvasElement | null {
       c.fillRect(s.x, s.y, 2, 3 + s.r * 3);
     }
   }
+  // ️ stezka k hradu,  zdi lesa místo plotu a  spáleniště - vše předrenderované jednou
+  paintTrail(c);
+  paintForestWalls(c);
+  paintBurn(c);
   worldBg = { cv, stars: g.stars };
   return cv;
 }
 
-// 🚀 cache fontů letících textů - žádné skládání řetězců každý snímek
+//  cache fontů letících textů - žádné skládání řetězců každý snímek
 const FT_FONTS: Record<number, string> = {};
 
-// 🎨 kreslí jeden dekorativní strom/keř do libovolného kontextu (jednou, při tvorbě sprite)
+//  kreslí jeden dekorativní strom/keř do libovolného kontextu (jednou, při tvorbě sprite)
 function paintTree(c: CanvasRenderingContext2D, tr: TreeDeco): void {
   const rn = tr.rn;
   const sway = 0;
@@ -8118,87 +8502,110 @@ function paintTree(c: CanvasRenderingContext2D, tr: TreeDeco): void {
   c.ellipse(tr.x + 5, tr.y + 6, tr.r * 1.05, tr.r * 0.42, 0, 0, Math.PI * 2);
   c.fill();
   if (tr.k === 0) {
-    // --- strom: kmen s přechodem a kořenovým pakůtkem ---
+    // ---  jehličnatý smrk: kmen s kořeny, přesazená patra chvojky, jehličí ---
     const cx = tr.x + sway * 0.3;
-    const cy = tr.y - tr.r * 0.5;
-    const tg = c.createLinearGradient(tr.x - 4, 0, tr.x + 4, 0);
-    tg.addColorStop(0, "#9a6b3f");
-    tg.addColorStop(0.55, "#6b4226");
-    tg.addColorStop(1, "#3f2413");
-    c.fillStyle = tg;
+    const cy = tr.y;
+    const R = tr.r;
+    // stín na zemi
+    c.fillStyle = "rgba(0,0,0,0.28)";
     c.beginPath();
-    c.moveTo(cx - 3.5, cy);
-    c.lineTo(cx + 3.5, cy);
-    c.lineTo(cx + 2, tr.y + tr.r * 0.5);
-    c.lineTo(cx - 2, tr.y + tr.r * 0.5);
+    c.ellipse(cx + 5, cy + 4, R * 0.95, R * 0.3, 0, 0, Math.PI * 2);
+    c.fill();
+    // kmen s kořenovými náběhy
+    const tgd = c.createLinearGradient(cx - 5, 0, cx + 5, 0);
+    tgd.addColorStop(0, "#8a5a34");
+    tgd.addColorStop(0.55, "#5d3a1f");
+    tgd.addColorStop(1, "#3a2212");
+    c.fillStyle = tgd;
+    c.beginPath();
+    c.moveTo(cx - 4, cy - R * 0.85);
+    c.lineTo(cx + 4, cy - R * 0.85);
+    c.lineTo(cx + 2.5, cy + R * 0.35);
+    c.lineTo(cx - 2.5, cy + R * 0.35);
     c.closePath();
     c.fill();
     c.beginPath();
-    c.ellipse(cx, tr.y + tr.r * 0.5, 6, 2.5, 0, 0, Math.PI * 2);
+    c.moveTo(cx - 11, cy + R * 0.35);
+    c.lineTo(cx - 2.5, cy - R * 0.05);
+    c.lineTo(cx - 0.5, cy + R * 0.35);
+    c.closePath();
     c.fill();
-    // uzel na kmeni
-    c.fillStyle = "rgba(30,15,5,0.4)";
     c.beginPath();
-    c.ellipse(cx + 0.8, cy + tr.r * 0.28, 1.6, 2.4, 0, 0, Math.PI * 2);
+    c.moveTo(cx + 11, cy + R * 0.35);
+    c.lineTo(cx + 2.5, cy - R * 0.05);
+    c.lineTo(cx + 0.5, cy + R * 0.35);
+    c.closePath();
     c.fill();
-    // koruna - tmavý podklad
-    const hx2 = cx + sway;
-    const hy2 = cy - tr.r * 0.12;
-    c.fillStyle = "#16351c";
+    // celková silueta smrku - tmavý podklad
+    c.fillStyle = "#0d2a15";
     c.beginPath();
-    c.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
+    c.moveTo(cx, cy - R * 1.5);
+    c.lineTo(cx + R * 0.92, cy + R * 0.32);
+    c.lineTo(cx - R * 0.92, cy + R * 0.32);
+    c.closePath();
     c.fill();
-    // pět bochánků listí
-    for (let b = 0; b < 5; b++) {
-      const ba = (b / 5) * Math.PI * 2 + rn * 6.28 + (b % 2) * 0.4;
-      const br = tr.r * (0.42 + (((b * 7) + rn * 13) % 10) / 30);
-      c.fillStyle = b % 2 ? "#2d6a2e" : "#256028";
+    // čtyři přesazená patra chvojky - od nejspodnějšího k špičce
+    const tiers = 4;
+    for (let i2 = 0; i2 < tiers; i2++) {
+      const f = i2 / (tiers - 1);
+      const yBase = cy + R * 0.34 - f * (R * 1.28); // báze patra
+      const halfW = R * (0.95 - f * 0.62); // šířka patra
+      const tip = R * 0.52; // výška hrotu patra
+      const hue2 = Math.round(150 - f * 18); // vyšší patra světlejší
+      c.fillStyle = `hsl(${hue2},42%,${21 + Math.round(f * 8)}%)`;
       c.beginPath();
-      c.arc(hx2 + Math.cos(ba) * tr.r * 0.55, hy2 + Math.sin(ba) * tr.r * 0.44, br, 0, Math.PI * 2);
+      c.moveTo(cx - halfW, yBase);
+      // zubatá spodní hrana patra - jehličí visí dolů
+      const teeth = 4;
+      for (let t2 = 0; t2 <= teeth; t2++) {
+        const ax2 = -halfW + (halfW * 2 * t2) / teeth;
+        const dip = t2 % 2 === 1 ? R * 0.12 : 0;
+        c.lineTo(cx + ax2, yBase - dip);
+      }
+      c.lineTo(cx + halfW * 0.55, yBase - tip * 0.55);
+      c.lineTo(cx, yBase - tip);
+      c.lineTo(cx - halfW * 0.55, yBase - tip * 0.55);
+      c.closePath();
       c.fill();
+      // světlejší horní lem patra (světlo zleva shora)
+      c.fillStyle = `hsla(${hue2 + 10},52%,${34 + Math.round(f * 7)}%,0.85)`;
+      c.beginPath();
+      c.moveTo(cx - halfW * 0.92, yBase - 2);
+      c.lineTo(cx, yBase - tip);
+      c.lineTo(cx - halfW * 0.5, yBase - tip * 0.5);
+      c.closePath();
+      c.fill();
+      // tmavá spodní hrana - hluboký stín pod patrem
+      c.fillStyle = "rgba(6,20,10,0.5)";
+      c.fillRect(cx - halfW, yBase - 2.5, halfW * 2, 2.5);
     }
-    // spodní stín koruny (objem zespodu)
-    c.fillStyle = "rgba(6,24,10,0.28)";
+    // světelný odlesk po levé straně kmene koruny
+    c.fillStyle = "rgba(190,245,175,0.22)";
     c.beginPath();
-    c.ellipse(hx2, hy2 + tr.r * 0.62, tr.r * 0.62, tr.r * 0.3, 0, 0, Math.PI * 2);
+    c.moveTo(cx, cy - R * 1.45);
+    c.lineTo(cx - R * 0.5, cy - R * 0.5);
+    c.lineTo(cx - R * 0.16, cy - R * 0.45);
+    c.closePath();
     c.fill();
-    // světlá kopice listí + odlesk
-    c.fillStyle = "#48a04a";
-    c.beginPath();
-    c.arc(hx2 - tr.r * 0.28, hy2 - tr.r * 0.35, tr.r * 0.45, 0, Math.PI * 2);
-    c.fill();
-    c.fillStyle = "rgba(190,242,160,0.4)";
-    c.beginPath();
-    c.arc(hx2 - tr.r * 0.42, hy2 - tr.r * 0.48, tr.r * 0.22, 0, Math.PI * 2);
-    c.fill();
-    // tmavý obrys koruny
-    c.strokeStyle = "rgba(10,30,14,0.55)";
-    c.lineWidth = 2;
-    c.beginPath();
-    c.arc(hx2, hy2, tr.r * 1.05, 0, Math.PI * 2);
-    c.stroke();
-    // plody s lesklým jadérkem
-    if (tr.r > 24 || rn > 0.55) {
-      for (let f = 0; f < 3; f++) {
-        const fa = rn * 6.28 + f * 2.3;
-        const fx = hx2 + Math.cos(fa) * tr.r * 0.55;
-        const fy = hy2 + Math.sin(fa) * tr.r * 0.5;
-        c.fillStyle = "#ef4444";
+    // šišky visící na spodním patru
+    if (rn > 0.35) {
+      for (let s2 = 0; s2 < 3; s2++) {
+        const sx2 = cx + Math.cos(rn * 6.28 + s2 * 2.5) * R * 0.6;
+        const sy2 = cy + R * 0.22 + Math.sin(rn * 5.1 + s2 * 1.9) * R * 0.15;
+        c.fillStyle = "#5c3d1e";
         c.beginPath();
-        c.arc(fx, fy, 2.3, 0, Math.PI * 2);
+        c.ellipse(sx2, sy2, 2.1, 3.2, 0.3, 0, Math.PI * 2);
         c.fill();
-        c.fillStyle = "rgba(255,255,255,0.55)";
-        c.beginPath();
-        c.arc(fx - 0.7, fy - 0.7, 0.7, 0, Math.PI * 2);
-        c.fill();
+        c.fillStyle = "rgba(0,0,0,0.35)";
+        c.fillRect(sx2 - 0.8, sy2 - 2.2, 1.6, 1);
       }
     }
-    // trs trávy u paty stromu
+    // trs trávy u paty kmene
     c.fillStyle = "rgba(120,200,110,0.55)";
-    c.fillRect(tr.x - 9, tr.y + tr.r * 0.5, 2, 4);
-    c.fillRect(tr.x + 7, tr.y + tr.r * 0.45, 2, 4);
+    c.fillRect(cx - 9, cy + R * 0.3, 2, 4);
+    c.fillRect(cx + 7, cy + R * 0.28, 2, 4);
     c.fillStyle = "rgba(40,100,45,0.8)";
-    c.fillRect(tr.x - 3, tr.y + tr.r * 0.55, 2, 5);
+    c.fillRect(cx - 3, cy + R * 0.32, 2, 5);
   } else if (tr.k === 2) {
     // --- muchomůrka: červená kloboučka s bílými tečkami a noha ---
     const cx = tr.x + sway * 0.2;
@@ -8341,7 +8748,7 @@ function paintTree(c: CanvasRenderingContext2D, tr: TreeDeco): void {
   }
 }
 
-// 🌳 předrenderuje strom do vlastního sprite - pak už jen drawImage (místo desítek cest každý snímek)
+//  předrenderuje strom do vlastního sprite - pak už jen drawImage (místo desítek cest každý snímek)
 function makeTreeSprite(tr: TreeDeco): HTMLCanvasElement {
   const pad = Math.ceil(tr.r * 0.7) + 10;
   const size = Math.ceil(tr.r * 2 + pad * 2);
@@ -8362,13 +8769,13 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   const zoom = 1;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 
-  // 📏 spodek HUD lišty měříme z DOM (1× za 20 snímků) - minimapa a boss bar se pod něj nikdy nedostanou
+  //  spodek HUD lišty měříme z DOM (1× za 20 snímků) - minimapa a boss bar se pod něj nikdy nedostanou
   if ((mmFC++ % 20) === 0) {
     const hudEl = document.querySelector(".ltp-hud");
     MM_Y = Math.max(58, (hudEl ? hudEl.getBoundingClientRect().bottom : 48) + 8);
   }
 
-  // 🎨 pozadí se přechází jen při změně výšky - jeden gradient se cacheuje
+  //  pozadí se přechází jen při změně výšky - jeden gradient se cacheuje
   if (!bgCache || bgCache.h !== VH) {
     const b = ctx.createLinearGradient(0, 0, 0, VH);
     b.addColorStop(0, "#265231");
@@ -8378,7 +8785,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   ctx.fillStyle = bgCache.g;
   ctx.fillRect(0, 0, VW, VH);
 
-  const sh = g.opts.shk ? g.shake : 0; // 📴 třesení lze vypnout v pauze
+  const sh = g.opts.shk ? g.shake : 0; //  třesení lze vypnout v pauze
   const ox = sh > 0 ? (Math.random() - 0.5) * sh : 0;
   const oy = sh > 0 ? (Math.random() - 0.5) * sh : 0;
 
@@ -8402,11 +8809,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VW * 0.7);
     vg.addColorStop(0, "rgba(0,0,0,0)");
     vg.addColorStop(1, "rgba(0,0,0,0.5)");
-    // 🩸 rudá vinětace při nízkém HP - jeden gradient pro všechny snímky
+    // 喝 rudá vinětace při nízkém HP - jeden gradient pro všechny snímky
     const lg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.32, VW / 2, VH / 2, VW * 0.72);
     lg.addColorStop(0, "rgba(170,15,15,0)");
     lg.addColorStop(1, "rgba(170,15,15,1)");
-    // 🥇 zlatá vinětace - beat puls ve stylu Just Dance a fever hype
+    // 磊 zlatá vinětace - beat puls ve stylu Just Dance a fever hype
     const gl = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.36, VW / 2, VH / 2, VW * 0.74);
     gl.addColorStop(0, "rgba(253,224,71,0)");
     gl.addColorStop(1, "rgba(253,224,71,1)");
@@ -8424,7 +8831,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   // travnatá podlaha - jediný blit z předrenderované cache (tráva, kytičky, pruhy, mřížka)
   const wbg = getWorldBg(g);
   if (wbg) {
-    // 🚀 blit JEN výřezu kamery - kreslit celou 6000² mapu každý snímek byl hlavní žrout FPS
+    //  blit JEN výřezu kamery - kreslit celou 6000² mapu každý snímek byl hlavní žrout FPS
     const bs = 0.5;
     const sx = Math.max(0, h.x - halfW - 60);
     const sy = Math.max(0, h.y - halfH - 60);
@@ -8432,7 +8839,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     const sh = Math.min(ARENA_H - sy, VH + 120);
     ctx.drawImage(wbg, sx * bs, sy * bs, sw * bs, sh * bs, sx, sy, sw, sh);
   }
-  // 🕯️ měkké světlo hrdiny - jako by nesl lampu (Survivor.io focus na postavu)
+  // ️ měkké světlo hrdiny - jako by nesl lampu (Survivor.io focus na postavu)
   // gradient se vytvoří jen jednou; posun kolem hrdiny řeší translate při kreslení
   if (!hlgCache) {
     hlgCache = ctx.createRadialGradient(0, 0, 0, 0, 0, 200);
@@ -8458,16 +8865,13 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.fill();
   }
 
-  // hranice arény - dřevěný plot
-  ctx.strokeStyle = "rgba(133,84,44,0.28)";
-  ctx.lineWidth = 16;
-  ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
-  ctx.strokeStyle = "#b0793f";
-  ctx.lineWidth = 5;
+  //  hranici arény lemuje hustý jehličnatý les (namalovaný v pozadí) - žádný plot
+  ctx.strokeStyle = "rgba(16,40,20,0.5)";
+  ctx.lineWidth = 8;
   ctx.strokeRect(0, 0, ARENA_W, ARENA_H);
 
-  // 🌳 stromy a keře - vrstvené koruny, kmeny s kořeny, houpející se listí
-  // 🌳 stromy a keře - předrenderované sprite + lehký výkyv celého stromu (místo stovek cest každý snímek)
+  //  stromy a keře - vrstvené koruny, kmeny s kořeny, houpející se listí
+  //  stromy a keře - předrenderované sprite + lehký výkyv celého stromu (místo stovek cest každý snímek)
   for (const tr of g.trees) {
     if (!inView(tr.x, tr.y, tr.r + 42)) continue;
     if (!tr.cv) tr.cv = makeTreeSprite(tr);
@@ -8475,20 +8879,20 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.drawImage(tr.cv, Math.round(tr.x - (tr.pad || 0) + sway), Math.round(tr.y - (tr.pad || 0)));
   }
 
-  // 🏰 hrdinův hrad na východě - roste s upgrady stromu (hradby, střílny, donjon)
-  if (inView(g.castle.x, g.castle.y, 520)) drawCastle(ctx, g);
-  // 🗼 strážní věže podél cesty - od rozpadliny zdiva po honosnou baštu s vlajkami
+  //  hrdinův hrad zakrývá celou pravou stranu - zeď se kreslí, když je na dohled
+  if (h.x + halfW > CASTLE_FRONT - 160) drawCastle(ctx, g);
+  //  strážní věže podél cesty - od rozpadliny zdiva po honosnou baštu s vlajkami
   for (const tw of g.towers) {
     if (inView(tw.x, tw.y, 260)) drawTower(ctx, g, tw);
   }
 
-  // 🏟️ (v1.16: červený kruh boss vězení zrušený - boss je volný a táhne na hrad)
+  // ️ (v1.16: červený kruh boss vězení zrušený - boss je volný a táhne na hrad)
 
   // ⚠️ telegrafy bossů - červené zóny dopadu projektilů
   for (const tl of g.telegraphs) {
     if (!inView(tl.x, tl.y, tl.r + 20)) continue;
     const f = Math.max(0, Math.min(1, tl.t / tl.dur));
-    // 💣 dynamit - rudá zóna postupně zežloutne těsně před dopadem
+    //  dynamit - rudá zóna postupně zežloutne těsně před dopadem
     if (tl.dyn) {
       const dr = Math.round(239 + 16 * f);
       const dg = Math.round(68 + 152 * f);
@@ -8587,7 +8991,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.arc(o.x - 2.4, o.y - 3.4, 1.3, 0, Math.PI * 2);
       ctx.fill();
     } else if (o.pk === 2) {
-      // 💣 bomba - černá koule se šňůrou a prskající jiskrou
+      //  bomba - černá koule se šňůrou a prskající jiskrou
       ctx.fillStyle = "#1c2833";
       ctx.beginPath();
       ctx.arc(o.x, o.y + 2, 7.5, 0, Math.PI * 2);
@@ -8611,7 +9015,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.arc(o.x - 2.8, o.y - 0.5, 2, 0, Math.PI * 2);
       ctx.fill();
     } else if (o.pk === 3) {
-      // 🧲 magnet - rudá podkova s modrým a bílým pólem
+      // 鱗 magnet - rudá podkova s modrým a bílým pólem
       ctx.strokeStyle = "#dc2626";
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -8719,7 +9123,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
         ctx.stroke();
       }
     } else if (tu.type === "sniper") {
-      // 🎯 dlouhá tenká hlaveň, dalekohled a laserové mířidlo
+      //  dlouhá tenká hlaveň, dalekohled a laserové mířidlo
       drawBarrel(21, 2, "#94a3b8");
       ctx.fillStyle = "#334155";
       ctx.fillRect(2, -5.5, 7, 3);
@@ -8732,7 +9136,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.lineTo(tdef.rng - 60, 0);
       ctx.stroke();
     } else if (tu.type === "mortar") {
-      // 💣 tlustá krátká hlaveň, vzipnutý granát vidět v ústí
+      //  tlustá krátká hlaveň, vzipnutý granát vidět v ústí
       ctx.fillStyle = "#1c1917";
       ctx.beginPath();
       ctx.arc(-6, 2, 6.5, 0, Math.PI * 2);
@@ -8749,7 +9153,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.lineWidth = 1.4;
       ctx.stroke();
     } else if (tu.type === "scatter") {
-      // 🔱 trojhlavňová brokovnice s dřevěnou pazbou
+      //  trojhlavňová brokovnice s dřevěnou pazbou
       drawBarrel(9, 2.8, "#b45309");
       drawBarrel(9, 2.8, "#d97706", -3.6);
       drawBarrel(9, 2.8, "#8c4a06", 3.6);
@@ -8776,7 +9180,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
         ctx.stroke();
       }
     } else if (tu.type === "plasma") {
-      // 💥 plovoucí plazmová koule s prstencem a pulzující aurou
+      //  plovoucí plazmová koule s prstencem a pulzující aurou
       ctx.fillStyle = `rgba(232,121,249,${0.16 + 0.08 * Math.sin(tu.t * 7)})`;
       ctx.beginPath();
       ctx.arc(0, 1, 15 + Math.sin(tu.t * 7) * 2, 0, Math.PI * 2);
@@ -8798,7 +9202,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.ellipse(8, 0, 9, 3, 0, 0, Math.PI * 2);
       ctx.stroke();
     } else {
-      // 🔫 standardní turetka - kulaté tělo s hlavní; plamenomet = trysek s pilotním plamínkem,
+      //  standardní turetka - kulaté tělo s hlavní; plamenomet = trysek s pilotním plamínkem,
       // mrzák = ledový hrot, větrník = tři rotující lopatky
       ctx.fillStyle = g.tcfg.flame ? "#7c2d12" : g.tcfg.frost ? "#0e7490" : g.tcfg.wind ? "#1e3a5f" : "#6b6560";
       ctx.beginPath();
@@ -9097,7 +9501,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.arc(a.x, a.y, 2, 0, Math.PI * 2);
       ctx.fill();
     } else if (a.kind === 8) {
-      // 🔥 plamenomet - plazivý jazyk plamene, který roste a vlní se (additivní zář jako oheň)
+      //  plamenomet - plazivý jazyk plamene, který roste a vlní se (additivní zář jako oheň)
       const fr = 4 + (0.55 - a.life) * 13;
       const w1 = Math.sin(g.gtime * 21 + a.y * 0.2) * fr * 0.3;
       const w2 = Math.cos(g.gtime * 17 + a.x * 0.2) * fr * 0.25;
@@ -9174,7 +9578,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.fill();
       ctx.restore();
     } else if (a.kind === 14) {
-      // 💥 plazmová koule - pulzující energetické jádro s fialovou aurou a ohonem
+      //  plazmová koule - pulzující energetické jádro s fialovou aurou a ohonem
       const pr = 6 + Math.sin(g.gtime * 18) * 1.5;
       ctx.strokeStyle = "rgba(232,121,249,0.45)";
       ctx.lineWidth = 4;
@@ -9213,7 +9617,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.arc(a.x + Math.cos(ang) * 4, a.y + Math.sin(ang) * 4, 1.6, 0, Math.PI * 2);
       ctx.fill();
     } else if (a.kind === 16) {
-      // 🌲 dřevěné třístí - hnědá špička s listkem, rotuje v letu
+      //  dřevěné třístí - hnědá špička s listkem, rotuje v letu
       ctx.save();
       ctx.translate(a.x, a.y);
       ctx.rotate(ang + Math.sin((a.vx + a.vy) * 0.02 + a.life * 9) * 0.15);
@@ -9261,7 +9665,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     }
   }
 
-  // ✈️💣☄️ létající vrstva - bombardér, padající bomby a meteor (nad hrdinou)
+  // ✈️☄️ létající vrstva - bombardér, padající bomby a meteor (nad hrdinou)
   for (const pl of g.planes) {
     ctx.save();
     ctx.translate(pl.x, pl.y + Math.sin(pl.t * 2.2) * 5);
@@ -9446,7 +9850,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   // hrdina
   drawHero(ctx, g);
 
-  // 🧲 magnet - pulzující kruh nasávání, dokud koule letí
+  // 鱗 magnet - pulzující kruh nasávání, dokud koule letí
   if (g.magT > 0) {
     const mp = 1 - g.magT / 2.2;
     ctx.strokeStyle = `rgba(103,232,249,${0.7 * g.magT})`;
@@ -9475,7 +9879,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.fill();
   }
 
-  // 💥 rázové vlny - dvojitý prstenec se vnitřní září, rychlý rozlet a pomalé doznívání
+  //  rázové vlny - dvojitý prstenec se vnitřní září, rychlý rozlet a pomalé doznívání
   for (const sk of g.shocks) {
     if (!inView(sk.x, sk.y, sk.maxR)) continue;
     const k = sk.t / sk.dur;
@@ -9531,19 +9935,19 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   }
   if (vigCv.cv) ctx.drawImage(vigCv.cv, 0, 0, VW, VH);
 
-  // 🌙 noc - celá louka se přelije modravou tmou (přes den nic)
+  //  noc - celá louka se přelije modravou tmou (přes den nic)
   if (g.night) {
     ctx.fillStyle = "rgba(12,18,52,0.42)";
     ctx.fillRect(0, 0, VW, VH);
   }
-  // 🌅 svítání a soumrak - teplý oranžový nádech kolem přechodu dne a noci
+  //  svítání a soumrak - teplý oranžový nádech kolem přechodu dne a noci
   const dayPh = g.time % 600;
   if (!g.night && (dayPh > 540 || dayPh < 60)) {
     const tw = Math.min(1, (dayPh > 540 ? 600 - dayPh : dayPh) / 60);
     ctx.fillStyle = `rgba(251,146,60,${(0.15 * (1 - tw)).toFixed(3)})`;
     ctx.fillRect(0, 0, VW, VH);
   }
-  // 🌦️ počasí na obrazovce: déšť, bouřka (i záblesk blesku), vítr nese listí
+  // ️ počasí na obrazovce: déšť, bouřka (i záblesk blesku), vítr nese listí
   // nástup i konec počasí má ~2 s crossfade, žádné střihy nasucho
   if (g.weather === "rain" || g.weather === "storm") {
     const wf = Math.max(0, Math.min(1, (25 - g.weatherT) / 2, g.weatherT / 2));
@@ -9586,7 +9990,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   // ⚠️ nízké HP - rudá pulzující vinětace (srdce ti buší) - gradient z cache
   const hpFrac = h.hp / h.maxHp;
   if (hpFrac < 0.35) {
-    // 💓 puls vinětace kopíruje skutečný tlukot srdce z hudby
+    //  puls vinětace kopíruje skutečný tlukot srdce z hudby
     const hb = AC && g.opts.snd ? Math.max(0, 1 - (performance.now() - musThumpAt) / Math.max(240, musStepDur * 8 * 1000)) : 0;
     const pulse = 0.14 + 0.22 * (hb > 0 ? hb : 0.5 + 0.5 * Math.sin(g.gtime * 6));
     ctx.globalAlpha = pulse * (1 - hpFrac / 0.35);
@@ -9595,19 +9999,19 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.globalAlpha = 1;
   }
 
-  // 🏆 zlatý záblesk po položení bosse - přejede přes obrazovku a plynule vyprchá
+  //  zlatý záblesk po položení bosse - přejede přes obrazovku a plynule vyprchá
   if (g.goldFlash > 0) {
     ctx.fillStyle = `rgba(253,230,138,${(0.38 * g.goldFlash).toFixed(3)})`;
     ctx.fillRect(0, 0, VW, VH);
   }
 
-  // 👹 červený záblesk při spawnu bosse - „teď už je po tobě"
+  //  červený záblesk při spawnu bosse - „teď už je po tobě"
   if (g.dreadFlash > 0) {
     ctx.fillStyle = `rgba(153,27,27,${(0.42 * g.dreadFlash).toFixed(3)})`;
     ctx.fillRect(0, 0, VW, VH);
   }
 
-  // 🥁 beat puls - okraje obrazovky jiskří v rytmu kopáku (jen když se to rozjede)
+  // 論 beat puls - okraje obrazovky jiskří v rytmu kopáku (jen když se to rozjede)
   const beatP = AC && g.opts.snd ? Math.max(0, 1 - (performance.now() - musKickAt) / 480) : 0;
   const songIsBoss = musSong === SONG_BOSS || musSong === SONG_FINAL;
   const hypeAmt = Math.min(1, g.combo / 12);
@@ -9618,7 +10022,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.globalAlpha = 1;
   }
 
-  // 💨 speed lines - při vysokém kombu se rozeběhne zlatý vír čar k okrajům
+  //  speed lines - při vysokém kombu se rozeběhne zlatý vír čar k okrajům
   const hypeA = Math.min(1, Math.max(0, (g.combo - 8) / 12));
   if (hypeA > 0) {
     ctx.save();
@@ -9640,22 +10044,22 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.restore();
   }
 
-  // 📣 toast s názvem skladby - když se track přepne, chvíli se ukáže nahoře
+  //  toast s názvem skladby - když se track přepne, chvíli se ukáže nahoře
   const musToastAge = performance.now() - musToastAt;
   if (musToast && musToastAge < 3400 && g.running && !g.over) {
     ctx.save();
     ctx.globalAlpha = Math.min(1, (3400 - musToastAge) / 600, musToastAge / 220);
     ctx.font = "bold 12px system-ui, sans-serif";
     ctx.textAlign = "center";
-    const tw = ctx.measureText(`🎵 ${musToast}`).width + 26;
+    const tw = ctx.measureText(` ${musToast}`).width + 26;
     ctx.fillStyle = "rgba(0,0,0,0.55)";
     ctx.fillRect(VW / 2 - tw / 2, 66, tw, 22);
     ctx.fillStyle = "#fde68a";
-    ctx.fillText(`🎵 ${musToast}`, VW / 2, 81);
+    ctx.fillText(` ${musToast}`, VW / 2, 81);
     ctx.restore();
   }
 
-  // 📣 boss intro banner - první vteřiny se jméno bosse rozezní nad arénou
+  //  boss intro banner - první vteřiny se jméno bosse rozezní nad arénou
   if (g.bossIntroT > 0) {
     const bf = 1 - g.bossIntroT / 2.6;
     const bal = Math.min(1, bf * 4) * Math.min(1, g.bossIntroT / 0.6);
@@ -9677,7 +10081,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.restore();
   }
 
-  // 💀 smrt hrdiny - svět pomalu ztmavne do obrazovky konce
+  //  smrt hrdiny - svět pomalu ztmavne do obrazovky konce
   if (g.over) {
     ctx.fillStyle = `rgba(0,0,0,${(0.55 * g.overT).toFixed(3)})`;
     ctx.fillRect(0, 0, VW, VH);
@@ -9718,11 +10122,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.fillStyle = "#fff";
     ctx.font = "bold 10px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : "💀 BOSS", VW / 2, by + 11);
-    // 🗼 kam boss táhne - indikátor směru na hrad (v1.16 už žádný časový limit)
+    ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : " BOSS", VW / 2, by + 11);
+    //  kam boss táhne - indikátor směru na hrad (v1.16 už žádný časový limit)
     ctx.font = "bold 12px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("🏰", bx + 4, by + 11);
+    ctx.fillText("", bx + 4, by + 11);
     // ⚔️ aktuální fáze
     ctx.textAlign = "right";
     ctx.fillText(`FÁZE ${boss.phase}/${boss.final ? 4 : 2}`, bx + bw - 4, by + 11);
@@ -9757,7 +10161,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.stroke();
   }
 
-  // 🧭 indikátory mimo obrazovku - šipky k bosům, bednám a mini-bossům
+  // 吝 indikátory mimo obrazovku - šipky k bosům, bednám a mini-bossům
   {
     const cx0 = VW / 2;
     const cy0 = VH / 2;
@@ -9770,9 +10174,9 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     for (const e of g.enemies) {
       if (e.dead) continue;
       if (e.boss) addInd(e.x, e.y, "☠️", "#c084fc", 0);
-      else if (e.minib) addInd(e.x, e.y, "🌟", "#fbbf24", 1);
+      else if (e.minib) addInd(e.x, e.y, "", "#fbbf24", 1);
     }
-    for (const c of g.crates) addInd(c.x, c.y, "📦", "#fbbf24", 2);
+    for (const c of g.crates) addInd(c.x, c.y, "", "#fbbf24", 2);
     // ⚠️ prioritizace: boss > mini-boss > bedna - šipek je max 6, slabší cíl se zahodí
     const show = inds.sort((a, b) => a.prio - b.prio).slice(0, 6);
     for (let ii = 0; ii < show.length; ii++) {
@@ -9804,7 +10208,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     }
   }
 
-  // 🗺️ minimapa - vždy pod HUD lištou, při bossovi ještě pod boss barem, ať se nikdy nic nepřekrývá
+  // ️ minimapa - vždy pod HUD lištou, při bossovi ještě pod boss barem, ať se nikdy nic nepřekrývá
   const ms = Math.min(110, Math.round(VH * 0.17));
   const mx = VW - ms - 14;
   const my = MM_Y + (boss ? 28 : 2);
@@ -9821,10 +10225,10 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.arc(mx + e.x * kx, my + e.y * ky, e.boss ? 4.5 : e.elite ? 3.5 : e.minib ? 3.5 : e.big ? 3 : 2, 0, Math.PI * 2);
     ctx.fill();
   }
-  // 🏰 hrad na minimapě
+  //  hrad na minimapě - zlatý pás přes celou pravou stranu, brána hledí na západ
   ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(mx + g.castle.x * kx - 4, my + g.castle.y * ky - 4, 8, 8);
-  // 🗼 strážní věže na minimapě - plná oranžová tečka, rozpadlina jen tenký obrys
+  ctx.fillRect(mx + CASTLE_FRONT * kx, my + 1, ARENA_W * kx - CASTLE_FRONT * kx, ms - 2);
+  //  strážní věže na minimapě - plná oranžová tečka, rozpadlina jen tenký obrys
   for (const tw of g.towers) {
     const tx = mx + tw.x * kx;
     const ty = my + tw.y * ky;
@@ -9839,7 +10243,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
       ctx.stroke();
     }
   }
-  // 📦 bedny a ⚙️ turetky na minimapě
+  //  bedny a ⚙️ turetky na minimapě
   ctx.fillStyle = "#fbbf24";
   for (const c of g.crates) {
     ctx.fillRect(mx + c.x * kx - 1.5, my + c.y * ky - 1.5, 3, 3);
@@ -9855,7 +10259,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   ctx.strokeStyle = "rgba(255,255,255,0.8)";
   ctx.lineWidth = 1.5;
   ctx.stroke();
-  // 🧭 směrová šipka - kam se hrdina dívá
+  // 吝 směrová šipka - kam se hrdina dívá
   ctx.beginPath();
   ctx.moveTo(mx + h.x * kx + Math.cos(h.angle) * 7, my + h.y * ky + Math.sin(h.angle) * 7);
   ctx.lineTo(mx + h.x * kx + Math.cos(h.angle + 2.5) * 3.5, my + h.y * ky + Math.sin(h.angle + 2.5) * 3.5);
@@ -9863,11 +10267,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   ctx.closePath();
   ctx.fillStyle = "rgba(52,211,153,0.9)";
   ctx.fill();
-  // 📷 obdélník výřezu kamery - vidíš, kolik mapy máš v zorném poli
+  //  obdélník výřezu kamery - vidíš, kolik mapy máš v zorném poli
   ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 1;
   ctx.strokeRect(mx + (h.x - VW / 2) * kx, my + (h.y - VH / 2) * ky, VW * kx, VH * ky);
-  // 🏟️ (v1.16: kruh boss-arény už se na minimapě nekreslí)
+  // ️ (v1.16: kruh boss-arény už se na minimapě nekreslí)
 }
 
 // karta upgradu s barevnou raritou
@@ -9899,7 +10303,7 @@ function UpgradeCard(props: { u: Upgrade; onPick: (u: Upgrade) => void }) {
   );
 }
 
-// 🧪 sandbox karta - tap = 1×, podržení = opakování; při scrollu se nic neaplikuje
+// 離 sandbox karta - tap = 1×, podržení = opakování; při scrollu se nic neaplikuje
 function SbxCard(props: { u: Upgrade; onPick: (u: Upgrade) => void }) {
   const u = props.u;
   const ri = RARITY_INFO[u.rarity] || RARITY_INFO[0];
@@ -9987,8 +10391,8 @@ function SbxCard(props: { u: Upgrade; onPick: (u: Upgrade) => void }) {
   );
 }
 
-// 🌳 strom dovedností - vizuální strom: boxy spojené čarami, klik = koupě
-// 🌳 v1.14: přerenderovaný strom - organické kmenové linky, svítící orby s pipsy,
+//  strom dovedností - vizuální strom: boxy spojené čarami, klik = koupě
+//  v1.14: přerenderovaný strom - organické kmenové linky, svítící orby s pipsy,
 // stavy locked/open/affordable/maxed, zlaté speciály jako karty
 function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
   const meta = props.meta;
@@ -9997,15 +10401,15 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
     <>
       <div className="flex flex-wrap items-center justify-center gap-2">
         <span className="ltp-glass rounded-xl border border-lime-400/40 bg-lime-500/15 px-4 py-1.5 text-sm font-bold text-lime-200 sm:text-base">
-          🌱 {meta.pts} {trk("seeds")}
+           {meta.pts} {trk("seeds")}
         </span>
         <span className="ltp-glass rounded-xl border border-amber-300/40 bg-amber-400/15 px-4 py-1.5 text-sm font-bold text-amber-200 sm:text-base">
-          👑 {meta.crowns || 0}
+           {meta.crowns || 0}
         </span>
       </div>
       <div className="ltp-tree relative mx-auto h-[640px] w-full max-w-[480px]">
-        <span className="pointer-events-none absolute left-3 top-3 select-none text-2xl opacity-10">🌿</span>
-        <span className="pointer-events-none absolute bottom-3 right-3 select-none text-2xl opacity-10">🍃</span>
+        <span className="pointer-events-none absolute left-3 top-3 select-none text-2xl opacity-10"></span>
+        <span className="pointer-events-none absolute bottom-3 right-3 select-none text-2xl opacity-10"></span>
         <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
           {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
             const p = TREE_NODES.find((x) => x.id === tn.parent);
@@ -10038,7 +10442,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
               <div className={"ltp-torb" + (tn.id === "t_str" ? " ltp-troot" : "")}>
                 <span className="ltp-temoji">{maxed ? "✨" : tn.emoji}</span>
                 <span className="ltp-tper">{maxed ? "MAX" : tn.per}</span>
-                {!parOk && <span className="ltp-tlock">🔒</span>}
+                {!parOk && <span className="ltp-tlock"></span>}
               </div>
               <div className="ltp-tpips">
                 {Array.from({ length: tn.max }).map((_, i) => (
@@ -10051,13 +10455,13 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
                 disabled={!canBuy}
                 className="ltp-tbuy"
               >
-                {maxed ? "✓" : !parOk ? "🔒" : "🌱 " + cost}
+                {maxed ? "✓" : !parOk ? "" : " " + cost}
               </button>
             </div>
           );
         })}
       </div>
-      {/* ✨ speciální upgrady za 👑 koruny z finálních bossů - zlaté karty */}
+      {/* ✨ speciální upgrady za  koruny z finálních bossů - zlaté karty */}
       <div className="grid w-full max-w-3xl grid-cols-2 gap-2 sm:grid-cols-5">
         {TREE_SPECIALS.map((tn) => {
           const sl = lvl(tn.id);
@@ -10074,7 +10478,7 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
                 disabled={!scan}
                 className={"ltp-sbuy" + (scan ? "" : " is-off")}
               >
-                {smaxed ? trk("tree_max") : "👑 " + cc}
+                {smaxed ? trk("tree_max") : " " + cc}
               </button>
             </div>
           );
@@ -10139,29 +10543,29 @@ function LoukaTisicePriser() {
   const [clsSel, setClsSel] = useState("archer");
   const [sandboxSel, setSandboxSel] = useState(false);
   const [menuTab, setMenuTab] = useState<"cls" | "trophy" | "board" | "sbx" | "tree">("cls");
-  // 🔄 restart hry - potvrzení 0..2 (třikrát kliknout) + krátké "hotovo" hlášení
+  //  restart hry - potvrzení 0..2 (třikrát kliknout) + krátké "hotovo" hlášení
   const [resetStep, setResetStep] = useState(0);
   const [resetDone, setResetDone] = useState(false);
-  // 🏆 zápis do žebříčku: modal se jménem, uložená hodnota a příznak „už zapsáno"
+  //  zápis do žebříčku: modal se jménem, uložená hodnota a příznak „už zapsáno"
   const [askName, setAskName] = useState(false);
   const [nameVal, setNameVal] = useState("");
   const [nameSaved, setNameSaved] = useState(false);
   const [boardClearConfirm, setBoardClearConfirm] = useState(false);
-  // 🌍 online žebříček - řádky ze serveru + stav (local = bez serveru, loading, online, offline)
+  //  online žebříček - řádky ze serveru + stav (local = bez serveru, loading, online, offline)
   const [lbRows, setLbRows] = useState<ScoreEntry[] | null>(null);
   const [lbStatus, setLbStatus] = useState<"local" | "loading" | "online" | "offline">("loading");
   const [sbx, setSbx] = useState<Upgrade[] | null>(null);
   const [sbxMsg, setSbxMsg] = useState("");
   const [meta, setMeta] = useState<Meta>(() => loadMeta());
   const [shop, setShop] = useState(false);
-  // ⚖️ obtížnost, 🐾 mazlíček, 📅 denní výzva, 💰 otevřený obchod
+  // ⚖️ obtížnost,  mazlíček,  denní výzva,  otevřený obchod
   const [diffSel, setDiffSel] = useState(1);
   const [dailyRun, setDailyRun] = useState(false);
-  // 🏆 trofeje odemčené během právě probíhajícího runu (zobrazí se na konci)
+  //  trofeje odemčené během právě probíhajícího runu (zobrazí se na konci)
   const [newAch, setNewAch] = useState<string[]>([]);
-  // 😱 dvojité potvrzení ukončení runu (nechceme nechtěné kliky)
+  //  dvojité potvrzení ukončení runu (nechceme nechtěné kliky)
   const [confirmQuit, setConfirmQuit] = useState(false);
-  // 🌍 jazyk rozhraní (🇨🇿/🇬🇧/🇵🇱) - perzistuje se do mety
+  //  jazyk rozhraní (//) - perzistuje se do mety
   const [lang, setLang] = useState<string>(meta.lang || "cs");
   const changeLang = (id: string) => {
     CUR_LANG = id;
@@ -10244,7 +10648,7 @@ function LoukaTisicePriser() {
   const toggleOpt = (key: "snd" | "shk" | "nums" | "surp") => {
     const g = gameRef.current;
     g.opts[key] = !g.opts[key];
-    // 🎤 zapnuté překvapení odemkne řeč hned v gestě klepnutí - na mobilu by jinak hlas mlčel
+    //  zapnuté překvapení odemkne řeč hned v gestě klepnutí - na mobilu by jinak hlas mlčel
     if (key === "surp" && g.opts[key]) warmVox();
     setMeta((m) => {
       const nm = { ...m, opts: { ...m.opts, [key]: g.opts[key] } };
@@ -10253,7 +10657,7 @@ function LoukaTisicePriser() {
     });
   };
 
-  // 🧪 sandbox - plný katalog upgradů bez omezení classy a bez XP
+  // 離 sandbox - plný katalog upgradů bez omezení classy a bez XP
   const buildSandbox = useCallback((g: Game): Upgrade[] => {
     const out: Upgrade[] = [];
     for (const u of UPGRADE_POOL) {
@@ -10289,12 +10693,12 @@ function LoukaTisicePriser() {
 
   const sbxBoss = (type = -1, final = false) => {
     spawnBoss(gameRef.current, type, final);
-    setSbxMsg(`👑 Naspawnován boss${final ? " (FINÁLNÍ)" : ""}!`);
+    setSbxMsg(` Naspawnován boss${final ? " (FINÁLNÍ)" : ""}!`);
   };
 
   const sbxMini = (type = -1) => {
     spawnMini(gameRef.current, type);
-    setSbxMsg(`🌟 Naspawnován mini-boss!`);
+    setSbxMsg(` Naspawnován mini-boss!`);
   };
 
   const sbxEnemy = (k: number) => {
@@ -10318,7 +10722,7 @@ function LoukaTisicePriser() {
     setSbxMsg(trk("sbx_cleared"));
   };
 
-  // speciální za 👑 korunu (jen 1×); předchůdce musí mít aspoň Lv 1
+  // speciální za  korunu (jen 1×); předchůdce musí mít aspoň Lv 1
   const buyTree = (id: string) => {
     const tn = TREE_ALL.find((n) => n.id === id);
     if (!tn) return;
@@ -10346,7 +10750,7 @@ function LoukaTisicePriser() {
     });
   };
 
-  // 🔄 restart upgradů - smaže semínka, strom dovedností, koruny a postavené levely.
+  //  restart upgradů - smaže semínka, strom dovedností, koruny a postavené levely.
   // Rekordy, trofeje i lokální žebříček ZŮSTÁVAJÍ. Vyžaduje 3 postupná potvrzení; po 8 s nepozornosti se zruší.
   const resetGame = () => {
     if (resetDone) return;
@@ -10386,7 +10790,7 @@ function LoukaTisicePriser() {
     return () => clearTimeout(t);
   }, [resetStep, resetDone]);
 
-  // 🏠 návrat do základního menu (volba classy / sandbox / semínka) místo skoku do hry
+  //  návrat do základního menu (volba classy / sandbox / semínka) místo skoku do hry
   const backToMenu = () => {
     gameRef.current.running = false;
     setOver(null);
@@ -10400,7 +10804,7 @@ function LoukaTisicePriser() {
     setNameSaved(false);
   };
 
-  // 💾 uloží skóre do žebříčku pod zvoleným jménem
+  //  uloží skóre do žebříčku pod zvoleným jménem
   const saveScore = () => {
     const g = gameRef.current;
     if (!over) return;
@@ -10420,14 +10824,14 @@ function LoukaTisicePriser() {
       saveMeta(nm);
       return nm;
     });
-    // 🌍 rekord na server - ať ho vidí ostatní i tvůj mobil; lokální zápis platí vždy
+    //  rekord na server - ať ho vidí ostatní i tvůj mobil; lokální zápis platí vždy
     lbSubmit(entry);
     playSfx(g, "buy");
     setNameSaved(true);
     setAskName(false);
   };
 
-  // 🧹 smazání celého žebříčku (potvrzení na druhé kliknutí)
+  // 粒 smazání celého žebříčku (potvrzení na druhé kliknutí)
   const clearBoard = () => {
     if (!boardClearConfirm) {
       setBoardClearConfirm(true);
@@ -10442,7 +10846,7 @@ function LoukaTisicePriser() {
   };
 
   const startRun = () => {
-    // 📅 denní výzva - obtížnost vylosovaná podle data (celý den stejná pro všechny)
+    //  denní výzva - obtížnost vylosovaná podle data (celý den stejná pro všechny)
     const dd = dailyRun ? (new Date().getDate() + new Date().getMonth()) % 3 : diffSel;
     const g0 = initGame(clsSel, sandboxSel, meta, dd, dailyRun);
     gameRef.current = g0;
@@ -10455,17 +10859,17 @@ function LoukaTisicePriser() {
     setNewAch([]);
     setConfirmQuit(false);
     setStarted(true);
-    // 📣 hlásatel - úvodní pokřik nového runu
+    //  hlásatel - úvodní pokřik nového runu
     const intro = dailyRun
-      ? "📅 DENNÍ VÝZVA! Dnešní louka je zlá…"
+      ? " DENNÍ VÝZVA! Dnešní louka je zlá…"
       : sandboxSel
-        ? "🧪 Sandbox — jen si hraj!"
-        : "🌾 Louka příšer — přežij ten dlouhý den!";
+        ? "離 Sandbox — jen si hraj!"
+        : " Louka příšer — přežij ten dlouhý den!";
     addText(g0, g0.hero.x, g0.hero.y - 60, intro, 120, 18);
-    if (dailyRun) addText(g0, g0.hero.x, g0.hero.y - 84, `🎭 ${CLASSES.find((c) => c.id === clsSel)?.name ?? "?"} · ${(DIFFS[dd] || DIFFS[1]).name}`, 200, 13);
+    if (dailyRun) addText(g0, g0.hero.x, g0.hero.y - 84, ` ${CLASSES.find((c) => c.id === clsSel)?.name ?? "?"} · ${(DIFFS[dd] || DIFFS[1]).name}`, 200, 13);
   };
 
-  // 🌍 online žebříček - při otevření tabu stáhneme globální top ze serveru;
+  //  online žebříček - při otevření tabu stáhneme globální top ze serveru;
   // při prvním úspěšném spojení jednorázově nahrajeme staré lokální rekordy, ať se neztratí
   useEffect(() => {
     if (menuTab !== "board") return;
@@ -10508,7 +10912,7 @@ function LoukaTisicePriser() {
       VW = w;
       VH = hgt;
       const raw = Math.min(2, window.devicePixelRatio || 1);
-      // 🚀 interní rozlišení se stropem 750p (1333×750) - fill-rate je zabiják FPS; DPR smí jít i pod 1, adaptivní scaler doladí
+      //  interní rozlišení se stropem 750p (1333×750) - fill-rate je zabiják FPS; DPR smí jít i pod 1, adaptivní scaler doladí
       DPR_CAP = Math.max(0.55, Math.min(raw, 1333 / w, 750 / hgt));
       DPR = DPR_CAP;
       canvas.width = Math.floor(w * DPR);
@@ -10533,7 +10937,7 @@ function LoukaTisicePriser() {
       const rawDt = (now - last) / 1000;
       const dt = Math.min(0.05, rawDt);
       last = now;
-      // 📉📈 adaptivní kvalita: každou sekundu podle reálného frame time se doladí DPR (1..DPR_CAP) - plynulost před ostrostí
+      //  adaptivní kvalita: každou sekundu podle reálného frame time se doladí DPR (1..DPR_CAP) - plynulost před ostrostí
       qFrames++;
       qTime += rawDt;
       if (qTime >= 1) {
@@ -10586,15 +10990,15 @@ function LoukaTisicePriser() {
       } else if (!blocked) {
         updateGame(g, dt, move, wantDash);
       }
-      // 🏆 zlatý záblesk po bossovi plynule vyprchá
+      //  zlatý záblesk po bossovi plynule vyprchá
       if (g.goldFlash > 0) g.goldFlash = Math.max(0, g.goldFlash - dt * 2.2);
-      // 👹 červený záblesk po spawnu bosse plynule vyprchá
+      //  červený záblesk po spawnu bosse plynule vyprchá
       if (g.dreadFlash > 0) g.dreadFlash = Math.max(0, g.dreadFlash - dt * 1.6);
       if (!g.userPaused) updateFx(g, dt);
       render(ctx, g, joy);
-      // 🎵 hudba na pozadí - klidná, u bosse intenzivní
+      //  hudba na pozadí - klidná, u bosse intenzivní
       musicTick(g);
-      // 🌦️ ambientní smyčka počasí (déšť/bouře/vítr)
+      // ️ ambientní smyčka počasí (déšť/bouře/vítr)
       ambTick(g);
 
       // otevření bedny z bosse
@@ -10605,7 +11009,7 @@ function LoukaTisicePriser() {
       }
 
 
-      // 🏆 trofeje - kontrola každé ~2 s, odměna se zapisuje do mety jen jednou
+      //  trofeje - kontrola každé ~2 s, odměna se zapisuje do mety jen jednou
       achT += dt;
       if (achT > 2) {
         achT = 0;
@@ -10622,7 +11026,7 @@ function LoukaTisicePriser() {
         }
       }
 
-      // 👑 koruna za finálního bosse - hned připsaná do mety (i kdyby ses hned potom zabil)
+      //  koruna za finálního bosse - hned připsaná do mety (i kdyby ses hned potom zabil)
       if (g.running && !g.over && g.crownsEarned > 0) {
         const c = g.crownsEarned;
         g.crownsEarned = 0;
@@ -10640,12 +11044,12 @@ function LoukaTisicePriser() {
 
       if (g.over && !prevOver) {
         prevOver = true;
-        // 🌱 semínka za run jsou VELMI vzácná (v1.14: ~4,5× méně než dřív) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
+        //  semínka za run jsou VELMI vzácná (v1.14: ~4,5× méně než dřív) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
         const seedMul = (DIFFS[g.diff] || DIFFS[1]).seed;
         const earned = Math.floor((Math.floor(g.time * 0.12) + g.kills * 2 + g.level * 5) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
-        // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
+        //  když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku
         // (čteme čerstvou metu z localStorage - žádná zaprášená closure)
         if (!g.sandbox && boardQualifies(loadMeta(), earned)) {
           setNameVal(loadMeta().lastName || "");
@@ -10655,7 +11059,7 @@ function LoukaTisicePriser() {
           setAskName(false);
         }
         setMeta((m) => {
-          // 🏆 rekord za classu + 📅 denní výzva (rekord se resetuje s každým novým dnem)
+          //  rekord za classu +  denní výzva (rekord se resetuje s každým novým dnem)
           const dk = new Date().toISOString().slice(0, 10);
           const nm: Meta = {
             ...m,
@@ -10730,7 +11134,7 @@ function LoukaTisicePriser() {
       if (e.code === "KeyE") {
         castUlt(gameRef.current);
       }
-      // 🗼 F = postavit / opravit / vylepšit strážní věž, u které stojíš
+      //  F = postavit / opravit / vylepšit strážní věž, u které stojíš
       if (e.code === "KeyF") {
         towerAct(gameRef.current);
       }
@@ -10755,7 +11159,7 @@ function LoukaTisicePriser() {
     };
   }, []);
 
-  // 🏚️ auto-pauza - zavřeš tab nebo okno a hra sama zastaví, ať tě nic nepřekvapí
+  // ️ auto-pauza - zavřeš tab nebo okno a hra sama zastaví, ať tě nic nepřekvapí
   useEffect(() => {
     const pause = () => {
       const g = gameRef.current;
@@ -10866,7 +11270,7 @@ function LoukaTisicePriser() {
         .ltp-spawn:hover { filter: brightness(1.3); }
         .ltp-spawn:active { transform: scale(.92); }
         @media (min-width: 640px) { .ltp-spawn { font-size: 11px; } }
-        /* 🌳 v1.14 strom dovedností - orby, pipsy, živé linky */
+        /*  v1.14 strom dovedností - orby, pipsy, živé linky */
         .ltp-tree { border-radius: 26px; border: 1px solid rgba(110,231,183,.16);
           background: radial-gradient(130% 100% at 50% 108%, #14402a 0%, #0b2818 42%, #061410 78%);
           box-shadow: inset 0 0 90px rgba(0,0,0,.55), 0 22px 50px rgba(0,0,0,.45); overflow: hidden; }
@@ -10939,27 +11343,27 @@ function LoukaTisicePriser() {
           onContextMenu={(e) => e.preventDefault()}
         />
 
-        {/* 🧭 HUD - horní lišta přes celou šířku: vlevo statistiky (na mobilu se oříznou), vpravo čas + rekord + pauza */}
+        {/* 吝 HUD - horní lišta přes celou šířku: vlevo statistiky (na mobilu se oříznou), vpravo čas + rekord + pauza */}
         <div className="ltp-hud pointer-events-none absolute left-[calc(env(safe-area-inset-left,0px)+8px)] right-[calc(env(safe-area-inset-right,0px)+8px)] top-[calc(env(safe-area-inset-top,0px)+8px)] flex items-center gap-1.5 text-[10px] font-semibold sm:gap-2 sm:text-xs">
           <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
           <span className="hidden rounded-lg border border-white/15 bg-black/40 px-2 py-1 font-bold text-white/90 lg:inline-block sm:px-3">
-            🌾 {trk("title")}
+             {trk("title")}
           </span>
           <span className="rounded-lg border border-indigo-400/30 bg-indigo-500/25 px-2 py-1 text-indigo-200 sm:px-3">
             {trk("lv")} {ui.level}
           </span>
           <span className="rounded-lg border border-red-400/30 bg-red-500/25 px-2 py-1 text-red-300 sm:px-3">
-            💀 {ui.kills}
+             {ui.kills}
           </span>
           <span
             className={`rounded-lg border px-2 py-1 sm:px-3 ${
               ui.chp / ui.cmax > 0.35 ? "border-amber-400/30 bg-amber-500/25 text-amber-200" : "border-red-300/70 bg-red-500/45 text-red-100 animate-pulse"
             }`}
           >
-            🏰 {ui.chp}
+             {ui.chp}
           </span>
           <span className="rounded-lg border border-yellow-300/40 bg-yellow-500/25 px-2 py-1 text-yellow-100 sm:px-3">
-            🪙 {ui.coins}
+            滋 {ui.coins}
           </span>
           <span
             className={`rounded-lg border px-2 py-1 sm:px-3 ${
@@ -10975,7 +11379,7 @@ function LoukaTisicePriser() {
           )}
           {ui.combo >= 5 && (
             <span className="rounded-lg border border-orange-400/40 bg-orange-500/25 px-2 py-1 text-orange-200 sm:px-3">
-              🔥 {ui.combo}
+               {ui.combo}
             </span>
           )}
           {ui.invuln >= 1 && (
@@ -10985,7 +11389,7 @@ function LoukaTisicePriser() {
           )}
           {ui.slowT >= 1 && (
             <span className="rounded-lg border border-sky-300/50 bg-sky-400/25 px-2 py-1 text-sky-100 sm:px-3">
-              🐌 {Math.ceil(ui.slowT)}s
+               {Math.ceil(ui.slowT)}s
             </span>
           )}
           {ui.poisT >= 1 && (
@@ -11005,12 +11409,12 @@ function LoukaTisicePriser() {
           </span>
           {best > 0 && (
             <span className="hidden rounded-lg border border-amber-400/30 bg-amber-500/25 px-2 py-1 text-amber-200 md:inline-block sm:px-3">
-              🏆 {best}
+               {best}
             </span>
           )}
           {meta.pts > 0 && (
             <span className="hidden rounded-lg border border-lime-400/30 bg-lime-500/25 px-2 py-1 text-lime-200 md:inline-block sm:px-3">
-              🌱 {meta.pts}
+               {meta.pts}
             </span>
           )}
           {isTouch && started && !over && !upgrades && !crate && !sbx && (
@@ -11029,10 +11433,10 @@ function LoukaTisicePriser() {
           </div>
         </div>
 
-        {/* ❤️📊 LEVÝ DOLNÍ ROH - jeden sloupec: HP bar, pak cooldown bary (desktop) nebo tlačítka 💨⚡ (mobil) */}
+        {/* ❤️ LEVÝ DOLNÍ ROH - jeden sloupec: HP bar, pak cooldown bary (desktop) nebo tlačítka ⚡ (mobil) */}
         <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-40 flex-col gap-2 sm:w-52">
           <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
-            <span>🏰</span>
+            <span></span>
             <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-2.5">
               <div
                 className="h-full rounded-full transition-all"
@@ -11070,7 +11474,7 @@ function LoukaTisicePriser() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <span>💨</span>
+                <span></span>
                 <div className="h-1.5 flex-1 overflow-hidden rounded-full border border-white/10 bg-black/60">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-sky-400 to-cyan-300"
@@ -11098,7 +11502,7 @@ function LoukaTisicePriser() {
                 }}
                 onContextMenu={(e) => e.preventDefault()}
               >
-                💨
+                
                 <span className="absolute bottom-1 left-2 right-2 h-1 overflow-hidden rounded-full bg-black/50">
                   <span className="block h-full rounded-full bg-sky-300" style={{ width: `${Math.min(100, ui.dash * 100)}%` }} />
                 </span>
@@ -11125,7 +11529,7 @@ function LoukaTisicePriser() {
           )}
         </div>
 
-        {/* 🧪📈 PRAVÝ DOLNÍ ROH - jeden sloupec: sandbox tlačítko nad XP barem */}
+        {/* 離 PRAVÝ DOLNÍ ROH - jeden sloupec: sandbox tlačítko nad XP barem */}
         <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex w-[46%] max-w-[280px] flex-col items-end gap-2">
           {started && !over && !upgrades && !crate && !sbx && gameRef.current.sandbox && (
             <button
@@ -11134,7 +11538,7 @@ function LoukaTisicePriser() {
               onClick={sbxOpen}
               onContextMenu={(e) => e.preventDefault()}
             >
-              🧪
+              離
             </button>
           )}
           <div className="pointer-events-none flex w-full items-center gap-2 text-[10px] text-white/70 sm:text-xs">
@@ -11153,24 +11557,24 @@ function LoukaTisicePriser() {
 
         {!started && !over && (
           <div className="ltp-menu absolute inset-0 flex flex-col items-center overflow-hidden text-center">
-            {/* 🌌 aurora koule - plovoucí světla za menu (Survivor.io lobbystický vibe) */}
+            {/*  aurora koule - plovoucí světla za menu (Survivor.io lobbystický vibe) */}
             <div className="ltp-orb" style={{ background: "#34d399", width: 340, height: 340, top: "-8%", left: "-6%" }} />
             <div className="ltp-orb" style={{ background: "#8b5cf6", width: 300, height: 300, top: "28%", right: "-8%", animationDelay: "-4.5s" }} />
             <div className="ltp-orb" style={{ background: "#f59e0b", width: 260, height: 260, bottom: "-10%", left: "18%", animationDelay: "-9s" }} />
-            {/* 📜 scrollovatelný obsah menu - start bar je mimo něj, takže nikdy nezjede ani se nepřekryje */}
+            {/*  scrollovatelný obsah menu - start bar je mimo něj, takže nikdy nezjede ani se nepřekryje */}
             <div className="relative z-10 flex w-full flex-1 flex-col items-center gap-2 overflow-y-auto overscroll-contain p-3 pb-8 sm:gap-3 sm:p-6 sm:pb-10">
             <div className="relative flex shrink-0 flex-col items-center gap-1 pt-1">
               <h2 className="ltp-title">
-                🌾 {trk("title")}
+                 {trk("title")}
               </h2>
               <div className="text-[10px] font-semibold tracking-wide text-white/40">v{GAME_VERSION} · {GAME_BUILD}</div>
               <div className="mt-1 flex flex-wrap items-center justify-center gap-1.5">
-                <span className="ltp-chip">🏆 {trk("menu_best")}: 🌱{Math.max(best, ...Object.values(meta.best || {}))}</span>
-                <span className="ltp-chip">🌱 {meta.pts} {trk("seeds")}</span>
-                {(meta.board || [])[0] && <span className="ltp-chip border-amber-300/40 bg-amber-400/15 text-amber-200">🥇 {(meta.board || [])[0].name} · 🌱{(meta.board || [])[0].score}</span>}
+                <span className="ltp-chip"> {trk("menu_best")}: {Math.max(best, ...Object.values(meta.best || {}))}</span>
+                <span className="ltp-chip"> {meta.pts} {trk("seeds")}</span>
+                {(meta.board || [])[0] && <span className="ltp-chip border-amber-300/40 bg-amber-400/15 text-amber-200">磊 {(meta.board || [])[0].name} · {(meta.board || [])[0].score}</span>}
               </div>
             </div>
-            {/* 🌍 výběr jazyka */}
+            {/*  výběr jazyka */}
             <div className="flex shrink-0 items-center justify-center gap-1.5">
               {LANGS.map((lg) => (
                 <button
@@ -11183,7 +11587,7 @@ function LoukaTisicePriser() {
                   {lg.flag} {lg.label}
                 </button>
               ))}
-              {/* 🎁 speciální překvapení - písnička z Red Dwarf hraje dokola, dokud ji nevypneš */}
+              {/*  speciální překvapení - písnička z Red Dwarf hraje dokola, dokud ji nevypneš */}
               <button
                 onClick={() => toggleOpt("surp")}
                 className={`rounded-xl border-2 px-2.5 py-1 text-[10px] font-bold transition active:scale-95 sm:text-xs ${
@@ -11192,18 +11596,18 @@ function LoukaTisicePriser() {
                     : "border-white/10 bg-white/5 text-white/55"
                 }`}
               >
-                {gameRef.current.opts.surp ? "🎺" : "🎁"}
+                {gameRef.current.opts.surp ? "" : ""}
               </button>
             </div>
             {/* taby: classa / trofeje / sandbox / semínka */}
             <div className="ltp-glass relative z-10 flex w-full max-w-2xl shrink-0 items-center justify-center gap-1.5 rounded-2xl p-1.5">
               {(
                 [
-                  { id: "cls", emoji: "🎭", label: "Classa" },
-                  { id: "trophy", emoji: "🏆", label: "Trofeje" },
-                  { id: "board", emoji: "🥇", label: "Žebříček" },
-                  { id: "sbx", emoji: "🧪", label: "Sandbox" },
-                  { id: "tree", emoji: "🌳", label: "Strom" },
+                  { id: "cls", emoji: "", label: "Classa" },
+                  { id: "trophy", emoji: "", label: "Trofeje" },
+                  { id: "board", emoji: "磊", label: "Žebříček" },
+                  { id: "sbx", emoji: "離", label: "Sandbox" },
+                  { id: "tree", emoji: "", label: "Strom" },
                 ] as const
               ).map((tb) => (
                 <button
@@ -11273,7 +11677,7 @@ function LoukaTisicePriser() {
                           <span className="rounded-full border border-red-400/25 bg-red-500/15 px-2 py-0.5 text-[9px] font-bold text-red-200">❤️ {c.hp}</span>
                           {!open && (
                             <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-lg bg-black/75 px-1 py-1 text-[9px] font-bold text-amber-300">
-                              🔒 🌱{CLS_UNLOCK_COST}
+                               {CLS_UNLOCK_COST}
                             </span>
                           )}
                           {!open && meta.pts < CLS_UNLOCK_COST && (
@@ -11285,7 +11689,7 @@ function LoukaTisicePriser() {
                       );
                     })}
                   </div>
-                  {/* ⚖️ obtížnost + 📅 denní výzva */}
+                  {/* ⚖️ obtížnost +  denní výzva */}
                   <div className="flex w-full max-w-2xl flex-wrap items-center justify-center gap-1.5">
                     {DIFFS.map((d, i) => (
                       <button
@@ -11297,7 +11701,7 @@ function LoukaTisicePriser() {
                             : "border-white/12 bg-white/5 text-white/55"
                         }`}
                       >
-                        {d.emoji} {trk("diff_" + i)} {d.seed !== 1 ? `(🌱×${d.seed})` : ""}
+                        {d.emoji} {trk("diff_" + i)} {d.seed !== 1 ? `(×${d.seed})` : ""}
                       </button>
                     ))}
                     <button
@@ -11341,12 +11745,12 @@ function LoukaTisicePriser() {
                             : "border-white/10 bg-white/5 opacity-60"
                         }`}
                       >
-                        <span className="text-2xl drop-shadow-[0_0_6px_rgba(251,191,36,.4)]">{got ? a.emoji : "🔒"}</span>
+                        <span className="text-2xl drop-shadow-[0_0_6px_rgba(251,191,36,.4)]">{got ? a.emoji : ""}</span>
                         <span className="flex-1">
                           <span className="block text-xs font-bold text-white/85">{a.name}</span>
                           <span className="block text-[10px] text-white/55">{a.desc}</span>
                         </span>
-                        <span className={`text-[11px] font-bold ${got ? "text-lime-300" : "text-white/40"}`}>🌱{a.reward}</span>
+                        <span className={`text-[11px] font-bold ${got ? "text-lime-300" : "text-white/40"}`}>{a.reward}</span>
                       </div>
                     );
                   })}
@@ -11358,7 +11762,7 @@ function LoukaTisicePriser() {
                           const c = CLASSES.find((x) => x.id === cid);
                           return (
                             <span key={cid} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/70">
-                              {c ? `${c.emoji} ${trk("cls_" + cid)}` : cid}: 🌱{sc}
+                              {c ? `${c.emoji} ${trk("cls_" + cid)}` : cid}: {sc}
                             </span>
                           );
                         })}
@@ -11367,32 +11771,32 @@ function LoukaTisicePriser() {
                   )}
                   {meta.daily?.best ? (
                     <div className="col-span-full rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 p-2 text-center text-[11px] text-fuchsia-200">
-                      📅 {trk("daily_best").replace("📅 ", "")} 🌱{meta.daily.best}
+                       {trk("daily_best").replace(" ", "")} {meta.daily.best}
                     </div>
                   ) : null}
                 </div>
               )}
 
-              {/* 🥇 žebříček nejlepších runů - arcade tabule se zlatými medailemi */}
+              {/* 磊 žebříček nejlepších runů - arcade tabule se zlatými medailemi */}
               {menuTab === "board" && (
                 <div className="ltp-glass flex w-full max-w-2xl flex-col gap-2 rounded-2xl p-3">
                   <h3 className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 bg-clip-text text-sm font-black text-transparent sm:text-base">
-                    🥇 {trk("board_title")}
+                    磊 {trk("board_title")}
                   </h3>
-                  {/* 🌍 stav spojení se serverovým žebříčkem */}
+                  {/*  stav spojení se serverovým žebříčkem */}
                   <div className="text-center text-[10px] font-bold sm:text-[11px]">
                     {lbStatus === "online" ? (
-                      <span className="text-emerald-300">🌍 {trk("board_global")}</span>
+                      <span className="text-emerald-300"> {trk("board_global")}</span>
                     ) : lbStatus === "loading" ? (
                       <span className="text-white/50">⏳ {trk("board_loading")}</span>
                     ) : lbStatus === "offline" ? (
-                      <span className="text-amber-200/80">📰 {trk("board_offline")}</span>
+                      <span className="text-amber-200/80"> {trk("board_offline")}</span>
                     ) : (
-                      <span className="text-white/40">💾 {trk("board_note")}</span>
+                      <span className="text-white/40"> {trk("board_note")}</span>
                     )}
                   </div>
                   {(() => {
-                    // 🌍 online = globální rekordy všech hráčů, jinak lokální top 10 z prohlížeče
+                    //  online = globální rekordy všech hráčů, jinak lokální top 10 z prohlížeče
                     const show: ScoreEntry[] =
                       lbStatus === "online" && lbRows ? lbRows.slice(0, LB_SHOW) : (meta.board || []).slice(0, BOARD_MAX);
                     return show.length === 0 ? (
@@ -11402,7 +11806,7 @@ function LoukaTisicePriser() {
                   ) : (
                     <div className="flex flex-col gap-1">
                       {show.map((en, i) => {
-                        const medal = i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `#${i + 1}`;
+                        const medal = i === 0 ? "磊" : i === 1 ? "賂" : i === 2 ? "雷" : `#${i + 1}`;
                         const c = CLASSES.find((x) => x.id === en.cls);
                         return (
                           <div
@@ -11418,7 +11822,7 @@ function LoukaTisicePriser() {
                             <span className="w-8 shrink-0 text-left font-black text-amber-200">{medal}</span>
                             <span className="flex-1 truncate text-left font-bold text-white/90">{en.name}</span>
                             <span title={trk("cls_" + en.cls)}>{c ? c.emoji : "❔"}</span>
-                            <span className="shrink-0 font-bold text-lime-200">🌱{en.score}</span>
+                            <span className="shrink-0 font-bold text-lime-200">{en.score}</span>
                             <span className="hidden shrink-0 text-white/55 sm:inline">Lv {en.level}</span>
                             <span className="hidden shrink-0 text-white/55 sm:inline">☠️{en.kills}</span>
                             <span className="hidden shrink-0 text-white/55 md:inline">
@@ -11437,7 +11841,7 @@ function LoukaTisicePriser() {
                             : "border-white/15 bg-white/5 text-white/50 hover:bg-white/10"
                         }`}
                       >
-                        {boardClearConfirm ? `😱 ${trk("board_confirm")}` : trk("board_clear")}
+                        {boardClearConfirm ? ` ${trk("board_confirm")}` : trk("board_clear")}
                       </button>
                       )}
                     </div>
@@ -11473,7 +11877,7 @@ function LoukaTisicePriser() {
               {menuTab === "tree" && (
                 <>
                   <SkillTree meta={meta} onBuy={buyTree} />
-                  {/* 🔄 restart hry - smaže upgrady a měny; vyžaduje 3 potvrzení, ať to nikdo nezmáčkne omylem */}
+                  {/*  restart hry - smaže upgrady a měny; vyžaduje 3 potvrzení, ať to nikdo nezmáčkne omylem */}
                   <button
                     onClick={resetGame}
                     className={`rounded-xl border-2 px-4 py-1.5 text-[11px] font-bold transition active:scale-95 sm:text-xs ${
@@ -11492,11 +11896,11 @@ function LoukaTisicePriser() {
 
             {sandboxSel && menuTab !== "sbx" && (
               <span className="rounded-lg border border-fuchsia-400/40 bg-fuchsia-500/20 px-3 py-1 text-[10px] font-bold text-fuchsia-200 sm:text-[11px]">
-                🧪 {trk("sbx_badge").replace("🧪 ", "")}
+                離 {trk("sbx_badge").replace("離 ", "")}
               </span>
             )}
             </div>
-            {/* 📌 rezerva místa pro start bar - sám žije JINDE (vlastní vrstva pod rootem) */}
+            {/*  rezerva místa pro start bar - sám žije JINDE (vlastní vrstva pod rootem) */}
             <div className="w-full shrink-0" style={{ height: "132px" }} />
           </div>
         )}
@@ -11532,7 +11936,7 @@ function LoukaTisicePriser() {
         )}
         {sbx && (
           <div className="absolute inset-0 z-40 flex flex-col overflow-hidden backdrop-blur-md" style={{ background: "radial-gradient(120% 90% at 50% 0%, rgba(76,29,149,.55) 0%, rgba(13,6,24,.94) 55%, rgba(5,2,10,.97) 100%)" }}>
-            {/* 🔝 sticky hlavička */}
+            {/*  sticky hlavička */}
             <div className="shrink-0 border-b border-fuchsia-400/25 px-3 pb-2.5 pt-[calc(env(safe-area-inset-top,0px)+12px)]" style={{ background: "rgba(13,6,24,.85)" }}>
               <h2 className="bg-gradient-to-r from-fuchsia-300 via-violet-300 to-fuchsia-300 bg-clip-text text-center text-2xl font-black text-transparent sm:text-3xl" style={{ animation: "ltpHdr 2.8s ease-in-out infinite" }}>
                 {trk("sbx_title")}
@@ -11546,16 +11950,16 @@ function LoukaTisicePriser() {
             <p className="mt-2 text-center text-[10px] font-extrabold uppercase tracking-[.16em] text-fuchsia-200/70">{trk("sbx_live")}</p>
             <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
               <span className="ltp-chip border-red-400/40 bg-red-500/20 text-red-200">❤️ {Math.ceil(gameRef.current.hero.hp)}/{gameRef.current.hero.maxHp}</span>
-              <span className="ltp-chip border-amber-400/40 bg-amber-500/20 text-amber-200">💪 +{Math.round(gameRef.current.stats.dmgMul * 100)}% {trk("dmg")}</span>
+              <span className="ltp-chip border-amber-400/40 bg-amber-500/20 text-amber-200"> +{Math.round(gameRef.current.stats.dmgMul * 100)}% {trk("dmg")}</span>
               <span className="ltp-chip border-yellow-400/40 bg-yellow-500/20 text-yellow-200">⚡ +{Math.round(gameRef.current.stats.fireMul * 100)}% {trk("kadence")}</span>
-              <span className="ltp-chip border-emerald-400/40 bg-emerald-500/20 text-emerald-200">👟 +{Math.round(gameRef.current.stats.speedMul * 100)}% {trk("rychlost")}</span>
-              <span className="ltp-chip border-orange-400/40 bg-orange-500/20 text-orange-200">🎯 {Math.round(gameRef.current.stats.crit * 100)}% {trk("crit")}</span>
-              <span className="ltp-chip border-fuchsia-400/40 bg-fuchsia-500/20 text-fuchsia-200">🧿 {Math.round(gameRef.current.stats.home * 100)}% {trk("navad")}</span>
-              <span className="ltp-chip border-sky-400/40 bg-sky-500/20 text-sky-200">🛡️ {Math.round(gameRef.current.stats.armor * 100)}% {trk("zbroj")}</span>
-              <span className="ltp-chip border-violet-400/40 bg-violet-500/20 text-violet-200">🏹 {Math.round(gameRef.current.stats.multishot)}× {trk("projektil")}</span>
+              <span className="ltp-chip border-emerald-400/40 bg-emerald-500/20 text-emerald-200"> +{Math.round(gameRef.current.stats.speedMul * 100)}% {trk("rychlost")}</span>
+              <span className="ltp-chip border-orange-400/40 bg-orange-500/20 text-orange-200"> {Math.round(gameRef.current.stats.crit * 100)}% {trk("crit")}</span>
+              <span className="ltp-chip border-fuchsia-400/40 bg-fuchsia-500/20 text-fuchsia-200">刺 {Math.round(gameRef.current.stats.home * 100)}% {trk("navad")}</span>
+              <span className="ltp-chip border-sky-400/40 bg-sky-500/20 text-sky-200">️ {Math.round(gameRef.current.stats.armor * 100)}% {trk("zbroj")}</span>
+              <span className="ltp-chip border-violet-400/40 bg-violet-500/20 text-violet-200"> {Math.round(gameRef.current.stats.multishot)}× {trk("projektil")}</span>
             </div>
             </div>
-            {/* 📜 scrollovatelný obsah */}
+            {/*  scrollovatelný obsah */}
             <div className="flex-1 overflow-y-auto overscroll-contain px-3 py-3 sm:px-5">
             {/* ⚡ akce */}
             <div className="ltp-sbxsec mx-auto w-full max-w-3xl">
@@ -11565,13 +11969,13 @@ function LoukaTisicePriser() {
                 <button onClick={() => sbxBoss(-1, true)} className="ltp-spawn border-red-400/60 bg-red-500/25 text-red-200">{trk("sbx_final")}</button>
               </div>
             </div>
-            {/* 👑 bossové */}
+            {/*  bossové */}
             <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
               <h4>{trk("sbx_sec_boss")}</h4>
               <div className="flex flex-wrap items-center justify-center gap-1.5">
                 {BOSS_TYPES.map((bt, i) => (
                   <button key={bt.name} onClick={() => sbxBoss(i)} className="ltp-spawn border-red-400/40 bg-red-500/15 text-red-100">
-                    👑 {bt.name}
+                     {bt.name}
                   </button>
                 ))}
                 {BOSS_TYPES.map((bt, i) => (
@@ -11581,18 +11985,18 @@ function LoukaTisicePriser() {
                 ))}
               </div>
             </div>
-            {/* 🌟 mini-bossové */}
+            {/*  mini-bossové */}
             <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
               <h4>{trk("sbx_sec_mini")}</h4>
               <div className="flex flex-wrap items-center justify-center gap-1.5">
                 {MINI_TYPES.map((mt, i) => (
                   <button key={mt.name} onClick={() => sbxMini(i)} className="ltp-spawn border-amber-400/40 bg-amber-500/15 text-amber-100">
-                    🌟 {mt.name}
+                     {mt.name}
                   </button>
                 ))}
               </div>
             </div>
-            {/* 👾 nepřátelé */}
+            {/*  nepřátelé */}
             <div className="ltp-sbxsec mx-auto mt-3 w-full max-w-3xl">
               <h4>{trk("sbx_sec_enemies")}</h4>
               <div className="flex flex-wrap items-center justify-center gap-1.5">
@@ -11612,7 +12016,7 @@ function LoukaTisicePriser() {
               ))}
             </div>
             </div>
-            {/* 🔻 sticky patička */}
+            {/*  sticky patička */}
             <div className="shrink-0 border-t border-fuchsia-400/25 px-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] pt-2.5" style={{ background: "rgba(13,6,24,.88)" }}>
               <button
                 onClick={sbxClose}
@@ -11633,18 +12037,18 @@ function LoukaTisicePriser() {
             <div className="grid w-full max-w-md grid-cols-3 gap-1.5">
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">⏱ {mm}:{String(ss).padStart(2, "0")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">⭐ {trk("level")} {ui.level}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">💀 {ui.kills} {trk("kills")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs"> {ui.kills} {trk("kills")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">☠️ {ui.bk} {trk("bosses")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">❤️ {ui.hp}/{ui.maxHp}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🗡️ +{Math.round((ui.dmg - 1) * 100)} % {trk("dmg")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🌀 +{Math.round((ui.fire - 1) * 100)} % {trk("kadence")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">👟 +{Math.round((ui.spd - 1) * 100)} % {trk("rychlost")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🎯 {Math.round(ui.crit * 100)} % {trk("crit")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🧿 {Math.round(ui.home * 100)} % {trk("navad")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🛡️ {Math.round(ui.arm * 100)} % {trk("zbroj")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🩸 {ui.ls} {trk("hp_kill")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">️ +{Math.round((ui.dmg - 1) * 100)} % {trk("dmg")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs"> +{Math.round((ui.fire - 1) * 100)} % {trk("kadence")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs"> +{Math.round((ui.spd - 1) * 100)} % {trk("rychlost")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs"> {Math.round(ui.crit * 100)} % {trk("crit")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">刺 {Math.round(ui.home * 100)} % {trk("navad")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">️ {Math.round(ui.arm * 100)} % {trk("zbroj")}</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">喝 {ui.ls} {trk("hp_kill")}</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">✳️ +{Math.round(ui.ms)} {trk("projektil")}</div>
-              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">🔥 {trk("kombo")} {ui.combo} (max {gameRef.current.comboBest})</div>
+              <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs"> {trk("kombo")} {ui.combo} (max {gameRef.current.comboBest})</div>
               <div className="rounded-lg bg-white/5 px-2.5 py-1.5 text-left text-[10px] text-white/80 sm:text-xs">{trk("boss_in").replace("{n}", String(Math.max(0, Math.ceil(gameRef.current.nextBoss - gameRef.current.time))))}</div>
               {(() => {
                 const cyc = gameRef.current.time % 600;
@@ -11677,9 +12081,9 @@ function LoukaTisicePriser() {
                   {gameRef.current.opts[ob.key] ? trk(ob.key) : trk(ob.key + "_off")}
                 </button>
               ))}
-              {/* 🎚 hlasitost - master kanál, perzistuje se do mety */}
+              {/*  hlasitost - master kanál, perzistuje se do mety */}
               <div className="flex items-center gap-2 rounded-xl border-2 border-white/15 bg-white/5 px-3 py-1.5">
-                <span className="text-[11px] font-bold text-white/60">🔊</span>
+                <span className="text-[11px] font-bold text-white/60"></span>
                 <input
                   type="range"
                   min={0}
@@ -11700,7 +12104,7 @@ function LoukaTisicePriser() {
                 <span className="text-[11px] font-bold text-white/60">{meta.vol ?? 100} %</span>
               </div>
             </div>
-            {/* 📊 rozpad poškození podle zdrojů (top 5) */}
+            {/*  rozpad poškození podle zdrojů (top 5) */}
             {(() => {
               const src = Object.entries(gameRef.current.dmgSrc).sort((a, b) => (b[1] as number) - (a[1] as number)).slice(0, 5);
               const total = src.reduce((s, [, v]) => s + (v as number), 0) || 1;
@@ -11733,7 +12137,7 @@ function LoukaTisicePriser() {
                 ⚙️ {trk("turret_kinds")} {Object.values(TURRET_TYPES).map((t) => t.emoji).join(" ")}
               </p>
             )}
-            {/* 🌟 speciální schopnost aktuální classy */}
+            {/*  speciální schopnost aktuální classy */}
             {["knight", "ninja"].indexOf(gameRef.current.cls) >= 0 && (
               <p className="max-w-xs text-[10px] leading-snug text-white/45 sm:text-[11px]">
                 {trk("spec_" + gameRef.current.cls)}
@@ -11796,7 +12200,7 @@ function LoukaTisicePriser() {
                 {Math.floor(over.time % 60).toString().padStart(2, "0")}
               </span>
               <span className="rounded-lg border border-amber-400/30 bg-amber-500/25 px-3 py-1 text-amber-200">
-                {trk("over_best")} 🌱{Math.max(best, meta.best?.[gameRef.current.cls] || 0)}
+                {trk("over_best")} {Math.max(best, meta.best?.[gameRef.current.cls] || 0)}
               </span>
               <span className="rounded-lg border border-emerald-400/30 bg-emerald-500/25 px-3 py-1 text-emerald-200">
                 {(DIFFS[gameRef.current.diff] || DIFFS[1]).emoji} {trk("diff_" + gameRef.current.diff)}
@@ -11804,12 +12208,12 @@ function LoukaTisicePriser() {
               <span className="rounded-lg border border-violet-400/30 bg-violet-500/25 px-3 py-1 text-violet-200">
                 {(() => {
                   const c = CLASSES.find((x) => x.id === gameRef.current.cls);
-                  return `${c ? c.emoji + " " + trk("cls_" + c.id) : "?"} ${trk("over_clsrec")} 🌱${Math.max(meta.best?.[gameRef.current.cls] || 0, over.earned)}`;
+                  return `${c ? c.emoji + " " + trk("cls_" + c.id) : "?"} ${trk("over_clsrec")} ${Math.max(meta.best?.[gameRef.current.cls] || 0, over.earned)}`;
                 })()}
               </span>
               {gameRef.current.comboBest > 0 && (
                 <span className="rounded-lg border border-orange-400/30 bg-orange-500/25 px-3 py-1 text-orange-200">
-                  🔥 {trk("over_combo")} {gameRef.current.comboBest}
+                   {trk("over_combo")} {gameRef.current.comboBest}
                 </span>
               )}
               {(() => {
@@ -11828,7 +12232,7 @@ function LoukaTisicePriser() {
             </div>
             <div className="flex flex-wrap items-center justify-center gap-2 text-xs sm:text-sm">
               <span className="rounded-lg border border-lime-400/30 bg-lime-500/25 px-3 py-1 font-bold text-lime-200">
-                🌱 {trk("seeds_got")} {over.earned} {trk("seeds")} ({trk("seeds_total")} {meta.pts})
+                 {trk("seeds_got")} {over.earned} {trk("seeds")} ({trk("seeds_total")} {meta.pts})
               </span>
               {gameRef.current.daily && meta.daily && meta.daily.key === new Date().toISOString().slice(0, 10) && over.earned >= meta.daily.best && (
                 <span className="animate-pulse rounded-lg border border-fuchsia-400/50 bg-fuchsia-500/25 px-3 py-1 font-bold text-fuchsia-200">
@@ -11836,11 +12240,11 @@ function LoukaTisicePriser() {
                 </span>
               )}
             </div>
-            {/* 🏆 zápis do žebříčku - skóre se trefilo do top 10, vyber si jméno */}
+            {/*  zápis do žebříčku - skóre se trefilo do top 10, vyber si jméno */}
             {over.earned > 0 && askName && !nameSaved && (
               <div className="ltp-glass flex w-full max-w-md flex-col items-center gap-2 rounded-2xl border-2 border-amber-300/50 bg-amber-400/10 p-3">
                 <div className="text-sm font-bold text-amber-200 sm:text-base">
-                  🏆 {trk("ask_name")} <span className="text-lime-200">🌱{over.earned}</span>
+                   {trk("ask_name")} <span className="text-lime-200">{over.earned}</span>
                 </div>
                 <div className="flex w-full flex-col items-center gap-2 sm:flex-row">
                   <input
@@ -11860,7 +12264,7 @@ function LoukaTisicePriser() {
                     onClick={saveScore}
                     className="ltp-sheen w-full shrink-0 rounded-xl bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 px-5 py-2 text-sm font-extrabold text-amber-950 transition hover:brightness-110 active:scale-95 sm:w-auto"
                   >
-                    💾 {trk("save_score")}
+                     {trk("save_score")}
                   </button>
                 </div>
                 <div className="text-[10px] text-white/45">{trk("board_note")}</div>
@@ -11871,7 +12275,7 @@ function LoukaTisicePriser() {
                 ✅ {trk("saved_board")}
               </span>
             )}
-            {/* 🏆 nově odemčené trofeje z tohoto runu */}
+            {/*  nově odemčené trofeje z tohoto runu */}
             {newAch.length > 0 && (
               <div className="flex max-w-[90%] flex-wrap items-center justify-center gap-1.5">
                 {newAch.map((id) => {
@@ -11882,7 +12286,7 @@ function LoukaTisicePriser() {
                       key={id}
                       className="animate-pulse rounded-lg border border-yellow-300/50 bg-yellow-400/15 px-2.5 py-1 text-[11px] font-bold text-yellow-100 sm:text-xs"
                     >
-                      {a.emoji} {trk("new_trophy")} {a.name} (+{a.reward} 🌱)
+                      {a.emoji} {trk("new_trophy")} {a.name} (+{a.reward} )
                     </span>
                   );
                 })}
@@ -11904,7 +12308,7 @@ function LoukaTisicePriser() {
           </div>
         )}
 
-        {/* 🌳 strom dovedností - jediné trvalé upgrady ve hře */}
+        {/*  strom dovedností - jediné trvalé upgrady ve hře */}
         {shop && (
           <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-2 overflow-y-auto bg-black/80 p-3 backdrop-blur-md sm:gap-3 sm:p-6">
             <h2 className="bg-gradient-to-r from-lime-300 to-emerald-300 bg-clip-text text-lg font-bold text-transparent sm:text-2xl">
@@ -11921,7 +12325,7 @@ function LoukaTisicePriser() {
         )}
       </div>
 
-      {/* 🗼 akce se strážní věží - tlačítko se objeví, jen když stojíš u rozpadliny nebo věže */}
+      {/*  akce se strážní věží - tlačítko se objeví, jen když stojíš u rozpadliny nebo věže */}
       {started && !over && ui.twLabel && (
         <button
           onClick={() => towerAct(gameRef.current)}
@@ -11930,7 +12334,7 @@ function LoukaTisicePriser() {
           {ui.twLabel} <span className="opacity-70">(F)</span>
         </button>
       )}
-      {/* 📌 Spustit run - vlastní vrstva mimo herní scénu, přilepená ke spodku fixního rootu:
+      {/*  Spustit run - vlastní vrstva mimo herní scénu, přilepená ke spodku fixního rootu:
           není součástí menu, takže se nemůže hýbat se scrolluje a nic ji nemůže zakrýt */}
       {!started && !over && (
         <div className="ltp-startbar">
@@ -11938,7 +12342,7 @@ function LoukaTisicePriser() {
             onClick={startRun}
             className="ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
           >
-            {trk("start")} {sandboxSel ? "🧪" : "▶"}
+            {trk("start")} {sandboxSel ? "離" : "▶"}
           </button>
         </div>
       )}
@@ -11958,3 +12362,293 @@ function LoukaTisicePriser() {
 
 
 
+              { id: "board", emoji: "磊", label: "Žebříček" },
+                  { id: "sbx", emoji: "離", label: "Sandbox" },
+                  { id: "tree", emoji: "", label: "Strom" },
+                ] as const
+              ).map((tb) => (
+                <button
+                  key={tb.id}
+                  onClick={() => setMenuTab(tb.id)}
+                  className={`ltp-card flex-1 rounded-xl border-2 px-2 py-2 text-[10px] font-bold active:scale-95 sm:px-3 sm:text-sm ${
+                    menuTab === tb.id
+                      ? "border-emerald-300/80 bg-gradient-to-b from-emerald-400/30 to-teal-500/15 text-emerald-100 shadow-[0_0_18px_rgba(52,211,153,.4)]"
+                      : "border-white/10 bg-white/5 text-white/55"
+                  }`}
+                >
+                  {tb.emoji} {trk("tab_" + tb.id)}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex w-full flex-1 flex-col items-center justify-center gap-2 sm:gap-3">
+              {menuTab === "cls" && (
+                <>
+                  <div className="grid w-full max-w-2xl grid-cols-2 gap-2 sm:grid-cols-4">
+                    {CLASSES.map((c) => {
+                      const open = clsUnlocked(meta, c.id) || sandboxSel;
+                      const sel = clsSel === c.id;
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => {
+                            if (open) {
+                              setClsSel(c.id);
+                            } else if (meta.pts >= CLS_UNLOCK_COST) {
+                              setMeta((m) => {
+                                const nm = { ...m, pts: m.pts - CLS_UNLOCK_COST, unlock: { ...m.unlock, [c.id]: true } };
+                                saveMeta(nm);
+                                return nm;
+                              });
+                              setClsSel(c.id);
+                            }
+                          }}
+                          className={`ltp-card ltp-sheen relative flex flex-col items-center gap-1 rounded-2xl border-2 p-2.5 active:scale-95 sm:p-3 ${open ? "" : "opacity-60"}`}
+                          style={{
+                            borderColor: sel ? c.color : "rgba(255,255,255,0.12)",
+                            background: sel
+                              ? `linear-gradient(to bottom right, ${c.color}38, rgba(255,255,255,0.04))`
+                              : "rgba(255,255,255,0.04)",
+                            boxShadow: sel ? `0 0 24px ${c.color}55, 0 10px 30px rgba(0,0,0,.45)` : "0 6px 20px rgba(0,0,0,.35)",
+                          }}
+                        >
+                          <span
+                            className="flex h-11 w-11 items-center justify-center rounded-full text-2xl sm:h-12 sm:w-12 sm:text-3xl"
+                            style={{
+                              background: `radial-gradient(circle at 35% 30%, ${c.color}66, rgba(0,0,0,0.4))`,
+                              boxShadow: `inset 0 0 0 1.5px ${c.color}aa`,
+                              filter: sel ? `drop-shadow(0 0 10px ${c.color}cc)` : undefined,
+                            }}
+                          >
+                            {c.emoji}
+                          </span>
+                          <span className="text-xs font-extrabold sm:text-sm" style={{ color: sel ? c.color : "#e2e8f0" }}>
+                            {trk("cls_" + c.id)}
+                          </span>
+                          <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 text-[9px] font-semibold text-white/70">
+                            {WEAPONS[c.weapon].emoji} {trk("wpn_" + c.weapon)}
+                          </span>
+                          <span className="text-[8px] leading-tight text-white/50">
+                            {trk("dsc_" + c.id)}
+                          </span>
+                          <span className="rounded-full border border-red-400/25 bg-red-500/15 px-2 py-0.5 text-[9px] font-bold text-red-200">❤️ {c.hp}</span>
+                          {!open && (
+                            <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 rounded-lg bg-black/75 px-1 py-1 text-[9px] font-bold text-amber-300">
+                               {CLS_UNLOCK_COST}
+                            </span>
+                          )}
+                          {!open && meta.pts < CLS_UNLOCK_COST && (
+                            <span className="absolute inset-x-0 bottom-1 text-center text-[8px] text-white/40">
+                              {trk("locked")}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {/* ⚖️ obtížnost +  denní výzva */}
+                  <div className="flex w-full max-w-2xl flex-wrap items-center justify-center gap-1.5">
+                    {DIFFS.map((d, i) => (
+                      <button
+                        key={d.name}
+                        onClick={() => setDiffSel(i)}
+                        className={`ltp-card rounded-xl border-2 px-3 py-1.5 text-[11px] font-bold active:scale-95 ${
+                          diffSel === i
+                            ? "border-amber-300/80 bg-gradient-to-b from-amber-400/30 to-orange-500/20 text-amber-100 shadow-[0_0_16px_rgba(251,191,36,.4)]"
+                            : "border-white/12 bg-white/5 text-white/55"
+                        }`}
+                      >
+                        {d.emoji} {trk("diff_" + i)} {d.seed !== 1 ? `(×${d.seed})` : ""}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setDailyRun((v) => !v)}
+                      className={`ltp-card rounded-xl border-2 px-3 py-1.5 text-[11px] font-bold active:scale-95 ${
+                        dailyRun
+                          ? "border-fuchsia-300/80 bg-gradient-to-b from-fuchsia-400/30 to-violet-500/20 text-fuchsia-100 shadow-[0_0_16px_rgba(232,121,249,.45)]"
+                          : "border-white/12 bg-white/5 text-white/55"
+                      }`}
+                    >
+                      {trk("daily_btn")} {dailyRun ? trk("daily_on") : ""}
+                    </button>
+                  </div>
+                  {dailyRun && (() => {
+                    const dd = (new Date().getDate() + new Date().getMonth()) % 3;
+                    const d = DIFFS[dd] || DIFFS[1];
+                    return (
+                      <p className="max-w-md rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 p-2 text-[10px] text-fuchsia-200">
+                        {trk("daily_note").replace("{d}", `${d.emoji} ${trk("diff_" + dd)}`)}
+                      </p>
+                    );
+                  })()}
+                  <p className="max-w-md text-[10px] text-white/60 sm:text-[11px]">
+                    {isTouch ? trk("hint_touch") : trk("hint_kbd")}
+                  </p>
+                  <p className="max-w-md rounded-xl border border-white/15 bg-white/5 p-2 text-[10px] leading-relaxed text-white/70 sm:text-[11px]">
+                    {trk("legend")}
+                  </p>
+                </>
+              )}
+              {menuTab === "trophy" && (
+                <div className="grid w-full max-w-2xl grid-cols-1 gap-1.5 sm:grid-cols-2">
+                  {ACHIEVEMENTS.map((a) => {
+                    const got = !!meta.ach?.[a.id];
+                    return (
+                      <div
+                        key={a.id}
+                        className={`ltp-card flex items-center gap-2.5 rounded-xl border-2 p-2.5 ${
+                          got
+                            ? "ltp-gold border-amber-300/60 bg-gradient-to-r from-amber-400/15 via-amber-300/10 to-transparent shadow-[0_0_18px_rgba(251,191,36,.25)]"
+                            : "border-white/10 bg-white/5 opacity-60"
+                        }`}
+                      >
+                        <span className="text-2xl drop-shadow-[0_0_6px_rgba(251,191,36,.4)]">{got ? a.emoji : ""}</span>
+                        <span className="flex-1">
+                          <span className="block text-xs font-bold text-white/85">{a.name}</span>
+                          <span className="block text-[10px] text-white/55">{a.desc}</span>
+                        </span>
+                        <span className={`text-[11px] font-bold ${got ? "text-lime-300" : "text-white/40"}`}>{a.reward}</span>
+                      </div>
+                    );
+                  })}
+                  {Object.keys(meta.best || {}).length > 0 && (
+                    <div className="col-span-full mt-1 rounded-xl border border-white/10 bg-white/5 p-2">
+                      <p className="mb-1 text-[10px] font-bold text-white/70">{trk("records")}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(meta.best || {}).map(([cid, sc]) => {
+                          const c = CLASSES.find((x) => x.id === cid);
+                          return (
+                            <span key={cid} className="rounded-lg border border-white/10 bg-black/40 px-2 py-1 text-[10px] text-white/70">
+                              {c ? `${c.emoji} ${trk("cls_" + cid)}` : cid}: {sc}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {meta.daily?.best ? (
+                    <div className="col-span-full rounded-xl border border-fuchsia-400/30 bg-fuchsia-500/10 p-2 text-center text-[11px] text-fuchsia-200">
+                       {trk("daily_best").replace(" ", "")} {meta.daily.best}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+
+              {/* 磊 žebříček nejlepších runů - arcade tabule se zlatými medailemi */}
+              {menuTab === "board" && (
+                <div className="ltp-glass flex w-full max-w-2xl flex-col gap-2 rounded-2xl p-3">
+                  <h3 className="bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-300 bg-clip-text text-sm font-black text-transparent sm:text-base">
+                    磊 {trk("board_title")}
+                  </h3>
+                  {/*  stav spojení se serverovým žebříčkem */}
+                  <div className="text-center text-[10px] font-bold sm:text-[11px]">
+                    {lbStatus === "online" ? (
+                      <span className="text-emerald-300"> {trk("board_global")}</span>
+                    ) : lbStatus === "loading" ? (
+                      <span className="text-white/50">⏳ {trk("board_loading")}</span>
+                    ) : lbStatus === "offline" ? (
+                      <span className="text-amber-200/80"> {trk("board_offline")}</span>
+                    ) : (
+                      <span className="text-white/40"> {trk("board_note")}</span>
+                    )}
+                  </div>
+                  {(() => {
+                    //  online = globální rekordy všech hráčů, jinak lokální top 10 z prohlížeče
+                    const show: ScoreEntry[] =
+                      lbStatus === "online" && lbRows ? lbRows.slice(0, LB_SHOW) : (meta.board || []).slice(0, BOARD_MAX);
+                    return show.length === 0 ? (
+                    <div className="rounded-xl border border-white/10 bg-white/5 p-4 text-xs text-white/55 sm:text-sm">
+                      {trk("board_empty")}
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1">
+                      {show.map((en, i) => {
+                        const medal = i === 0 ? "磊" : i === 1 ? "賂" : i === 2 ? "雷" : `#${i + 1}`;
+                        const c = CLASSES.find((x) => x.id === en.cls);
+                        return (
+                          <div
+                            key={i}
+                            className={`flex items-center gap-2 rounded-xl border px-2.5 py-1.5 text-[11px] sm:text-xs ${
+                              i === 0
+                                ? "border-amber-300/60 bg-gradient-to-r from-amber-400/20 via-amber-300/10 to-transparent shadow-[0_0_16px_rgba(251,191,36,.25)]"
+                                : i < 3
+                                  ? "border-amber-300/30 bg-amber-400/10"
+                                  : "border-white/10 bg-white/5"
+                            }`}
+                          >
+                            <span className="w-8 shrink-0 text-left font-black text-amber-200">{medal}</span>
+                            <span className="flex-1 truncate text-left font-bold text-white/90">{en.name}</span>
+                            <span title={trk("cls_" + en.cls)}>{c ? c.emoji : "❔"}</span>
+                            <span className="shrink-0 font-bold text-lime-200">{en.score}</span>
+                            <span className="hidden shrink-0 text-white/55 sm:inline">Lv {en.level}</span>
+                            <span className="hidden shrink-0 text-white/55 sm:inline">☠️{en.kills}</span>
+                            <span className="hidden shrink-0 text-white/55 md:inline">
+                              {Math.floor(en.time / 60)}:{Math.floor(en.time % 60).toString().padStart(2, "0")}
+                            </span>
+                            <span className="hidden shrink-0 text-white/40 lg:inline">{en.date}</span>
+                          </div>
+                        );
+                      })}
+                      {lbStatus !== "online" && (
+                      <button
+                        onClick={clearBoard}
+                        className={`mt-1 self-center rounded-xl border-2 px-4 py-1.5 text-[11px] font-bold transition active:scale-95 sm:text-xs ${
+                          boardClearConfirm
+                            ? "border-red-400/70 bg-red-500/30 text-red-100"
+                            : "border-white/15 bg-white/5 text-white/50 hover:bg-white/10"
+                        }`}
+                      >
+                        {boardClearConfirm ? ` ${trk("board_confirm")}` : trk("board_clear")}
+                      </button>
+                      )}
+                    </div>
+                  );
+                  })()}
+                  <p className="text-center text-[10px] text-white/40">
+                    {lbStatus === "online" ? trk("board_global_note") : trk("board_note")}
+                  </p>
+                </div>
+              )}
+              {menuTab === "sbx" && (
+                <div className="flex w-full max-w-md flex-col items-center gap-3">
+                  <button
+                    onClick={() => setSandboxSel((s) => !s)}
+                    className={`ltp-card ltp-sheen w-full rounded-2xl border-2 p-4 active:scale-95 ${
+                      sandboxSel
+                        ? "border-fuchsia-300/80 bg-gradient-to-br from-fuchsia-500/30 to-violet-600/25 text-fuchsia-100 shadow-[0_0_26px_rgba(232,121,249,.5)]"
+                        : "border-white/15 bg-white/5 text-white/60"
+                    }`}
+                  >
+                    <p className="text-lg font-bold">{sandboxSel ? trk("sbx_on") : trk("sbx_off")}</p>
+                    <p className="text-[11px] opacity-70">{sandboxSel ? trk("sbx_click_on") : trk("sbx_click_off")}</p>
+                  </button>
+                  <ul className="w-full space-y-1.5 rounded-xl border border-white/15 bg-white/5 p-3 text-left text-[11px] text-white/70 sm:text-xs">
+                    <li>{trk("sbx_1")}</li>
+                    <li>{trk("sbx_2")}</li>
+                    <li>{trk("sbx_3")}</li>
+                    <li>{trk("sbx_4")}</li>
+                  </ul>
+                  <p className="text-[10px] text-white/45">{trk("sbx_note")}</p>
+                </div>
+              )}
+              {menuTab === "tree" && (
+                <>
+                  <SkillTree meta={meta} onBuy={buyTree} />
+                  {/*  restart hry - smaže upgrady a měny; vyžaduje 3 potvrzení, ať to nikdo nezmáčkne omylem */}
+                  <button
+                    onClick={resetGame}
+                    className={`rounded-xl border-2 px-4 py-1.5 text-[11px] font-bold transition active:scale-95 sm:text-xs ${
+                      resetStep === 0
+                        ? "border-red-400/40 bg-red-500/10 text-red-300/80 hover:bg-red-500/20"
+                        : resetStep === 1
+                          ? "border-red-400/70 bg-red-500/30 text-red-200 hover:bg-red-500/40"
+                          : "animate-pulse border-red-300 bg-red-500/60 text-white"
+                    }`}
+                  >
+                    {resetDone ? trk("reset_done") : resetStep === 0 ? trk("reset_btn") : resetStep === 1 ? trk("reset_w1") : trk("reset_w2")}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {sandboxSel && menuTab !== "

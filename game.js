@@ -8,10 +8,10 @@ const {
 // 🗺️ louka je delší a užší: 9000 × 3600 - netvoři táhnou zleva na východ k hradu,
 // hrdina startuje před hradbou a brání příval ze západu
 const ARENA_W = 9000;
-const ARENA_H = 3600;
+const ARENA_H = 3000; // v1.16: koridor jeste o kous uzsi - cesta na hrad je napnuta jako luka
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.15.0";
+const GAME_VERSION = "1.16.0";
 const GAME_BUILD = "22. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -743,6 +743,18 @@ const MINI_TYPES = [{
 
 // ☄️ létající vrstva: meteor mága, bombardér a bomby vojákova náletku
 
+// 🗼 strážní věže: rozpadliny podél cesty na hrad - postavíš je za peníze přímo v runu
+const TOWER_BUILD_COST = 3; // 🪙 z rozpadliny na plnohodnotnou věž 1. úrovně
+const TOWER_FIX_COST = 2; // 🪙 oprava zbořené nebo poškozené věže
+const TOWER_UP_COST = {
+  1: 5,
+  2: 8
+}; // 🪙 upgrade na T2 / T3 (index = cílová úroveň - 1)
+const TOWER_MAX_TIER = 3;
+function towerMaxHp(tier) {
+  return 380 + tier * 170;
+}
+
 // --- classy hrdiny ---
 
 const CLASSES = [{
@@ -1214,7 +1226,8 @@ function playSfx(g, name) {
       plane: 500,
       meteor: 250,
       meteor_hit: 220,
-      castle: 220
+      castle: 220,
+      tower: 240
     };
     const gm = gateMs[name];
     const nw = performance.now();
@@ -1342,6 +1355,10 @@ function playSfx(g, name) {
       case "castle":
         tone("square", 110, 70, 0.12, 0, 0.06);
         tone("triangle", 70, 44, 0.1, 0.04, 0.05);
+        break;
+      case "tower":
+        tone("square", 230, 95, 0.08, 0, 0.05);
+        tone("triangle", 155, 75, 0.09, 0.03, 0.04);
         break;
       case "weather":
         tone("sine", 233, 466, 0.4, 0, 0.08);
@@ -2403,26 +2420,10 @@ function spawnBoss(g, forceType = -1, forceFinal = false) {
   const isFinal = forceFinal || g.bossKills % 3 === 2;
   // 🎲 druh bosse je čistě náhodný (dřív šel pevně v pořadí - první finální boss byla vždy mumie)
   const bt = forceType >= 0 ? BOSS_TYPES[forceType] : BOSS_TYPES[Math.floor(Math.random() * BOSS_TYPES.length)];
-  // 🏟️ boss aréna kolem hrdiny - nikdo neuteče (zvětšená o polovinu: 330 → 495)
-  const ar = 495;
-  g.arena = {
-    x: g.hero.x,
-    y: g.hero.y,
-    r: ar,
-    active: true
-  };
+  // 🗼 v1.16: žádná boss aréna a žádné vybíjení louky - boss se zrodí na západě a sám táhne na hrad
+  g.arena.active = false;
   g.telegraphs.length = 0;
   g.eBolts.length = 0;
-  // aréna vyčistí pole od běžných nepřátel - bez odměn, zůstaneš jen s bossem
-  // (v sandboxu se nic nemaže - ať si můžeš pustit bosse i normální nepřátele najednou)
-  for (const cl of g.enemies) {
-    if (!cl.dead && !cl.boss && !g.sandbox) {
-      cl.dead = true;
-      burst(g, cl.x, cl.y, 6, cl.hue, 120);
-    }
-  }
-  // ⏱ na bosse máš 1:40, jinak tě rozdrtí (v1.13 zúžený z 3:20)
-  g.bossT = 100;
   // 📣 intro banner - první vteřiny po spawnu se rozezní jméno bosse
   g.bossIntroT = 2.6;
   g.bossIntroName = bt.name;
@@ -2432,13 +2433,13 @@ function spawnBoss(g, forceType = -1, forceFinal = false) {
   g.dreadFlash = 1;
   playSfx(g, "boss");
   playSfx(g, "riser");
-  // boss se zrodí na okraji arény
-  const a = Math.random() * Math.PI * 2;
-  const x = Math.max(60, Math.min(ARENA_W - 60, g.arena.x + Math.cos(a) * (ar - 40)));
-  const y = Math.max(60, Math.min(ARENA_H - 60, g.arena.y + Math.sin(a) * (ar - 40)));
+  // 🌄 boss se zrodí západně od tebe, mimo obraz - a vydá se pochodem na hrad
+  const dd = Math.hypot(VW, VH) / 2 * 1.05 + 60;
+  const x = Math.max(80, Math.min(ARENA_W - 80, g.hero.x - dd));
+  const y = Math.max(80, Math.min(ARENA_H - 80, g.hero.y + (Math.random() - 0.5) * Math.min(ARENA_H - 160, 900)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
-  // 💪 bossové drží krok s ostatními: 8× HP (5→40, v1.13 dvojnásobek v1.12) a 3× dmg (v1.13.x zpět z 12×)
-  const hp = (260 + t * 3 + g.bossKills * 90) * 40 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
+  // 💪 v1.16: bossové o čtvrtinu slabší - 6× HP a 2.25× dmg, bez arény táhnou na hrad
+  const hp = (260 + t * 3 + g.bossKills * 90) * 30 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
     x,
@@ -2447,7 +2448,7 @@ function spawnBoss(g, forceType = -1, forceFinal = false) {
     hp,
     maxHp: hp,
     speed: bt.speed * (isFinal ? 1.12 : 1),
-    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 3),
+    dmg: Math.round(bt.dmg * (isFinal ? 1.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).dmg * 2.25),
     hue: bt.hue,
     big: true,
     flash: 0,
@@ -2466,7 +2467,7 @@ function spawnBoss(g, forceType = -1, forceFinal = false) {
   });
   g.shake = isFinal ? 12 : 8;
   playSfx(g, "boss");
-  addText(g, g.hero.x, g.hero.y - 44, isFinal ? `☠️ FINÁLNÍ BOSS: ${bt.name}!` : `⚠️ BOSS: ${bt.name}! ARÉNA!`, 0, isFinal ? 26 : 24);
+  addText(g, g.hero.x, g.hero.y - 44, isFinal ? `☠️ FINÁLNÍ BOSS: ${bt.name}!` : `⚠️ BOSS: ${bt.name}! TÁHNE NA HRAD!`, 0, isFinal ? 26 : 24);
   burst(g, x, y, isFinal ? 30 : 20, bt.hue, 220);
 }
 
@@ -2963,7 +2964,7 @@ const TREE_NODES = [
   id: "t_cwall",
   emoji: "🧱",
   name: "Hradby",
-  per: "+30 % HP hradu",
+  per: "+100 HP hradu",
   max: 5,
   parent: "t_arm",
   base: 300,
@@ -3061,7 +3062,7 @@ const TREE_SPECIALS = [{
   id: "t_keep",
   emoji: "🏰",
   name: "Královský donjon",
-  per: "×2 HP hradu a hrad se sám opravuje",
+  per: "+200 HP hradu a hrad se sám opravuje",
   max: 1,
   special: true,
   crownCost: 2,
@@ -3079,9 +3080,9 @@ const TREE_ALL = [...TREE_NODES, ...TREE_SPECIALS];
 // 🌱 cena normálního uzlu stromu (semínka); speciály stojí 1 👑 korunu
 const treeCost = (tn, lvl) => Math.round(tn.base + tn.growth * lvl);
 
-// 🏰 HP hradu podle zakoupených hradeb (Hradby 1-5 = až +150 %) a donjonu (×2)
+// 🏰 HP hradu: základ 900, každá hradba +100 HP, Královský donjon +200 HP (v1.16 ploché přírůstky)
 function castleMaxHp(g) {
-  g.castle.maxHp = Math.round(1600 * (1 + 0.3 * g.castle.walls) * (g.castle.keep ? 2 : 1));
+  g.castle.maxHp = 900 + g.castle.walls * 100 + (g.castle.keep ? 200 : 0); // v1.16: nizsi zaklad + plocho +100 HP za hradbu, +200 za donjon
   g.castle.hp = g.castle.maxHp;
 }
 
@@ -3823,8 +3824,8 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
       x: ARENA_W - 340,
       y: ARENA_H / 2,
       r: 150,
-      hp: 1600,
-      maxHp: 1600,
+      hp: 900,
+      maxHp: 900,
       walls: 0,
       bows: 0,
       keep: false,
@@ -3833,6 +3834,52 @@ function initGame(clsId = "archer", sandbox = false, meta = null, diff = 1, dail
       hitT: 0,
       cd: 0
     },
+    towers: [{
+      x: 2880,
+      y: 850,
+      r: 74,
+      tier: 0,
+      hp: 0,
+      maxHp: 0,
+      cd: 0,
+      flash: 0,
+      hitT: 0,
+      rise: 1
+    }, {
+      x: 2880,
+      y: 2150,
+      r: 74,
+      tier: 0,
+      hp: 0,
+      maxHp: 0,
+      cd: 0,
+      flash: 0,
+      hitT: 0,
+      rise: 1
+    }, {
+      x: 5580,
+      y: 850,
+      r: 74,
+      tier: 0,
+      hp: 0,
+      maxHp: 0,
+      cd: 0,
+      flash: 0,
+      hitT: 0,
+      rise: 1
+    }, {
+      x: 5580,
+      y: 2150,
+      r: 74,
+      tier: 0,
+      hp: 0,
+      maxHp: 0,
+      cd: 0,
+      flash: 0,
+      hitT: 0,
+      rise: 1
+    }],
+    coins: 0,
     trees: [],
     orbs: [],
     particles: [],
@@ -4604,6 +4651,11 @@ function killEnemy(g, e) {
   }
   e.dead = true;
   g.kills += 1;
+  // 🪙 peníze za hlídku: každé druhé zabití vysype jeden peníz
+  if (g.kills % 2 === 0) {
+    g.coins += 1;
+    addText(g, e.x, e.y - e.r - 26, "🪙 +1", 40, 14);
+  }
   if (g.night) g.nightKills += 1;
   if (g.stats.lifesteal > 0) {
     g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + g.stats.lifesteal);
@@ -4892,6 +4944,85 @@ function damageCastle(g, dmg) {
   } else if (Math.random() < 0.04) {
     addText(g, c.x + (Math.random() - 0.5) * 80, c.y - 170, "⚠️ HRAD POD ÚTOKEM!", 10, 20);
   }
+}
+
+// 🗼 rána do zdiva strážní věže - věž drží, dokud neklesne na nulu; pak se sesype na rozpadlinu
+function damageTower(g, tw, dmg) {
+  if (tw.hp <= 0) return;
+  tw.hp -= dmg;
+  tw.flash = 0.15;
+  tw.hitT = 3;
+  playSfx(g, "tower");
+  if (tw.hp <= 0) {
+    tw.hp = 0;
+    g.shake = Math.max(g.shake, 6);
+    burst(g, tw.x, tw.y - tw.r, 26, 20, 200);
+    addText(g, tw.x, tw.y - tw.r - 44, "🗼 VĚŽ PADLA!", 0, 20);
+  }
+}
+
+// 🗼 věž nejblíž hrdinovi (na dosah ruky)
+function towerNear(g) {
+  let best = null;
+  let bds = 160 * 160;
+  for (const tw of g.towers) {
+    const d2 = dist2(g.hero.x, g.hero.y, tw.x, tw.y);
+    if (d2 < bds) {
+      bds = d2;
+      best = tw;
+    }
+  }
+  return best;
+}
+// 🪙 co se s věží dá právě teď dělat a kolik to stojí
+function towerPlan(tw) {
+  if (tw.tier <= 0) return {
+    kind: "build",
+    cost: TOWER_BUILD_COST,
+    label: `🔧 Postavit věž · ${TOWER_BUILD_COST} 🪙`
+  };
+  if (tw.hp <= 0 || tw.hp < tw.maxHp) return {
+    kind: "fix",
+    cost: TOWER_FIX_COST,
+    label: `🔧 Opravit věž · ${TOWER_FIX_COST} 🪙`
+  };
+  if (tw.tier < TOWER_MAX_TIER) return {
+    kind: "up",
+    cost: TOWER_UP_COST[tw.tier] ?? 8,
+    label: `⬆️ Vylepšit věž (T${tw.tier + 1}) · ${TOWER_UP_COST[tw.tier] ?? 8} 🪙`
+  };
+  return null;
+}
+
+// 🗼 hlavní kouzlo s věží: postavit / opravit / vylepšit přímo v runu za peníze (tlačítko nebo klávesa F)
+function towerAct(g) {
+  if (!g || !g.running || g.over || g.userPaused || g.paused) return;
+  const tw = towerNear(g);
+  if (!tw) return;
+  const plan = towerPlan(tw);
+  if (!plan) {
+    addText(g, tw.x, tw.y - tw.r - 46, "⭐ Věž je na maximum!", 40, 14);
+    return;
+  }
+  if (g.coins < plan.cost) {
+    addText(g, g.hero.x, g.hero.y - 56, "🪙 Nemáš dost peněz!", 0, 15);
+    playSfx(g, "tower");
+    return;
+  }
+  g.coins -= plan.cost;
+  if (plan.kind === "build") {
+    tw.tier = 1;
+    tw.rise = 0.01;
+  } else if (plan.kind === "up") {
+    tw.tier += 1;
+  }
+  tw.maxHp = towerMaxHp(tw.tier);
+  tw.hp = tw.maxHp;
+  tw.cd = 0.35;
+  burst(g, tw.x, tw.y - tw.r, 18, 40, 170);
+  g.shake = Math.max(g.shake, 4);
+  addText(g, tw.x, tw.y - tw.r - 58, plan.kind === "up" ? `⬆️ VĚŽ T${tw.tier}!` : plan.kind === "build" ? "🗼 POSTAVENO!" : "🔧 OPRAVENO!", 40, 17);
+  playSfx(g, "tower");
 }
 function hasWeapon(g, id) {
   for (const w of g.weapons) if (w.id === id) return true;
@@ -5452,16 +5583,18 @@ function updateGame(g, dt, move, wantDash) {
       h.y = g.castle.y + Math.sin(cAng) * g.castle.r;
     }
   }
-  if (g.arena.active) {
-    const adx = h.x - g.arena.x;
-    const ady = h.y - g.arena.y;
-    const ad = Math.sqrt(adx * adx + ady * ady);
-    const maxR = g.arena.r - 16;
-    if (ad > maxR) {
-      h.x = g.arena.x + adx / ad * maxR;
-      h.y = g.arena.y + ady / ad * maxR;
+  // 🗼 hrdina se taky nevejde do zdiva strážních věží - vždycky se dá obejít
+  for (const tw of g.towers) {
+    if (tw.tier <= 0 || tw.hp <= 0) continue;
+    const thd = Math.hypot(h.x - tw.x, h.y - tw.y);
+    if (thd < tw.r) {
+      const tAng = Math.atan2(h.y - tw.y, h.x - tw.x);
+      h.x = tw.x + Math.cos(tAng) * tw.r;
+      h.y = tw.y + Math.sin(tAng) * tw.r;
     }
   }
+
+  // 🏟️ (v1.16: hrdinovo uvěznění v boss aréně zrušeno)
 
   // každá zbraň střílí sama na nejbližšího nepřítele ve svém dosahu
   for (const w of g.weapons) {
@@ -5732,6 +5865,60 @@ function updateGame(g, dt, move, wantDash) {
     }
   }
 
+  // 🗼 strážní věže: každá postavená věž sama pálí šípy na netvory v dosahu (cílí na nejodlehlejší k hradu)
+  if (!g.over) {
+    for (const tw of g.towers) {
+      tw.flash = Math.max(0, tw.flash - dt);
+      tw.hitT = Math.max(0, tw.hitT - dt);
+      if (tw.rise > 0 && tw.rise < 1) tw.rise = Math.min(1, tw.rise + dt * 2.4);
+      if (tw.tier <= 0 || tw.hp <= 0) {
+        tw.cd = 0.5;
+        continue;
+      }
+      tw.cd -= dt;
+      if (tw.cd > 0) continue;
+      const rng = 540 + tw.tier * 80;
+      let tgt = null;
+      let bestD = rng * rng;
+      let bestX = -1;
+      for (const e of g.enemies) {
+        if (e.dead || (e.subT ?? 0) > 0) continue;
+        const d2 = dist2(e.x, e.y, tw.x, tw.y);
+        if (d2 < bestD && e.x > bestX) {
+          bestD = d2;
+          tgt = e;
+          bestX = e.x;
+        }
+      }
+      if (!tgt) {
+        tw.cd = 0.4;
+        continue;
+      }
+      const ang = Math.atan2(tgt.y - (tw.y - tw.r - 16), tgt.x - tw.x);
+      g.arrows.push({
+        x: tw.x + Math.cos(ang) * 26,
+        y: tw.y - tw.r - 16 + Math.sin(ang) * 26,
+        vx: Math.cos(ang) * 900,
+        vy: Math.sin(ang) * 900,
+        dmg: Math.round(14 + g.time * 0.22 + tw.tier * 12),
+        pierce: 0,
+        crit: false,
+        life: 1.1,
+        hits: [tgt.id],
+        kind: 1,
+        knock: 55,
+        chain: 0,
+        expl: false,
+        frost: false,
+        lvl: 1,
+        src: "tower"
+      });
+      tw.cd = Math.max(0.55, 1.3 - tw.tier * 0.14);
+      tw.flash = 0.12;
+      playSfx(g, "shoot");
+    }
+  }
+
   // 🏰 střílny ze stromu dovedností: lučištníci na hradbách střílí na netvory pod hradbami
   if (g.castle.bows > 0 && !g.over) {
     g.castle.cd -= dt;
@@ -5794,13 +5981,14 @@ function updateGame(g, dt, move, wantDash) {
     let sp = e.speed * (e.slow > 0 ? 0.45 : 1) * (g.night ? 1.6 : 1) * g.enemySpdMul * (g.weather === "rain" ? 0.85 : 1) * (e.elite === "swift" ? 1.5 : 1);
     let dirx = dx / d;
     let diry = dy / d;
-    // 🏰 pochod na hrad: běžní netvoři míří na východ k hradu, boss a mini jdou po tobě
+    // 🏰 pochod na hrad: bossové i běžní netvoři míří na východ, po tobě jdou jen mini-bossové
     // (jezevec zahrabaný, rozpulec se teleportuje za tebe a dravec číhá - ti zůstávají lovecké)
     const cdx = g.castle.x - e.x;
     const cdy = g.castle.y - e.y;
     const cd = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
-    const marches = !g.sandbox && !e.boss && !e.minib && e.kind !== 8 && e.kind !== 13 && e.kind !== 19;
+    const marches = !g.sandbox && !e.minib && e.kind !== 8 && e.kind !== 13 && e.kind !== 19; // v1.16: bossové taky táhnou na hrad
     let attackingCastle = false;
+    let attackingTower = null;
     if (marches) {
       dirx = cdx / cd;
       diry = cdy / cd;
@@ -5810,6 +5998,18 @@ function updateGame(g, dt, move, wantDash) {
       if (cd < g.castle.r + e.r + 6) {
         attackingCastle = true;
         sp = 0;
+      } else {
+        // 🗼 postavená strážní věž zastaví pochod - netvor u ní zastyde a seká do zdiva
+        for (const tw of g.towers) {
+          if (tw.tier <= 0 || tw.hp <= 0) continue;
+          if (dist2(e.x, e.y, tw.x, tw.y) < (tw.r + e.r + 6) * (tw.r + e.r + 6)) {
+            attackingTower = tw;
+            sp = 0;
+            dirx = 0;
+            diry = 0;
+            break;
+          }
+        }
       }
     }
     // ⚙️ běžní nepřátelé v okolí turetek je cíleně napadnou (bossové jdou vždy po tobě)
@@ -6160,17 +6360,7 @@ function updateGame(g, dt, move, wantDash) {
         }
         burst(g, e.x, e.y, 5, e.hue, 120);
       }
-      // boss zůstává v aréně
-      if (g.arena.active) {
-        const adx = e.x - g.arena.x;
-        const ady = e.y - g.arena.y;
-        const ad = Math.sqrt(adx * adx + ady * ady) || 1;
-        const maxR = g.arena.r - e.r;
-        if (ad > maxR) {
-          e.x = g.arena.x + adx / ad * maxR;
-          e.y = g.arena.y + ady / ad * maxR;
-        }
-      }
+      // 🏟️ (v1.16: boss už není držen v aréně - volně táhne na hrad)
     }
     // šaman: drží odstup a střílí koule (boss-arcišaman má vlastní režim)
     if (e.kind === 5 && !e.boss) {
@@ -6417,6 +6607,15 @@ function updateGame(g, dt, move, wantDash) {
         addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "🔨", 30, 13);
       }
     }
+    // 🗼 útok na strážní věž: zdivo věže je měkčí než hradba hradeb
+    if (attackingTower) {
+      e.twCd = (e.twCd ?? 0.5) - dt;
+      if (e.twCd <= 0) {
+        e.twCd = 1.1;
+        damageTower(g, attackingTower, Math.max(2, Math.round(e.dmg * 0.35)));
+        addText(g, e.x + (Math.random() - 0.5) * 16, e.y - e.r - 8, "⛏️", 30, 13);
+      }
+    }
     // 🌬️ silný vítr postrkuje i nepřátele
     if (g.weather === "wind") {
       e.x += Math.cos(g.windA) * 26 * dt;
@@ -6432,6 +6631,17 @@ function updateGame(g, dt, move, wantDash) {
       if (ocd < g.castle.r + e.r) {
         e.x = g.castle.x + ocx / ocd * (g.castle.r + e.r);
         e.y = g.castle.y + ocy / ocd * (g.castle.r + e.r);
+      }
+      // 🗼 ani zdivem postavenou věží se neproejde - couvne se ven z kruhu
+      for (const tw of g.towers) {
+        if (tw.tier <= 0 || tw.hp <= 0) continue;
+        const tcx = e.x - tw.x;
+        const tcy = e.y - tw.y;
+        const tcd = Math.hypot(tcx, tcy) || 1;
+        if (tcd < tw.r + e.r) {
+          e.x = tw.x + tcx / tcd * (tw.r + e.r);
+          e.y = tw.y + tcy / tcd * (tw.r + e.r);
+        }
       }
     }
     // kontakt s hrdinou (duch ve fázi prolnul skrz a neubližuje, zahrabaný jezevec taky ne)
@@ -6463,21 +6673,7 @@ function updateGame(g, dt, move, wantDash) {
     }
   }
   // ⏱ na bosse máš 1:40 - čas vyprší = automatická smrt
-  let bossAlive = false;
-  for (const e of g.enemies) {
-    if (!e.dead && e.boss) {
-      bossAlive = true;
-      break;
-    }
-  }
-  if (bossAlive && g.bossT > 0) {
-    g.bossT -= dt;
-    if (g.bossT <= 0) {
-      g.bossT = 20; // po oživení fénixem zbývá alespoň chvíle
-      addText(g, h.x, h.y - 40, "⏰ ČAS VYPRŠEL!", 0, 22);
-      damageHero(g, 99999);
-    }
-  }
+  // ⏱ v1.16: minutový limit na bosse je pryč - bez arény si boss na hrad časuje sám
 
   // telegrafy bossů - za časového limitu projektily dopadnou
   for (let i = g.telegraphs.length - 1; i >= 0; i--) {
@@ -7014,6 +7210,196 @@ function updateFx(g, dt) {
 
 // 🏰 hrad na východě louky - fiktivní 2.5D fasáda: roste s upgrady ze stromu
 // (Hradby 🧱 = vyšší a širší zdi, Střílny 🏹 = lučištníci, Královský donjon 🏰 = palác + příkop)
+// 🗼 strážní věž podél cesty na hrad - od rozpadliny zdiva po honosnou baštu s vlajkami
+function drawTower(ctx, g, tw) {
+  const x = tw.x;
+  const y = tw.y;
+  const r = tw.r;
+  const active = tw.tier > 0 && tw.hp > 0;
+  const broken = !active;
+  ctx.save();
+  // stín pod věží
+  ctx.fillStyle = "rgba(0,0,0,0.28)";
+  ctx.beginPath();
+  ctx.ellipse(x, y + r * 0.5, r * 1.2, r * 0.42, 0, 0, Math.PI * 2);
+  ctx.fill();
+  if (broken) {
+    // 🗿 rozpadlina: hromada zdiva, vyčnívající zlomky zdi a mech
+    ctx.fillStyle = "#57534a";
+    ctx.beginPath();
+    ctx.ellipse(x, y - 4, r * 0.92, r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#6b6558";
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.3, y - 12, r * 0.45, r * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#7c7565";
+    ctx.beginPath();
+    ctx.ellipse(x + r * 0.35, y - 8, r * 0.4, r * 0.26, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // dva čnějící zlomky zdi
+    ctx.fillStyle = "#8a8474";
+    ctx.fillRect(x - r * 0.78, y - 46, 18, 46);
+    ctx.fillStyle = "#78725f";
+    ctx.fillRect(x - r * 0.78, y - 46, 18, 10);
+    ctx.fillStyle = "#8a8474";
+    ctx.fillRect(x + r * 0.5, y - 30, 14, 30);
+    ctx.fillStyle = "#6d675a";
+    ctx.fillRect(x + r * 0.5, y - 30, 14, 8);
+    // mech a tráva kolem
+    ctx.fillStyle = "rgba(74,105,42,0.75)";
+    ctx.beginPath();
+    ctx.ellipse(x - r * 0.55, y + 6, r * 0.3, r * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(x + r * 0.6, y + 10, r * 0.26, r * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // doutnající kouř po pádu
+    if (tw.tier > 0) {
+      ctx.fillStyle = `rgba(60,55,48,${0.35 + 0.15 * Math.sin(g.gtime * 2 + x * 0.1)})`;
+      ctx.beginPath();
+      ctx.ellipse(x, y - 40, 26, 14, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    const rise = Math.max(0.25, tw.rise >= 1 ? 1 : tw.rise);
+    const hgt = (64 + tw.tier * 26) * rise;
+    const top = y - hgt - r * 0.42;
+    // kruhová základna
+    ctx.fillStyle = "#57534a";
+    ctx.beginPath();
+    ctx.ellipse(x, y + r * 0.32, r, r * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // tělo věže - kamenné zdivo s bloky
+    const bodyW = r * 0.92;
+    const grad = ctx.createLinearGradient(x - bodyW, 0, x + bodyW, 0);
+    grad.addColorStop(0, "#8a8474");
+    grad.addColorStop(0.45, "#9a9483");
+    grad.addColorStop(1, "#6e685c");
+    ctx.fillStyle = grad;
+    ctx.fillRect(x - bodyW, top, bodyW * 2, hgt + r * 0.3);
+    // spáry mezi bloky
+    ctx.strokeStyle = "rgba(0,0,0,0.18)";
+    ctx.lineWidth = 2;
+    for (let by = top + 14; by < y + r * 0.2; by += 18) {
+      ctx.beginPath();
+      ctx.moveTo(x - bodyW, by);
+      ctx.lineTo(x + bodyW, by);
+      ctx.stroke();
+    }
+    for (let bx = -1; bx <= 1; bx += 2) {
+      ctx.beginPath();
+      ctx.moveTo(x + bx * bodyW * 0.5, top);
+      ctx.lineTo(x + bx * bodyW * 0.5, y + r * 0.2);
+      ctx.stroke();
+    }
+    // cimbuří
+    ctx.fillStyle = "#7c7565";
+    const merlonW = 12;
+    const count = Math.max(4, Math.floor(bodyW * 2 / 22));
+    for (let i = 0; i < count; i++) {
+      const mx = x - bodyW + (i + 0.5) * (bodyW * 2 / count) - merlonW / 2;
+      ctx.fillRect(mx, top - 12, merlonW, 14);
+    }
+    // tmavá střílna
+    ctx.fillStyle = "#14110c";
+    ctx.fillRect(x - 7, top + 12, 14, 20);
+    if (tw.tier >= 2) {
+      // kuželová střecha
+      const roofH = 30 + tw.tier * 8;
+      ctx.fillStyle = tw.tier >= 3 ? "#3450a0" : "#b03434";
+      ctx.beginPath();
+      ctx.moveTo(x - bodyW - 4, top - 10);
+      ctx.lineTo(x + bodyW + 4, top - 10);
+      ctx.lineTo(x, top - 10 - roofH);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(255,255,255,0.12)";
+      ctx.beginPath();
+      ctx.moveTo(x - bodyW - 4, top - 10);
+      ctx.lineTo(x, top - 10 - roofH);
+      ctx.lineTo(x - 2, top - 10);
+      ctx.closePath();
+      ctx.fill();
+      // vlajka na hřesle (vlaje ve vlnách)
+      const flagWave = Math.sin(g.gtime * 3 + x * 0.05) * 3;
+      ctx.strokeStyle = "#4a3b28";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(x, top - 10 - roofH);
+      ctx.lineTo(x, top - 10 - roofH - 24);
+      ctx.stroke();
+      ctx.fillStyle = tw.tier >= 3 ? "#d4af37" : "#e04545";
+      ctx.beginPath();
+      ctx.moveTo(x, top - 10 - roofH - 24);
+      ctx.lineTo(x + 22 + flagWave, top - 10 - roofH - 19);
+      ctx.lineTo(x, top - 10 - roofH - 13);
+      ctx.closePath();
+      ctx.fill();
+      // okna ve staré zdi
+      ctx.fillStyle = "#14110c";
+      ctx.fillRect(x - 5, top + 44, 10, 16);
+      if (tw.tier >= 3) {
+        ctx.fillRect(x - 5, top + 74, 10, 16);
+        // zlatá lucerna na špici svítí do noci
+        const glow = 0.5 + 0.3 * Math.sin(g.gtime * 2.4);
+        ctx.fillStyle = `rgba(250,204,21,${glow})`;
+        ctx.beginPath();
+        ctx.arc(x, top - 10 - roofH - 30, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "rgba(250,204,21,0.12)";
+        ctx.beginPath();
+        ctx.arc(x, top - 10 - roofH - 30, 22, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    // záblesk výstřelu ze střílny
+    if (tw.cd < 0.12 && tw.flash > 0) {
+      ctx.fillStyle = "rgba(255,236,150,0.85)";
+      ctx.beginPath();
+      ctx.arc(x, top + 22, 9 + tw.flash * 30, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // rána do zdiva: bílý záblesk
+    if (tw.flash > 0 && (tw.hitT > 0 || tw.hp < tw.maxHp)) {
+      ctx.fillStyle = `rgba(255,255,255,${Math.min(0.5, tw.flash * 2.4)})`;
+      ctx.fillRect(x - bodyW, top, bodyW * 2, hgt + r * 0.3);
+    }
+    // HP bar + tečky úrovní
+    if (tw.hp < tw.maxHp) {
+      const bw = 64;
+      const frac = Math.max(0, tw.hp / tw.maxHp);
+      ctx.fillStyle = "rgba(0,0,0,0.55)";
+      ctx.fillRect(x - bw / 2 - 1, top - 30, bw + 2, 7);
+      ctx.fillStyle = frac > 0.5 ? "#4ade80" : frac > 0.25 ? "#fbbf24" : "#f87171";
+      ctx.fillRect(x - bw / 2, top - 29, bw * frac, 5);
+    }
+    for (let i = 0; i < tw.tier; i++) {
+      ctx.fillStyle = "#fbbf24";
+      ctx.beginPath();
+      ctx.arc(x - (tw.tier - 1) * 5 + i * 10, top - 18, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  // nápověda nad věží, když hrdina stojí nadosah
+  if (!g.over) {
+    const near = towerNear(g);
+    if (near === tw) {
+      const plan = towerPlan(tw);
+      if (plan) {
+        ctx.font = "bold 13px system-ui, sans-serif";
+        ctx.textAlign = "center";
+        const label = g.coins >= plan.cost ? plan.label : `${plan.label} (málo 🪙)`;
+        ctx.fillStyle = "rgba(0,0,0,0.6)";
+        const half = ctx.measureText(label).width / 2 + 10;
+        ctx.fillRect(x - half, y - r - (broken ? 76 : 108), half * 2, 20);
+        ctx.fillStyle = g.coins >= plan.cost ? "#fde68a" : "#fca5a5";
+        ctx.fillText(label, x, y - r - (broken ? 62 : 94));
+      }
+    }
+  }
+  ctx.restore();
+}
 function drawCastle(ctx, g) {
   const c = g.castle;
   const t = g.gtime;
@@ -9823,25 +10209,14 @@ function render(ctx, g, joy) {
     ctx.drawImage(tr.cv, Math.round(tr.x - (tr.pad || 0) + sway), Math.round(tr.y - (tr.pad || 0)));
   }
 
-  // 🏟️ boss aréna - červený kruh vězení
   // 🏰 hrdinův hrad na východě - roste s upgrady stromu (hradby, střílny, donjon)
   if (inView(g.castle.x, g.castle.y, 520)) drawCastle(ctx, g);
-  if (g.arena.active) {
-    const a = g.arena;
-    ctx.fillStyle = "rgba(120,10,20,0.10)";
-    ctx.beginPath();
-    ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = `rgba(248,113,113,${0.55 + 0.3 * Math.sin(g.gtime * 4)})`;
-    ctx.lineWidth = 5;
-    ctx.setLineDash([18, 12]);
-    ctx.lineDashOffset = -g.gtime * 40;
-    ctx.beginPath();
-    ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
+  // 🗼 strážní věže podél cesty - od rozpadliny zdiva po honosnou baštu s vlajkami
+  for (const tw of g.towers) {
+    if (inView(tw.x, tw.y, 260)) drawTower(ctx, g, tw);
   }
+
+  // 🏟️ (v1.16: červený kruh boss vězení zrušený - boss je volný a táhne na hrad)
 
   // ⚠️ telegrafy bossů - červené zóny dopadu projektilů
   for (const tl of g.telegraphs) {
@@ -11078,12 +11453,10 @@ function render(ctx, g, joy) {
     ctx.font = "bold 10px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : "💀 BOSS", VW / 2, by + 11);
-    // ⏱ odpočet minutového limitu
-    const tleft = Math.max(0, g.bossT);
-    ctx.fillStyle = tleft < 10 ? "#fca5a5" : "#fff";
+    // 🗼 kam boss táhne - indikátor směru na hrad (v1.16 už žádný časový limit)
     ctx.font = "bold 12px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText(`⏱ ${tleft.toFixed(1)}`, bx + 4, by + 11);
+    ctx.fillText("🏰", bx + 4, by + 11);
     // ⚔️ aktuální fáze
     ctx.textAlign = "right";
     ctx.fillText(`FÁZE ${boss.phase}/${boss.final ? 4 : 2}`, bx + bw - 4, by + 11);
@@ -11190,6 +11563,21 @@ function render(ctx, g, joy) {
   // 🏰 hrad na minimapě
   ctx.fillStyle = "#fcd34d";
   ctx.fillRect(mx + g.castle.x * kx - 4, my + g.castle.y * ky - 4, 8, 8);
+  // 🗼 strážní věže na minimapě - plná oranžová tečka, rozpadlina jen tenký obrys
+  for (const tw of g.towers) {
+    const tx = mx + tw.x * kx;
+    const ty = my + tw.y * ky;
+    if (tw.tier > 0 && tw.hp > 0) {
+      ctx.fillStyle = "#fb923c";
+      ctx.fillRect(tx - 2, ty - 4, 4, 8);
+    } else {
+      ctx.strokeStyle = "rgba(251,146,60,0.5)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(tx, ty, 2.5, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
   // 📦 bedny a ⚙️ turetky na minimapě
   ctx.fillStyle = "#fbbf24";
   for (const c of g.crates) {
@@ -11218,13 +11606,7 @@ function render(ctx, g, joy) {
   ctx.strokeStyle = "rgba(255,255,255,0.22)";
   ctx.lineWidth = 1;
   ctx.strokeRect(mx + (h.x - VW / 2) * kx, my + (h.y - VH / 2) * ky, VW * kx, VH * ky);
-  // 🏟️ kruh boss-arény na minimapě
-  if (g.arena.active) {
-    ctx.strokeStyle = "rgba(248,113,113,0.7)";
-    ctx.beginPath();
-    ctx.arc(mx + g.arena.x * kx, my + g.arena.y * ky, g.arena.r * ky, 0, Math.PI * 2);
-    ctx.stroke();
-  }
+  // 🏟️ (v1.16: kruh boss-arény už se na minimapě nekreslí)
 }
 
 // karta upgradu s barevnou raritou
@@ -11460,8 +11842,10 @@ function LoukaTisicePriser() {
     kills: 0,
     hp: 100,
     maxHp: 100,
-    chp: 1600,
-    cmax: 1600,
+    chp: 900,
+    cmax: 900,
+    coins: 0,
+    twLabel: "",
     dash: 0,
     time: 0,
     paused: false,
@@ -12073,6 +12457,13 @@ function LoukaTisicePriser() {
           maxHp: g.hero.maxHp,
           chp: Math.max(0, Math.ceil(g.castle.hp)),
           cmax: g.castle.maxHp,
+          coins: g.coins,
+          twLabel: (() => {
+            const tg0 = towerNear(g);
+            if (!tg0) return "";
+            const p0 = towerPlan(tg0);
+            return p0 ? p0.label : "";
+          })(),
           dash: 1 - g.hero.dashCd / (HERO.dashCd * g.stats.dashMul),
           time: g.time,
           paused: g.userPaused,
@@ -12113,6 +12504,10 @@ function LoukaTisicePriser() {
       // ⚡ E = ultimátum třídy (až po odpočtu)
       if (e.code === "KeyE") {
         castUlt(gameRef.current);
+      }
+      // 🗼 F = postavit / opravit / vylepšit strážní věž, u které stojíš
+      if (e.code === "KeyF") {
+        towerAct(gameRef.current);
       }
       if (e.code === "KeyP") {
         const g = gameRef.current;
@@ -12327,6 +12722,8 @@ function LoukaTisicePriser() {
   }, "\uD83D\uDC80 ", ui.kills), /*#__PURE__*/React.createElement("span", {
     className: `rounded-lg border px-2 py-1 sm:px-3 ${ui.chp / ui.cmax > 0.35 ? "border-amber-400/30 bg-amber-500/25 text-amber-200" : "border-red-300/70 bg-red-500/45 text-red-100 animate-pulse"}`
   }, "\uD83C\uDFF0 ", ui.chp), /*#__PURE__*/React.createElement("span", {
+    className: "rounded-lg border border-yellow-300/40 bg-yellow-500/25 px-2 py-1 text-yellow-100 sm:px-3"
+  }, "\uD83E\uDE99 ", ui.coins), /*#__PURE__*/React.createElement("span", {
     className: `rounded-lg border px-2 py-1 sm:px-3 ${ui.night ? "border-indigo-300/50 bg-indigo-900/60 text-indigo-100" : "border-amber-400/30 bg-amber-500/25 text-amber-200"}`
   }, ui.night ? trk("night") : trk("day")), ui.weather && /*#__PURE__*/React.createElement("span", {
     className: "rounded-lg border border-sky-300/40 bg-sky-900/50 px-2 py-1 text-sky-100 sm:px-3"
@@ -13068,14 +13465,18 @@ function LoukaTisicePriser() {
   }), /*#__PURE__*/React.createElement("button", {
     onClick: () => setShop(false),
     className: "ltp-sheen relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-6 py-2.5 font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95"
-  }, trk("shop_close")))), !started && !over && /*#__PURE__*/React.createElement("div", {
+  }, trk("shop_close")))), started && !over && ui.twLabel && /*#__PURE__*/React.createElement("button", {
+    onClick: () => towerAct(gameRef.current),
+    className: "ltp-btn absolute bottom-[calc(env(safe-area-inset-bottom,0px)+108px)] left-1/2 z-20 -translate-x-1/2 rounded-2xl border border-yellow-300/60 bg-gradient-to-r from-yellow-500 to-amber-400 px-5 py-2.5 text-sm font-extrabold text-yellow-950 shadow-lg shadow-amber-500/40 transition hover:brightness-110 active:scale-95"
+  }, ui.twLabel, " ", /*#__PURE__*/React.createElement("span", {
+    className: "opacity-70"
+  }, "(F)")), !started && !over && /*#__PURE__*/React.createElement("div", {
     className: "ltp-startbar"
   }, /*#__PURE__*/React.createElement("button", {
     onClick: startRun,
     className: "ltp-btn ltp-sheen mx-auto block w-full max-w-md rounded-2xl bg-gradient-to-r from-emerald-400 via-teal-300 to-emerald-400 px-10 py-3.5 text-base font-extrabold text-emerald-950 transition hover:brightness-110 active:scale-95 sm:px-14 sm:text-lg"
   }, trk("start"), " ", sandboxSel ? "🧪" : "▶")));
 }
-
 
 if (window.ltpWatch) clearTimeout(window.ltpWatch);
 // 🏁 hra stojí na nohou - od teď žádná chybová obrazovka nepřekrývá hraní

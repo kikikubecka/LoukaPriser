@@ -11,7 +11,7 @@ const CASTLE_FRONT = ARENA_W - 340;
 const BURN_X = Math.round(ARENA_W * 0.75);
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.17.0";
+const GAME_VERSION = "1.18.0";
 const GAME_BUILD = "22. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -2128,6 +2128,80 @@ const TREE_SPECIALS: TreeNode[] = [
 ];
 
 const TREE_ALL: TreeNode[] = [...TREE_NODES, ...TREE_SPECIALS];
+
+// 🌳 v1.18: dřevěný strom - geometrie větví, kmene a koruny se počítá jednou při načtení (svg 480×640)
+const TREE_GW = 480;
+const TREE_GH = 640;
+const TREE_KIDS: Record<string, string[]> = {};
+for (const tn of TREE_NODES) {
+  const key = tn.parent ?? "";
+  if (!TREE_KIDS[key]) TREE_KIDS[key] = [];
+  TREE_KIDS[key].push(tn.id);
+}
+const TREE_DEP: Record<string, number> = {};
+const treeDepWalk = (id: string, d: number) => {
+  TREE_DEP[id] = d;
+  for (const c of TREE_KIDS[id] ?? []) treeDepWalk(c, d + 1);
+};
+treeDepWalk("t_str", 0);
+// tloušťka dřeva podle hloubky větve: kmen je nejmohutnější, výhonky tenoulinké
+const treeWoodW = (id: string) => Math.max(2.6, 10 * Math.pow(0.74, TREE_DEP[id] ?? 2));
+// kuželová dřevěná větev: kvadratická bezier s prohnutím + kolmové ofsety = vyplněný polygon (širší u rodiče)
+const treeWood = (ax: number, ay: number, bx: number, by: number, w0: number, w1: number, bow: number) => {
+  const cx = (ax + bx) / 2 + (by - ay) * bow;
+  const cy = (ay + by) / 2 - (bx - ax) * bow;
+  const lft: string[] = [];
+  const rgt: string[] = [];
+  for (let i = 0; i <= 14; i++) {
+    const s = i / 14;
+    const u = 1 - s;
+    const x = u * u * ax + 2 * u * s * cx + s * s * bx;
+    const y = u * u * ay + 2 * u * s * cy + s * s * by;
+    let tx = 2 * u * (cx - ax) + 2 * s * (bx - cx);
+    let ty = 2 * u * (cy - ay) + 2 * s * (by - cy);
+    const tl = Math.hypot(tx, ty) || 1;
+    tx /= tl;
+    ty /= tl;
+    const hw = (w0 + (w1 - w0) * Math.pow(s, 0.85)) / 2;
+    lft.push((i === 0 ? "M" : "L") + (x - ty * hw).toFixed(1) + " " + (y + tx * hw).toFixed(1));
+    rgt.push("L" + (x + ty * hw).toFixed(1) + " " + (y - tx * hw).toFixed(1));
+  }
+  rgt.reverse();
+  return lft.join("") + rgt.join("") + "Z";
+};
+type TreeEdge = { id: string; pid: string; wood: string; sap: string };
+const TREE_EDGES: TreeEdge[] = TREE_NODES.filter((tn) => tn.parent).map((tn) => {
+  const p = TREE_NODES.find((x) => x.id === tn.parent) as TreeNode;
+  const ax = (p.pos[0] / 100) * TREE_GW;
+  const ay = (p.pos[1] / 100) * TREE_GH;
+  const bx = (tn.pos[0] / 100) * TREE_GW;
+  const by = (tn.pos[1] / 100) * TREE_GH;
+  const hx = ((ax + bx) / 2 + (by - ay) * 0.12).toFixed(1);
+  const hy = ((ay + by) / 2 - (bx - ax) * 0.12).toFixed(1);
+  return {
+    id: tn.id,
+    pid: p.id,
+    wood: treeWood(ax, ay, bx, by, treeWoodW(p.id), treeWoodW(tn.id) * 0.8, 0.12),
+    sap: "M" + ax.toFixed(1) + " " + ay.toFixed(1) + " Q" + hx + " " + hy + " " + bx.toFixed(1) + " " + by.toFixed(1),
+  };
+});
+// kmen od země ke kořenovému uzlu (Síla 💪 trčí z jeho korunky u paty stromu)
+const TREE_TRUNK = treeWood(240, 642, 240, (TREE_NODES[0].pos[1] / 100) * TREE_GH + 14, 20, 12, 0);
+// koruna: měkké listnaté polštáře u špiček výhonků
+const TREE_TOPS = TREE_NODES.filter((tn) => !(TREE_KIDS[tn.id] ?? []).length).map((tn) => {
+  const px = (tn.pos[0] / 100) * TREE_GW;
+  const py = (tn.pos[1] / 100) * TREE_GH;
+  return { x: px + (tn.pos[0] < 50 ? -16 : tn.pos[0] > 50 ? 16 : 0), y: py - 24, rx: 40 + (TREE_DEP[tn.id] ?? 3) * 3, g: tn.id.length % 2 === 0 };
+});
+// rozptýlené listí a světlušky - deterministický generátor (stejný obraz na každém zařízení)
+const TREE_FLECKS: Array<[number, number, number]> = (() => {
+  let sd = 20261122;
+  const rnd = () => ((sd = (sd * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const out: Array<[number, number, number]> = [];
+  for (let i = 0; i < 26; i++) out.push([34 + rnd() * 412, 54 + rnd() * 430, 1.5 + rnd() * 2.4]);
+  return out;
+})();
+const TREE_FLIES: Array<[number, number]> = [[86, 148], [151, 236], [309, 168], [402, 262], [235, 336], [322, 420], [132, 396]];
 
 // 🌱 cena normálního uzlu stromu (semínka); speciály stojí 1 👑 korunu
 const treeCost = (tn: TreeNode, lvl: number) => Math.round(tn.base + tn.growth * lvl);
@@ -10410,25 +10484,75 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
       <div className="ltp-tree relative mx-auto h-[640px] w-full max-w-[480px]">
         <span className="pointer-events-none absolute left-3 top-3 select-none text-2xl opacity-10">🌿</span>
         <span className="pointer-events-none absolute bottom-3 right-3 select-none text-2xl opacity-10">🍃</span>
-        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {TREE_NODES.filter((tn) => tn.parent).map((tn) => {
-            const p = TREE_NODES.find((x) => x.id === tn.parent);
-            if (!p) return null;
-            const cl = lvl(tn.id);
-            const pb = lvl(p.id) > 0;
-            const mx = (p.pos[0] + tn.pos[0]) / 2 + (tn.pos[1] - p.pos[1]) * 0.1;
-            const my = (p.pos[1] + tn.pos[1]) / 2 - (tn.pos[0] - p.pos[0]) * 0.1;
-            const d =
-              "M " + p.pos[0] + " " + p.pos[1] + " Q " + mx.toFixed(1) + " " + my.toFixed(1) + " " + tn.pos[0] + " " + tn.pos[1];
-            return (
-              <path
-                key={"ln_" + tn.id}
-                d={d}
-                className={cl > 0 ? "ltp-tline is-on" : pb ? "ltp-tline is-ready" : "ltp-tline"}
-                vectorEffect="non-scaling-stroke"
-              />
-            );
+        <svg className="absolute inset-0 h-full w-full" viewBox="0 0 480 640" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="ltbBark" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stopColor="#39271a" />
+              <stop offset="0.5" stopColor="#6d4b2c" />
+              <stop offset="0.78" stopColor="#7f5b34" />
+              <stop offset="1" stopColor="#46311f" />
+            </linearGradient>
+            <linearGradient id="ltbBarkOn" x1="0" y1="1" x2="0" y2="0">
+              <stop offset="0" stopColor="#473220" />
+              <stop offset="0.5" stopColor="#906032" />
+              <stop offset="0.78" stopColor="#a97039" />
+              <stop offset="1" stopColor="#54381f" />
+            </linearGradient>
+            <radialGradient id="ltbLeafA">
+              <stop offset="0" stopColor="rgba(146,229,121,0.4)" />
+              <stop offset="0.55" stopColor="rgba(74,190,90,0.22)" />
+              <stop offset="1" stopColor="rgba(40,120,60,0)" />
+            </radialGradient>
+            <radialGradient id="ltbLeafB">
+              <stop offset="0" stopColor="rgba(204,251,180,0.35)" />
+              <stop offset="0.6" stopColor="rgba(124,214,110,0.18)" />
+              <stop offset="1" stopColor="rgba(60,140,80,0)" />
+            </radialGradient>
+            <radialGradient id="ltbGlow">
+              <stop offset="0" stopColor="rgba(217,249,157,0.35)" />
+              <stop offset="1" stopColor="rgba(217,249,157,0)" />
+            </radialGradient>
+            <radialGradient id="ltbDirt" cx="0.5" cy="1" r="1">
+              <stop offset="0" stopColor="#2f4d27" />
+              <stop offset="0.45" stopColor="#1b3120" />
+              <stop offset="1" stopColor="#0c1a11" />
+            </radialGradient>
+          </defs>
+          {/* zem, tráva, kořeny, kmen */}
+          <ellipse cx="240" cy="647" rx="320" ry="30" fill="url(#ltbDirt)" />
+          <path d="M234 640 C226 646 213 649 198 648 C213 641 224 634 232 625 Z" fill="#4a3521" />
+          <path d="M246 640 C254 646 267 649 282 648 C267 641 256 634 248 625 Z" fill="#4a3521" />
+          <path d="M120 637 q3 -13 7 -15 M131 638 q-1 -11 4 -15 M345 637 q3 -12 8 -14 M357 638 q-2 -10 2 -15 M205 633 q-13 -9 -15 -22 M284 634 q13 -8 16 -19 M389 644 q2 -10 6 -12 M96 645 q-1 -9 3 -12" className="ltp-tgrass" />
+          <ellipse cx="163" cy="642" rx="7" ry="3" fill="#22331f" />
+          <ellipse cx="330" cy="644" rx="6" ry="2.6" fill="#22331f" />
+          <ellipse cx="272" cy="646" rx="5" ry="2.2" fill="#2b3d27" />
+          <path d={TREE_TRUNK} className="ltp-tbark" />
+          <ellipse cx="226" cy="622" rx="9" ry="5" fill="rgba(74,120,50,0.4)" />
+          <ellipse cx="252" cy="630" rx="7" ry="4" fill="rgba(74,120,50,0.3)" />
+          {/* svatozář za kořenem */}
+          <circle cx="240" cy="512" r="66" fill="url(#ltbGlow)" />
+          {/* koruna - velká listná hmota + polštáře u špiček výhonků */}
+          <ellipse cx="240" cy="120" rx="225" ry="110" fill="url(#ltbLeafA)" opacity="0.55" />
+          <ellipse cx="140" cy="88" rx="125" ry="64" fill="url(#ltbLeafB)" opacity="0.6" />
+          <ellipse cx="345" cy="100" rx="120" ry="62" fill="url(#ltbLeafB)" opacity="0.55" />
+          {TREE_TOPS.map((tp, i) => (
+            <ellipse key={"leaf_" + i} cx={tp.x} cy={tp.y} rx={tp.rx} ry={tp.rx * 0.76} fill={tp.g ? "url(#ltbLeafA)" : "url(#ltbLeafB)"} />
+          ))}
+          {/* dřevěné větve - kuželové, tloušťka podle hloubky */}
+          {TREE_EDGES.map((e) => {
+            const cl = lvl(e.id);
+            const pb = lvl(e.pid) > 0;
+            return <path key={"wd_" + e.id} d={e.wood} className={"ltp-twood" + (cl > 0 ? " is-on" : pb ? " is-ready" : " is-lock")} />;
           })}
+          {/* tekoucí šťáva po odkrytých větvích */}
+          {TREE_EDGES.map((e) => (lvl(e.pid) > 0 ? <path key={"sap_" + e.id} d={e.sap} className={"ltp-tsap" + (lvl(e.id) > 0 ? "" : " is-ready")} /> : null))}
+          {/* rozptýlené listí a světlušky */}
+          {TREE_FLECKS.map((f, i) => (
+            <circle key={"fleck_" + i} cx={f[0]} cy={f[1]} r={f[2]} fill={i % 3 === 0 ? "rgba(217,249,157,0.3)" : "rgba(134,239,172,0.22)"} />
+          ))}
+          {TREE_FLIES.map((f, i) => (
+            <circle key={"fly_" + i} className="ltp-tfly" cx={f[0]} cy={f[1]} r={2.1} style={{ animationDelay: (i * 0.55).toFixed(2) + "s" }} />
+          ))}
         </svg>
         {TREE_NODES.map((tn) => {
           const l = lvl(tn.id);
@@ -11270,44 +11394,68 @@ function LoukaTisicePriser() {
         .ltp-spawn:hover { filter: brightness(1.3); }
         .ltp-spawn:active { transform: scale(.92); }
         @media (min-width: 640px) { .ltp-spawn { font-size: 11px; } }
-        /* 🌳 v1.14 strom dovedností - orby, pipsy, živé linky */
+        /* 🌳 v1.18 strom dovedností - dřevěné kuželové větve, koruna, světlušky, orby v dřevěných pouzdrech */
         .ltp-tree { border-radius: 26px; border: 1px solid rgba(110,231,183,.16);
-          background: radial-gradient(130% 100% at 50% 108%, #14402a 0%, #0b2818 42%, #061410 78%);
+          background:
+            radial-gradient(92% 60% at 50% -10%, rgba(94,182,88,.17), transparent 70%),
+            radial-gradient(130% 100% at 50% 108%, #14402a 0%, #0b2818 42%, #061410 78%);
           box-shadow: inset 0 0 90px rgba(0,0,0,.55), 0 22px 50px rgba(0,0,0,.45); overflow: hidden; }
-        .ltp-tline { fill: none; stroke: rgba(255,255,255,.13); stroke-width: 1.6; stroke-linecap: round; stroke-dasharray: 3 5; }
-        .ltp-tline.is-ready { stroke: rgba(110,231,183,.5); animation: ltpTreeFlow 1.4s linear infinite; }
-        .ltp-tline.is-on { stroke: rgba(110,231,183,.9); stroke-width: 2.4; stroke-dasharray: 7 5; animation: ltpTreeFlow 1s linear infinite; filter: drop-shadow(0 0 4px rgba(110,231,183,.55)); }
-        @keyframes ltpTreeFlow { to { stroke-dashoffset: -24; } }
+        .ltp-tbark { fill: url(#ltbBark); }
+        .ltp-twood { fill: url(#ltbBark); opacity: .78; }
+        .ltp-twood.is-lock { opacity: .4; filter: saturate(.4); }
+        .ltp-twood.is-ready { opacity: .96; }
+        .ltp-twood.is-on { fill: url(#ltbBarkOn); opacity: 1; }
+        .ltp-tsap { fill: none; stroke: rgba(217,249,157,.9); stroke-width: 2.1; stroke-linecap: round; stroke-dasharray: 2 8;
+          filter: drop-shadow(0 0 3px rgba(217,249,157,.7)); animation: ltpTreeFlow 1.15s linear infinite; }
+        .ltp-tsap.is-ready { stroke: rgba(110,231,183,.5); stroke-width: 1.3; stroke-dasharray: 1.5 9; filter: none; animation-duration: 1.8s; }
+        @keyframes ltpTreeFlow { to { stroke-dashoffset: -30; } }
+        .ltp-tgrass { fill: none; stroke: rgba(110,231,183,.45); stroke-width: 1.6; stroke-linecap: round; }
+        .ltp-tfly { fill: rgb(217,249,157); filter: drop-shadow(0 0 3px rgba(217,249,157,.9)); animation: ltpTreeFly 3.6s ease-in-out infinite; }
+        @keyframes ltpTreeFly { 0%,100% { opacity: .08; transform: translate(0,0); } 50% { opacity: .95; transform: translate(7px,-11px); } }
         .ltp-tnode { position: absolute; width: 84px; transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 3px; z-index: 2; }
         .ltp-torb { position: relative; width: 60px; height: 60px; border-radius: 9999px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
-          border: 2px solid rgba(255,255,255,.16); background: radial-gradient(circle at 38% 30%, rgba(255,255,255,.12), rgba(10,26,18,.92) 72%); box-shadow: inset 0 0 14px rgba(0,0,0,.5); transition: transform .16s ease, box-shadow .3s ease; }
+          border: 1px solid rgba(255,224,178,.22);
+          background: radial-gradient(circle at 36% 28%, rgba(255,244,214,.16), rgba(26,16,7,.94) 62%);
+          box-shadow: 0 0 0 2px rgba(64,44,25,.92), 0 0 0 4px rgba(24,16,9,.55), inset 0 -8px 14px rgba(0,0,0,.55), inset 0 3px 7px rgba(255,236,200,.12), 0 6px 16px rgba(0,0,0,.5);
+          transition: transform .16s ease, box-shadow .3s ease; }
         .ltp-tnode:hover .ltp-torb { transform: translateY(-4px) scale(1.08); }
         .ltp-temoji { font-size: 21px; line-height: 1; }
         .ltp-tper { font-size: 7px; font-weight: 700; letter-spacing: .02em; color: rgba(255,255,255,.5); max-width: 54px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
         .ltp-tlock { position: absolute; right: -4px; top: -4px; font-size: 12px; }
-        .ltp-tnode.is-open .ltp-torb { border-color: rgba(110,231,183,.55); box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 16px rgba(52,211,153,.22); }
+        .ltp-tnode.is-open .ltp-torb { border-color: rgba(110,231,183,.55); box-shadow: 0 0 0 2px rgba(48,82,44,.95), 0 0 0 4px rgba(24,16,9,.55), inset 0 -8px 14px rgba(0,0,0,.55), inset 0 3px 7px rgba(200,255,220,.14), 0 0 18px rgba(52,211,153,.3); }
         .ltp-tnode.is-open .ltp-tper { color: rgba(167,243,208,.75); }
-        .ltp-tnode.is-buy .ltp-torb { border-color: rgba(253,224,71,.85); box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 20px rgba(250,204,21,.4); animation: ltpTreePulse 1.6s ease-in-out infinite; }
-        @keyframes ltpTreePulse { 0%,100% { box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 12px rgba(250,204,21,.28); } 50% { box-shadow: inset 0 0 14px rgba(0,0,0,.5), 0 0 26px rgba(250,204,21,.55); } }
-        .ltp-tnode.is-max .ltp-torb { border-color: rgba(250,204,21,.9); background: radial-gradient(circle at 38% 30%, rgba(250,204,21,.35), rgba(69,26,3,.9) 75%); box-shadow: inset 0 0 14px rgba(0,0,0,.45), 0 0 22px rgba(250,204,21,.45); }
-        .ltp-tnode.is-lock .ltp-torb { filter: grayscale(.85); opacity: .5; }
-        .ltp-troot { width: 68px; height: 68px; border-width: 3px; border-color: rgba(52,211,153,.75); box-shadow: inset 0 0 16px rgba(0,0,0,.45), 0 0 26px rgba(52,211,153,.35); }
+        .ltp-tnode.is-buy .ltp-torb { border-color: rgba(253,224,71,.85); box-shadow: 0 0 0 2px rgba(88,66,24,.95), 0 0 0 4px rgba(24,16,9,.5), inset 0 -8px 14px rgba(0,0,0,.55), 0 0 20px rgba(250,204,21,.4); animation: ltpTreePulse 1.6s ease-in-out infinite; }
+        @keyframes ltpTreePulse { 0%,100% { box-shadow: 0 0 0 2px rgba(88,66,24,.95), 0 0 0 4px rgba(24,16,9,.5), inset 0 -8px 14px rgba(0,0,0,.55), 0 0 12px rgba(250,204,21,.3); } 50% { box-shadow: 0 0 0 2px rgba(88,66,24,.95), 0 0 0 4px rgba(24,16,9,.5), inset 0 -8px 14px rgba(0,0,0,.55), 0 0 28px rgba(250,204,21,.6); } }
+        .ltp-tnode.is-max .ltp-torb { border-color: rgba(250,204,21,.9); background: radial-gradient(circle at 38% 30%, rgba(250,204,21,.35), rgba(69,26,3,.92) 75%); box-shadow: 0 0 0 2px rgba(90,68,20,.95), 0 0 0 4px rgba(24,16,9,.55), inset 0 -8px 14px rgba(0,0,0,.5), 0 0 22px rgba(250,204,21,.5); }
+        .ltp-tnode.is-lock .ltp-torb { filter: grayscale(.8); opacity: .5; }
+        .ltp-troot { width: 68px; height: 68px; border-width: 2px; border-color: rgba(255,220,140,.5); box-shadow: 0 0 0 2.5px rgba(64,44,25,.95), 0 0 0 5px rgba(24,16,9,.55), inset 0 -10px 18px rgba(0,0,0,.5), inset 0 4px 9px rgba(255,236,200,.16), 0 0 30px rgba(217,249,157,.35); }
         .ltp-tnode.is-lock .ltp-troot { filter: none; opacity: 1; }
         .ltp-tpips { display: flex; gap: 3px; }
-        .ltp-tpip { width: 5px; height: 5px; border-radius: 9999px; background: rgba(255,255,255,.22); box-shadow: 0 0 2px rgba(0,0,0,.6); }
-        .ltp-tpip.is-on { background: #facc15; box-shadow: 0 0 5px rgba(250,204,21,.9); }
-        .ltp-tnode.is-open .ltp-tpip.is-on, .ltp-tnode.is-buy .ltp-tpip.is-on { background: #6ee7b7; box-shadow: 0 0 5px rgba(110,231,183,.9); }
+        .ltp-tpip { width: 6px; height: 6px; border-radius: 9999px; background: rgba(255,255,255,.22); box-shadow: 0 0 2px rgba(0,0,0,.6); }
+        .ltp-tpip.is-on { background: #facc15; box-shadow: 0 0 6px rgba(250,204,21,.9); }
+        .ltp-tnode.is-open .ltp-tpip.is-on, .ltp-tnode.is-buy .ltp-tpip.is-on { background: #6ee7b7; box-shadow: 0 0 6px rgba(110,231,183,.9); }
         .ltp-tnode.is-max .ltp-tpip { background: #fde047; }
-        .ltp-tname { font-size: 8px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.9); letter-spacing: .02em; white-space: nowrap; }
+        .ltp-tname { font-size: 8px; font-weight: 800; line-height: 1; color: rgba(255,255,255,.92); letter-spacing: .02em; white-space: nowrap; background: rgba(8,16,10,.66); padding: 2px 7px; border-radius: 999px; border: 1px solid rgba(255,255,255,.07); }
         .ltp-tnode.is-max .ltp-tname { color: #fde68a; }
         .ltp-tnode.is-lock .ltp-tname { color: rgba(255,255,255,.4); }
-        .ltp-tbuy { font-size: 8px; font-weight: 800; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(110,231,183,.5); background: rgba(52,211,153,.2); color: #d1fae5; letter-spacing: .03em; transition: transform .12s ease, background .15s ease; }
+        .ltp-tbuy { font-size: 8px; font-weight: 800; padding: 2px 8px; border-radius: 8px; border: 1px solid rgba(110,231,183,.5); background: linear-gradient(180deg, rgba(52,211,153,.34), rgba(6,78,59,.6)); color: #d1fae5; letter-spacing: .03em; transition: transform .12s ease, filter .15s ease; }
+        .ltp-tbuy:hover { filter: brightness(1.2); }
         .ltp-tbuy:active { transform: scale(.92); }
         .ltp-tbuy:disabled { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.3); }
-        .ltp-tnode.is-buy .ltp-tbuy { border-color: rgba(253,224,71,.75); background: rgba(250,204,21,.22); color: #fef9c3; }
+        .ltp-tnode.is-buy .ltp-tbuy { border-color: rgba(253,224,71,.75); background: linear-gradient(180deg, rgba(250,204,21,.3), rgba(120,53,15,.5)); color: #fef9c3; }
         .ltp-tnode.is-max .ltp-tbuy { border-color: rgba(250,204,21,.55); background: rgba(250,204,21,.15); color: #fde68a; }
         .ltp-tbuy:disabled, .ltp-tbuy { cursor: pointer; }
         .ltp-tbuy:disabled { cursor: default; }
+        @media (max-width: 480px) {
+          .ltp-torb { width: 46px; height: 46px; }
+          .ltp-troot { width: 54px; height: 54px; }
+          .ltp-tnode { width: 66px; }
+          .ltp-temoji { font-size: 17px; }
+          .ltp-tper { font-size: 6px; max-width: 44px; }
+          .ltp-tname { font-size: 7px; padding: 1.5px 6px; }
+          .ltp-tbuy { font-size: 7px; padding: 2px 6px; }
+          .ltp-tpip { width: 5px; height: 5px; }
+        }
         .ltp-scard { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: .55rem .4rem; border-radius: 16px; text-align: center;
           border: 1px solid rgba(251,191,36,.35); background: linear-gradient(180deg, rgba(251,191,36,.14), rgba(120,53,15,.16)); box-shadow: 0 6px 18px rgba(0,0,0,.35); animation: ltpGold 3.2s ease-in-out infinite; }
         .ltp-scard.is-max { border-color: rgba(250,204,21,.8); background: linear-gradient(180deg, rgba(250,204,21,.22), rgba(120,53,15,.3)); }

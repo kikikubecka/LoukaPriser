@@ -11,8 +11,8 @@ const CASTLE_FRONT = ARENA_W - 340;
 const BURN_X = Math.round(ARENA_W * 0.75);
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.18.0";
-const GAME_BUILD = "22. 11. 2026";
+const GAME_VERSION = "1.19.0";
+const GAME_BUILD = "24. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -20,6 +20,7 @@ let VH = 620;
 let DPR = 1;
 let DPR_CAP = 2; // strop DPR z rozlišení obrazovky - adaptivní scaler pod něj může klesnout (až na 0.55)
 let MM_Y = 58; // aktuální spodek HUD lišty + odsazení (měří se z DOM, ať minimapa nikdy nesedí pod ní)
+let vigCache: { g: CanvasGradient; w: number; h: number } | null = null; // filmová vinjeta (v1.19)
 let mmFC = 0;
 const JOY_R = 46;
 
@@ -1957,6 +1958,36 @@ function saveMeta(m: Meta): void {
   }
 }
 
+// 🎨 v1.19 EDITOR HUD - pozice a velikosti prvků rozhraní (minimapa, životy, abilitky…).
+// Žije mimo metu, aby restart hry nerozbil tvoje rozložení obrazovky.
+type HudPos = { x?: number; y?: number; s?: number };
+const HUD_KEY = "louka_hud_v1";
+// HUD_LIVE čte kreslicí smyčka (minimapa + boss bar na canvasu), React do ní přihrává stav
+let HUD_LIVE: Record<string, HudPos> = {};
+function loadHud(): Record<string, HudPos> {
+  try {
+    const s = localStorage.getItem(HUD_KEY);
+    if (s) {
+      const p = JSON.parse(s);
+      if (p && typeof p === "object") {
+        HUD_LIVE = p;
+        return p;
+      }
+    }
+  } catch {
+    // localStorage nedostupný - hrajeme s výchozím rozložením
+  }
+  return {};
+}
+function saveHud(cfg: Record<string, HudPos>): void {
+  HUD_LIVE = cfg;
+  try {
+    localStorage.setItem(HUD_KEY, JSON.stringify(cfg));
+  } catch {
+    // bez uložení
+  }
+}
+
 // 🌍 ONLINE ŽEBŘÍČEK - rekordy se ukládají přes ntfy.sh (veřejné kanálové téma bez registrace),
 // takže je vidíš mezi zařízeními a i ostatní hráči. Téma je vlastně heslo k žebříčku:
 // kdokoli, kdo ho zná, může záznamy číst i psát (hodí se pro přátelské skóre).
@@ -2268,6 +2299,9 @@ const LANG: Record<string, Record<string, string>> = {
     dmg: "dmg", kadence: "kadence", rychlost: "rychlost", crit: "crit", zbroj: "zbroje", projektil: "projektilů", navad: "navádění",
     pause: "⏸ Pauza",
     kills: "killů", bosses: "bossů", hp_kill: "HP/kill", kombo: "kombo",
+    hud_edit: "🎨 HUD", hud_title: "🎨 Editor HUD", hud_hint: "Táhni prvek, kam chceš · klepnutím ho vybereš · ➖/➕ mění velikost", hud_done: "✅ Hotovo",
+    hud_reset: "🔄 Tento prvek", hud_reset_all: "🚫 Vše výchozí",
+    hud_n_chips: "🧭 Statistika nahoře", hud_n_bars: "❤️ Životy a bary", hud_n_abils: "⚡ Abilitky", hud_n_xp: "📈 XP bar", hud_n_mini: "🗺️ Minimapa", hud_n_boss: "💀 Boss bar",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Den za {n} s",
     snd: "🔊 Zvuk", snd_off: "🔇 Zvuk", shk: "📳 Třesení", shk_off: "📴 Třesení", nums: "🔢 Čísla dmg", nums_off: "➖ Čísla dmg", surp: "🎁 Překvapení: ZAP", surp_off: "🎁 Překvapení",
     src_title: "📊 Odkud teče bolest", src_turret: "⚙️ Turetka", src_ult: "⚡ Ultimátum", src_other: "❔",
@@ -2355,6 +2389,9 @@ const LANG: Record<string, Record<string, string>> = {
     dmg: "dmg", kadence: "fire rate", rychlost: "speed", crit: "crit", zbroj: "armor", projektil: "projectiles", navad: "homing",
     pause: "⏸ Paused",
     kills: "kills", bosses: "bosses", hp_kill: "HP/kill", kombo: "combo",
+    hud_edit: "🎨 HUD", hud_title: "🎨 HUD editor", hud_hint: "Drag any element anywhere · tap to select it · ➕/➕ changes size", hud_done: "✅ Done",
+    hud_reset: "🔄 Reset this", hud_reset_all: "🚫 Reset all",
+    hud_n_chips: "🧭 Top stats", hud_n_bars: "❤️ Health bars", hud_n_abils: "⚡ Ability buttons", hud_n_xp: "📈 XP bar", hud_n_mini: "🗺️ Minimap", hud_n_boss: "💀 Boss bar",
     boss_in: "☠️ Boss in {n} s", night_in: "🌙 Night in {n} s", day_in: "☀️ Day in {n} s",
     snd: "🔊 Sound", snd_off: "🔇 Sound", shk: "📳 Shake", shk_off: "📴 Shake", nums: "🔢 Dmg numbers", nums_off: "➖ Dmg numbers", surp: "🎁 Surprise: ON", surp_off: "🎁 Surprise",
     src_title: "📊 Where the pain comes from", src_turret: "⚙️ Turret", src_ult: "⚡ Ultimate", src_other: "❔",
@@ -2442,6 +2479,9 @@ const LANG: Record<string, Record<string, string>> = {
     dmg: "obr.", kadence: "kadencja", rychlost: "szybkość", crit: "kryt.", zbroj: "pancerza", projektil: "pocisków", navad: "naprowadzanie",
     pause: "⏸ Pauza",
     kills: "zabójstw", bosses: "bossów", hp_kill: "HP/zabójstwo", kombo: "kombo",
+    hud_edit: "🎨 HUD", hud_title: "🎨 Edytor HUD", hud_hint: "Przeciągnij element, gdzie chcesz · dotknięciem zaznaczysz · ➖/➕ zmienia rozmiar", hud_done: "✅ Gotowe",
+    hud_reset: "🔄 Ten element", hud_reset_all: "🚫 Wszystko",
+    hud_n_chips: "🧭 Staty na górze", hud_n_bars: "❤️ Paski życia", hud_n_abils: "⚡ Przyciski mocy", hud_n_xp: "📈 Pasek XP", hud_n_mini: "🗺️ Minimapa", hud_n_boss: "💀 Pasek bossa",
     boss_in: "☠️ Boss za {n} s", night_in: "🌙 Noc za {n} s", day_in: "☀️ Dzień za {n} s",
     snd: "🔊 Dźwięk", snd_off: "🔇 Dźwięk", shk: "📳 Trzęsienie", shk_off: "📴 Trzęsienie", nums: "🔢 Liczby obr.", nums_off: "➖ Liczby obr.", surp: "🎁 Niespodzianka: WŁ", surp_off: "🎁 Niespodzianka",
     src_title: "📊 Skąd płynie ból", src_turret: "⚙️ Wieżyczka", src_ult: "⚡ Ultimatum", src_other: "❔",
@@ -5846,166 +5886,266 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
   const H2 = ARENA_H;
   const walls = c.walls; // 0 = dřevěná palisáda, 1..5 = kamenné hradby
   const bw = 62 + walls * 12; // "výška" hradby (roste s upgradem Hradby)
-  const stone = walls === 0 ? "#9a6a3d" : "#d6cec0";
-  const stoneD = walls === 0 ? "#7a4f2c" : "#a49a89";
-  const stoneDD = walls === 0 ? "#5d3a1f" : "#7d7466";
+  const wood = walls === 0;
+  const stone = wood ? "#9a6a3d" : "#ded7c9";
+  const stoneM = wood ? "#855a30" : "#c9bfae";
+  const stoneD = wood ? "#6d4527" : "#a89c8a";
+  const stoneDD = wood ? "#4d2f19" : "#7c7161";
+  const capCol = wood ? "#8f6236" : "#e8dfcf";
   const dead = c.hp <= 0;
   const frac = Math.max(0, c.hp / c.maxHp);
   const gy = c.y; // brána přesně na středu stezky
+  // 🎲 deterministický šum - kameny i mech vypadají rozmanitě, ale každý snímek stejně
+  const hsh = (aa: number, bb: number): number => {
+    const x = Math.sin(aa * 127.1 + bb * 311.7) * 43758.5453;
+    return x - Math.floor(x);
+  };
 
-  // --- 0) dvůr za hradou: do hloubky tmavne ---
+  // --- 0) 🌇 zlatá hodina: teplá svatozář za hradem + dvůr, který do hloubky tmavne
+  const glow = ctx.createRadialGradient(F + 170, gy, 40, F + 170, gy, 560);
+  glow.addColorStop(0, "rgba(255,187,110,0.34)");
+  glow.addColorStop(0.5, "rgba(255,160,90,0.13)");
+  glow.addColorStop(1, "rgba(255,150,80,0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(F - 160, -60, ARENA_W - F + 160, H2 + 120);
   const grY = ctx.createLinearGradient(F, 0, ARENA_W, 0);
-  grY.addColorStop(0, "#4a4238");
-  grY.addColorStop(1, "#15110d");
+  grY.addColorStop(0, "#4c4136");
+  grY.addColorStop(1, "#120e0a");
   ctx.fillStyle = grY;
   ctx.fillRect(F, -40, ARENA_W - F, H2 + 80);
 
   if (!dead) {
-    // --- 1) zástavba dvora - domy se šikmými střechami vykukují za hradbami ---
+    // --- 1) zástavba dvora - domy s prkny, komíny s kouřem a svitem oken
     if (walls >= 2) {
-      const roofC = ["#7f1d1d", "#57534e", "#3f3f46"];
+      const roofC = ["#8f2626", "#5c5651", "#43434c"];
       let hi = 0;
-      for (let hy = 30; hy < H2 - 90; hy += 150) {
+      for (let hy = 24; hy < H2 - 90; hy += 150) {
         const hx = F + bw + 30 + (hi % 3) * 22;
         const hw = 54 + (hi % 2) * 26;
-        ctx.fillStyle = "#6b5f4e";
+        const grH = ctx.createLinearGradient(hx, 0, hx + hw, 0);
+        grH.addColorStop(0, "#77664f");
+        grH.addColorStop(1, "#4b4136");
+        ctx.fillStyle = grH;
         ctx.fillRect(hx, hy, hw, 84);
+        ctx.strokeStyle = "rgba(30,25,20,0.35)";
+        ctx.lineWidth = 1;
+        for (let py2 = hy + 12; py2 < hy + 84; py2 += 18) {
+          ctx.beginPath();
+          ctx.moveTo(hx, py2);
+          ctx.lineTo(hx + hw, py2);
+          ctx.stroke();
+        }
         ctx.fillStyle = roofC[hi % 3];
-        ctx.beginPath(); // šikmá střecha směřuje vzhůru (na východ)
+        ctx.beginPath();
         ctx.moveTo(hx - 6, hy + 88);
         ctx.lineTo(hx + hw + 6, hy + 88);
-        ctx.lineTo(hx + hw * 0.5 + 8, hy + 120);
+        ctx.lineTo(hx + hw * 0.5 + 8, hy + 124);
         ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = "rgba(253,230,138,0.5)"; // svit oken
+        ctx.fillStyle = "rgba(0,0,0,0.22)";
+        ctx.beginPath();
+        ctx.moveTo(hx - 6, hy + 88);
+        ctx.lineTo(hx + hw * 0.5 - 3, hy + 88);
+        ctx.lineTo(hx + hw * 0.5 + 2, hy + 124);
+        ctx.closePath();
+        ctx.fill();
+        // komín a stoupající kouř
+        ctx.fillStyle = "#57534e";
+        ctx.fillRect(hx + hw - 14, hy + 92, 7, 24);
+        for (let s2 = 0; s2 < 3; s2++) {
+          const drift = (t * 7 + hi * 40) % 26;
+          ctx.fillStyle = "rgba(180,171,160," + Math.max(0.04, 0.2 - s2 * 0.06).toFixed(2) + ")";
+          ctx.beginPath();
+          ctx.ellipse(hx + hw - 10 + Math.sin(t * 1.3 + s2 + hi) * 4, hy + 86 - s2 * 9 - drift, 5 + s2 * 3.4, 4 + s2 * 2.6, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // v oknech zabliká večerní světlo
+        const wf = 0.55 + 0.2 * Math.sin(t * 2.2 + hi * 2.7);
+        ctx.fillStyle = "rgba(253,224,120," + wf.toFixed(2) + ")";
         ctx.fillRect(hx + 10, hy + 34, 7, 10);
         ctx.fillRect(hx + hw - 17, hy + 34, 7, 10);
         hi++;
       }
     }
 
-    // --- 2) Královský donjon s korouhví - tyčí se přes celý dvůr ---
+    // --- 2) Královský donjon - tyčí se přes dvůr, na střeše vlaje korouhev
     if (c.keep) {
       const dkx = F + bw + 40;
       const dkw = 96;
-      ctx.fillStyle = stone;
-      ctx.fillRect(dkx, gy - 120, dkw, 240);
-      ctx.fillStyle = stoneD;
-      ctx.fillRect(dkx, gy - 120, dkw, 12);
+      const grK = ctx.createLinearGradient(dkx, 0, dkx + dkw, 0);
+      grK.addColorStop(0, stone);
+      grK.addColorStop(0.55, stoneM);
+      grK.addColorStop(1, stoneD);
+      ctx.fillStyle = grK;
+      ctx.fillRect(dkx, gy - 148, dkw, 296);
       ctx.strokeStyle = stoneD;
-      ctx.lineWidth = 1.6;
-      for (let by = gy - 104; by < gy + 118; by += 26) {
+      ctx.lineWidth = 1.4;
+      for (let by = gy - 128; by < gy + 146; by += 26) {
         ctx.beginPath();
         ctx.moveTo(dkx, by);
         ctx.lineTo(dkx + dkw, by);
         ctx.stroke();
       }
+      // gotická okna s teplým svitem
+      const wf2 = 0.55 + 0.25 * Math.sin(t * 1.7);
+      for (const wy of [gy - 106, gy + 12]) {
+        for (const wx of [dkx + 13, dkx + dkw - 30]) {
+          ctx.fillStyle = "rgba(254,240,138," + wf2.toFixed(2) + ")";
+          ctx.beginPath();
+          ctx.moveTo(wx, wy + 30);
+          ctx.lineTo(wx, wy + 10);
+          ctx.quadraticCurveTo(wx + 9, wy - 8, wx + 18, wy + 10);
+          ctx.lineTo(wx + 18, wy + 30);
+          ctx.closePath();
+          ctx.fill();
+          ctx.strokeStyle = "rgba(60,50,38,0.7)";
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        }
+      }
+      // cimbuří koruny donjonu
       ctx.fillStyle = stone;
-      for (let i = 0; i < 5; i++) ctx.fillRect(dkx + dkw, gy - 120 + i * 48, 12, 20); // cimbuří
-      ctx.fillStyle = "#fde68a"; // okna
-      ctx.fillRect(dkx + 16, gy - 76, 9, 18);
-      ctx.fillRect(dkx + dkw - 26, gy - 76, 9, 18);
-      ctx.fillRect(dkx + 16, gy + 40, 9, 18);
-      ctx.fillRect(dkx + dkw - 26, gy + 40, 9, 18);
-      // korouhev na stožáru vlaje na východ
-      ctx.strokeStyle = "#57534e";
-      ctx.lineWidth = 3;
+      for (let i = 0; i < 6; i++) ctx.fillRect(dkx + dkw, gy - 148 + i * 50, 12, 24);
+      // velitelská korouhev
+      ctx.strokeStyle = "#4b4441";
+      ctx.lineWidth = 3.5;
       ctx.beginPath();
-      ctx.moveTo(dkx + dkw + 12, gy - 110);
-      ctx.lineTo(dkx + dkw + 66, gy - 104);
+      ctx.moveTo(dkx + dkw + 14, gy - 140);
+      ctx.lineTo(dkx + dkw + 84, gy - 128);
       ctx.stroke();
+      const fk = dkx + dkw + 84;
+      const fw = Math.sin(t * 3 + 1) * 5;
       ctx.fillStyle = "#facc15";
       ctx.beginPath();
-      ctx.moveTo(dkx + dkw + 64, gy - 104);
-      ctx.lineTo(dkx + dkw + 94 + Math.sin(t * 3) * 5, gy - 98 + Math.sin(t * 3 + 1) * 4);
-      ctx.lineTo(dkx + dkw + 64, gy - 86);
+      ctx.moveTo(fk, gy - 128);
+      ctx.lineTo(fk + 34 + fw, gy - 122 + fw * 0.6);
+      ctx.lineTo(fk, gy - 108);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "rgba(180,120,20,0.5)";
+      ctx.beginPath();
+      ctx.moveTo(fk, gy - 128);
+      ctx.lineTo(fk + 17, gy - 118 + fw * 0.3);
+      ctx.lineTo(fk, gy - 108);
       ctx.closePath();
       ctx.fill();
     }
 
-    // --- 3) věže: velká věž na hradbě, "výška" míří na východ ---
+    // --- 3) věže - kamenné tělo se stínem, kuželová břidlicová střecha, korouhev
     const tower2 = (x0: number, ty: number, tw2: number, tall: number, roof: boolean) => {
-      const top2 = F + bw + tall; // východní konec těla věže = její "vrchol"
+      const top2 = F + bw + tall;
       const grT = ctx.createLinearGradient(0, ty - tw2 / 2, 0, ty + tw2 / 2);
       grT.addColorStop(0, stoneDD);
-      grT.addColorStop(0.45, stone);
+      grT.addColorStop(0.42, stone);
       grT.addColorStop(1, stoneD);
       ctx.fillStyle = grT;
       ctx.fillRect(x0, ty - tw2 / 2, top2 - x0, tw2);
-      // korunní římsa na "vrcholu"
+      // kamenné řády na věži
+      ctx.strokeStyle = "rgba(70,58,44,0.35)";
+      ctx.lineWidth = 1;
+      for (let ly2 = ty - tw2 / 2 + 8; ly2 < ty + tw2 / 2; ly2 += 17) {
+        ctx.beginPath();
+        ctx.moveTo(x0 + 4, ly2);
+        ctx.lineTo(top2 - 4, ly2);
+        ctx.stroke();
+      }
+      // korunní římsa s podporou (drápkové konzolky)
       ctx.fillStyle = stoneD;
-      ctx.fillRect(top2 - 8, ty - tw2 / 2 - 6, 8, tw2 + 12);
-      // střílny na čelní stěně věže
-      ctx.fillStyle = "#1c1917";
-      ctx.fillRect(x0 + 5, ty - 26, 5, 15);
-      ctx.fillRect(x0 + 5, ty + 11, 5, 15);
+      ctx.fillRect(top2 - 10, ty - tw2 / 2 - 7, 10, tw2 + 14);
+      ctx.fillStyle = stoneDD;
+      for (let kr = ty - tw2 / 2; kr < ty + tw2 / 2; kr += 11) ctx.fillRect(top2 - 14, kr, 4, 7);
       if (roof) {
-        // kuželová střecha - hrot míří na východ vzhůru
-        ctx.fillStyle = "#b91c1c";
+        // dvoubarevná kuželová střecha s hřebenovými latěmi
+        ctx.fillStyle = "#a32121";
         ctx.beginPath();
         ctx.moveTo(top2 - 2, ty - tw2 / 2 - 10);
-        ctx.lineTo(top2 - 2, ty + tw2 / 2 + 10);
-        ctx.lineTo(top2 + 56, ty);
+        ctx.lineTo(top2 - 2, ty);
+        ctx.lineTo(top2 + 62, ty);
         ctx.closePath();
         ctx.fill();
         ctx.fillStyle = "#7f1d1d";
         ctx.beginPath();
         ctx.moveTo(top2 - 2, ty);
-        ctx.lineTo(top2 + 56, ty);
+        ctx.lineTo(top2 + 62, ty);
         ctx.lineTo(top2 - 2, ty + tw2 / 2 + 10);
         ctx.closePath();
         ctx.fill();
-        // zlatá korouhev na hrotu
-        ctx.strokeStyle = "#57534e";
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(top2 + 56, ty);
-        ctx.lineTo(top2 + 86, ty);
-        ctx.stroke();
+        ctx.strokeStyle = "rgba(60,10,10,0.45)";
+        ctx.lineWidth = 1.2;
+        for (let sh2 = 1; sh2 <= 3; sh2++) {
+          ctx.beginPath();
+          ctx.moveTo(top2 - 2 + sh2 * 15, ty - tw2 / 2 - 10 + sh2 * (tw2 / 2 + 10) / 3.2);
+          ctx.lineTo(top2 - 2 + sh2 * 15, ty + tw2 / 2 + 10 - sh2 * (tw2 / 2 + 10) / 3.2);
+          ctx.stroke();
+        }
+        // zlatá koule na hrotu + korouhev
         ctx.fillStyle = "#facc15";
         ctx.beginPath();
-        ctx.moveTo(top2 + 86, ty - 1);
-        ctx.lineTo(top2 + 86 + 20 + Math.sin(t * 4 + ty * 0.05) * 4, ty + 7 + Math.sin(t * 4 + ty * 0.05 + 1) * 3);
-        ctx.lineTo(top2 + 86, ty + 15);
+        ctx.arc(top2 + 62, ty, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#4b4441";
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.moveTo(top2 + 62, ty);
+        ctx.lineTo(top2 + 92, ty);
+        ctx.stroke();
+        const fw2 = Math.sin(t * 4 + ty * 0.05) * 4;
+        ctx.fillStyle = "#ef4444";
+        ctx.beginPath();
+        ctx.moveTo(top2 + 92, ty - 2);
+        ctx.lineTo(top2 + 112 + fw2, ty + 6 + fw2 * 0.7);
+        ctx.lineTo(top2 + 92, ty + 14);
         ctx.closePath();
         ctx.fill();
       } else {
-        // bez střechy jen cimbuří
         ctx.fillStyle = stone;
         for (let i = 0; i < 3; i++) ctx.fillRect(top2, ty - tw2 / 2 - 18 + i * 22, 10, 22);
       }
+      // střílny na čelní stěně
+      ctx.fillStyle = "#1c1917";
+      ctx.fillRect(x0 + 5, ty - 26, 5, 15);
+      ctx.fillRect(x0 + 5, ty + 11, 5, 15);
+      ctx.fillStyle = "rgba(254,240,138," + (0.3 + 0.18 * Math.sin(t * 2.4 + ty * 0.03)).toFixed(2) + ")";
+      ctx.fillRect(x0 + 6, ty - 20, 3, 8);
+      ctx.fillRect(x0 + 6, ty + 17, 3, 8);
     };
-    // rohové bašty nahoře a dole + věže po stranách brány (vykukují před čelo zdi)
     tower2(F, 94, 152, 46, walls >= 3);
     tower2(F, H2 - 94, 152, 46, walls >= 3);
     tower2(F - 30, gy - 168, 142, 26 + walls * 8, true);
     tower2(F - 30, gy + 168, 142, 26 + walls * 8, true);
   }
+  // brána hledí na západ - stav za stezku
+  const gw2 = 76;
 
-  // --- 4) kontaktní stín před hradbou ---
-  const grS = ctx.createLinearGradient(F - 74, 0, F - 20, 0);
+  // --- 4) kontaktní stín před hradbou + vyšlapaná půda u brány
+  const grS = ctx.createLinearGradient(F - 84, 0, F - 20, 0);
   grS.addColorStop(0, "rgba(0,0,0,0)");
-  grS.addColorStop(1, "rgba(0,0,0,0.3)");
+  grS.addColorStop(1, "rgba(0,0,0,0.34)");
   ctx.fillStyle = grS;
-  ctx.fillRect(F - 74, -20, 56, H2 + 40);
+  ctx.fillRect(F - 84, -20, 66, H2 + 40);
+  ctx.fillStyle = "rgba(64,48,32,0.42)";
+  ctx.beginPath();
+  ctx.ellipse(F - 42, gy, 44, 132, 0, 0, Math.PI * 2);
+  ctx.fill();
 
-  // --- 5) hradba po celé výšce mapy ---
+  // --- 5) hradba po celé výšce mapy
   if (walls === 0) {
-    // dřevěná palisáda - svislé špičaté kůly
+    // dřevěná palisáda - svislé špičaté kůly s rozvrstvením
     for (let py = 6; py < H2; py += 15) {
-      ctx.fillStyle = "#9a6a3d";
-      ctx.fillRect(F - 8, py, 16, 15);
-      ctx.fillStyle = "#7a4f2c";
-      ctx.fillRect(F - 8, py, 16, 3);
+      const jit = hsh(py, 9) * 2;
+      ctx.fillStyle = "#8a5c33";
+      ctx.fillRect(F - 8 + jit, py, 16, 15);
+      ctx.fillStyle = "#6d4527";
+      ctx.fillRect(F - 8 + jit, py, 16, 3);
       ctx.fillStyle = "#b0793f";
       ctx.beginPath();
-      ctx.moveTo(F - 8, py + 3);
-      ctx.lineTo(F, py - 7);
-      ctx.lineTo(F + 8, py + 3);
+      ctx.moveTo(F - 8 + jit, py + 3);
+      ctx.lineTo(F + jit, py - 7);
+      ctx.lineTo(F + 8 + jit, py + 3);
       ctx.closePath();
       ctx.fill();
     }
-    ctx.strokeStyle = "#5d3a1f";
+    ctx.strokeStyle = "#4d2f19";
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.moveTo(F - 4, 0);
@@ -6019,9 +6159,11 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
     grW.addColorStop(1, stoneDD);
     ctx.fillStyle = grW;
     ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
-    ctx.strokeStyle = "rgba(80,68,52,0.4)";
+    ctx.strokeStyle = "rgba(74,62,46,0.4)";
     ctx.lineWidth = 1.4;
-    for (let by = -6; by < H2 + 20; by += 26) {
+    const rows: number[] = [];
+    for (let by = -6; by < H2 + 20; by += 26) rows.push(by);
+    for (const by of rows) {
       ctx.beginPath();
       ctx.moveTo(F - 26, by);
       ctx.lineTo(F + bw, by);
@@ -6032,10 +6174,34 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
         ctx.moveTo(bx, by);
         ctx.lineTo(bx, by + 26);
         ctx.stroke();
+        // 🎨 per-kvádr šum - zeď není jednotvárná placka
+        const sh3 = hsh(bx, by);
+        if (sh3 > 0.62) {
+          ctx.fillStyle = "rgba(255,250,238," + ((sh3 - 0.62) * 0.3).toFixed(2) + ")";
+          ctx.fillRect(bx + 1, by + 1, Math.min(52, F + bw - bx - 2), 24);
+        } else if (sh3 < 0.2) {
+          ctx.fillStyle = "rgba(40,28,16," + ((0.2 - sh3) * 0.35).toFixed(2) + ")";
+          ctx.fillRect(bx + 1, by + 1, Math.min(52, F + bw - bx - 2), 24);
+        }
       }
     }
-    // mech a liány - zeď vypadá, jako tu stojí stovky let
-    ctx.fillStyle = "rgba(74,124,54,0.4)";
+    // ejektorové šmouhy od deště
+    for (let sy = 46; sy < H2; sy += 137) {
+      const sw = 10 + hsh(sy, 7) * 16;
+      ctx.fillStyle = "rgba(56,46,34,0.10)";
+      ctx.fillRect(F - 20 + hsh(sy, 3) * 42, sy, sw, 90 + hsh(sy, 5) * 70);
+    }
+    // střílny s teplým nitrem
+    for (let sy2 = 120; sy2 < H2 - 60; sy2 += 210) {
+      if (Math.abs(sy2 - gy) < 130) continue;
+      ctx.fillStyle = "#221c14";
+      ctx.fillRect(F - 5, sy2, 5, 14);
+      ctx.fillRect(F - 5, sy2 + 5, 11, 4);
+      ctx.fillStyle = "rgba(254,240,138," + (0.24 + 0.15 * Math.sin(t * 2 + sy2 * 0.13)).toFixed(2) + ")";
+      ctx.fillRect(F - 4, sy2 + 6, 9, 2);
+    }
+    // mech a livány - zeď vypadá, jako tu stojí stovky let
+    ctx.fillStyle = "rgba(74,124,54,0.42)";
     for (let my = 60; my < H2; my += 260) {
       ctx.beginPath();
       ctx.ellipse(F - 18, my, 9, 22, 0, 0, Math.PI * 2);
@@ -6044,24 +6210,61 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.beginPath();
       ctx.ellipse(F + 30, my + 130, 7, 16, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = "rgba(74,124,54,0.4)";
+      ctx.fillStyle = "rgba(74,124,54,0.42)";
     }
   }
 
-  // --- 6) cimbuří na koruně hradby ---
+  // --- 6) cimbuří na koruně hradby - merlony s čepci, mechem a praporci
   {
     const toothCol = walls === 0 ? "#7a4f2c" : stoneD;
-    ctx.fillStyle = toothCol;
+    let mi = 0;
     for (let my = 6; my < H2; my += 38) {
-      if (dead && ((my / 38) | 0) % 3 === 1) continue; // zbořené zuby po dobytí
+      if (dead && ((my / 38) | 0) % 3 === 1) {
+        mi++;
+        continue; // zbořené zuby po dobytí
+      }
+      ctx.fillStyle = toothCol;
       ctx.fillRect(F + bw, my, 13, 22);
+      ctx.fillStyle = capCol;
+      ctx.fillRect(F + bw, my, 13, 4);
+      if (hsh(my, 4) > 0.6 && !dead) {
+        ctx.fillStyle = "rgba(88,138,60,0.5)";
+        ctx.beginPath();
+        ctx.ellipse(F + bw + 6, my + 22, 5, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 🚩 praporec mezi merlony - hrad se chlubí svými barvami
+      if (mi % 4 === 2 && walls >= 1 && !dead) {
+        const px2 = F + bw + 13;
+        ctx.strokeStyle = "#4b4441";
+        ctx.lineWidth = 1.8;
+        ctx.beginPath();
+        ctx.moveTo(px2, my + 2);
+        ctx.lineTo(px2 + 20, my - 2 + Math.sin(t * 5 + mi) * 1.5);
+        ctx.stroke();
+        const fx2 = px2 + 20;
+        const fwv = Math.sin(t * 5.5 + mi * 1.7) * 3;
+        ctx.fillStyle = mi % 8 === 2 ? "#facc15" : "#dc2626";
+        ctx.beginPath();
+        ctx.moveTo(fx2, my - 3);
+        ctx.lineTo(fx2 + 13 + fwv, my + 2 + fwv * 0.6);
+        ctx.lineTo(fx2, my + 7);
+        ctx.closePath();
+        ctx.fill();
+      }
+      mi++;
     }
+    // chodba stráže za cimbuřím
+    ctx.fillStyle = "rgba(0,0,0,0.20)";
+    ctx.fillRect(F + bw + 13, 0, 5, H2);
   }
 
-  // --- 7) hlavní brána - hrotitý oblouk hledí na západ k lesu ---
-  const gw2 = 76; // šířka vchodu po ose y
-  // tmavý vchod do hloubky brány
-  ctx.fillStyle = "#14100c";
+  // --- 7) hlavní brána - hrotitý oblouk s vrstvenými ostěními hledí na západ
+  // tmavý vchod, na jeho konci prosvítá dvůr
+  const grGate = ctx.createLinearGradient(F - 4, 0, F + 44, 0);
+  grGate.addColorStop(0, "#0c0906");
+  grGate.addColorStop(1, "#231408");
+  ctx.fillStyle = grGate;
   ctx.beginPath();
   ctx.moveTo(F - 4, gy - gw2);
   ctx.lineTo(F + 44, gy - gw2 - 8);
@@ -6070,7 +6273,7 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
   ctx.closePath();
   ctx.fill();
   if (!dead) {
-    // dubová vrat, pootevřená křídla
+    // dubová vrata s kovovými pásky a pantdáky
     ctx.fillStyle = "#4a2f18";
     ctx.fillRect(F, gy - gw2, 13, gw2 * 2);
     ctx.strokeStyle = "#2c1c0e";
@@ -6080,6 +6283,15 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.moveTo(F, dy);
       ctx.lineTo(F + 13, dy);
       ctx.stroke();
+    }
+    ctx.fillStyle = "#6b7280";
+    ctx.fillRect(F, gy - gw2 + 16, 13, 4);
+    ctx.fillRect(F, gy + gw2 - 22, 13, 4);
+    for (let st = 0; st < 5; st++) {
+      ctx.fillStyle = "#9ca3af";
+      ctx.beginPath();
+      ctx.arc(F + 6, gy - gw2 + 30 + st * 22, 1.4, 0, Math.PI * 2);
+      ctx.fill();
     }
     // padací mříž spuštěná přes vchod
     ctx.strokeStyle = "#57534e";
@@ -6097,34 +6309,59 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.stroke();
     }
   }
-  // kamenné ostění vchodu (portálový zhloubený rám)
-  ctx.strokeStyle = stoneD;
-  ctx.lineWidth = 9;
+  // vrstvená kamenná ostění (archivolty) - tři soustředné oblouky
+  for (let ai = 0; ai < 3; ai++) {
+    const aw = 6 + ai * 2;
+    ctx.strokeStyle = ai === 0 ? stone : ai === 1 ? stoneM : stoneD;
+    ctx.lineWidth = aw;
+    ctx.beginPath();
+    ctx.moveTo(F + 4 + ai * 6, gy - gw2 - 6 - ai * 8);
+    ctx.quadraticCurveTo(F - 6 - ai * 7, gy - gw2 - 8 - ai * 5, F - 32 - ai * 8, gy - gw2 - 22 - ai * 9);
+    ctx.moveTo(F + 4 + ai * 6, gy + gw2 + 6 + ai * 8);
+    ctx.quadraticCurveTo(F - 6 - ai * 7, gy + gw2 + 8 + ai * 5, F - 32 - ai * 8, gy + gw2 + 22 + ai * 9);
+    ctx.stroke();
+  }
+  // klíčový kámen na hrotě oblouku
+  ctx.fillStyle = capCol;
   ctx.beginPath();
-  ctx.moveTo(F + 4, gy - gw2 - 6);
-  ctx.lineTo(F - 30, gy - gw2 - 24);
-  ctx.moveTo(F + 4, gy + gw2 + 6);
-  ctx.lineTo(F - 30, gy + gw2 + 24);
-  ctx.stroke();
-  ctx.fillStyle = stoneD;
-  // hrotitý oblouk nad vchodem (směřuje na západ ven k netvorům)
-  ctx.beginPath();
-  ctx.moveTo(F - 30, gy - gw2 - 24);
-  ctx.quadraticCurveTo(F - 6, gy - gw2 - 8, F + 4, gy - gw2 - 6);
-  ctx.lineTo(F + 4, gy + gw2 + 6);
-  ctx.quadraticCurveTo(F - 6, gy + gw2 + 8, F - 30, gy + gw2 + 24);
+  ctx.moveTo(F - 30, gy - gw2 - 30);
+  ctx.lineTo(F - 22, gy - gw2 - 34);
+  ctx.lineTo(F - 16, gy - gw2 - 26);
+  ctx.lineTo(F - 18, gy + gw2 + 28);
+  ctx.lineTo(F - 24, gy + gw2 + 34);
+  ctx.lineTo(F - 30, gy + gw2 + 30);
   ctx.closePath();
-  ctx.lineWidth = 3;
+  ctx.fill();
+  ctx.strokeStyle = stoneD;
+  ctx.lineWidth = 2;
   ctx.stroke();
+  // machanice - kamenná římsa s otvory nad branou
+  if (!dead) {
+    ctx.fillStyle = stoneD;
+    ctx.fillRect(F - 26, gy - gw2 - 44, 26, 9);
+    ctx.fillStyle = "#1c1917";
+    for (const hyx of [gy - gw2 - 34, gy - 10, gy + gw2 + 12]) ctx.fillRect(F - 24, hyx, 5, 6);
+  }
   if (c.keep && !dead) {
     // Královský donjon - zlatý rám brány
     ctx.strokeStyle = "#facc15";
     ctx.lineWidth = 3;
     ctx.strokeRect(F - 34, gy - gw2 - 28, 44, gw2 * 2 + 56);
+    ctx.fillStyle = "rgba(250,204,21,0.14)";
+    ctx.fillRect(F - 34, gy - gw2 - 28, 44, gw2 * 2 + 56);
   }
-  // znak brány - štít s korunou nad vchodem
+  // znak brány - štít s korunou + rozvinutý látkový prapor pod ním
   if (walls >= 1 && !dead) {
-    const shy = gy - gw2 - 46;
+    const shy = gy - gw2 - 84;
+    const fwv2 = Math.sin(t * 2.6) * 2;
+    ctx.fillStyle = "#7f1d1d";
+    ctx.beginPath();
+    ctx.moveTo(F - 12, shy + 20);
+    ctx.lineTo(F + 20, shy + 24 + fwv2);
+    ctx.lineTo(F + 18, shy + 38 + fwv2 * 1.4);
+    ctx.lineTo(F - 12, shy + 34);
+    ctx.closePath();
+    ctx.fill();
     ctx.fillStyle = "#2d1b4e";
     ctx.beginPath();
     ctx.moveTo(F - 10, shy - 15);
@@ -6150,28 +6387,45 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
     ctx.fill();
   }
 
-  // --- 8) pochodně po celé hradbě - plápolají, dokud hrad žije ---
+  // --- 8) pochodně a košály po celé hradbě - plápolají, dokud hrad žije
   if (!dead) {
     for (let py = 46; py < H2 - 20; py += 236) {
       if (Math.abs(py - gy) < 130) continue; // u brány hoří samostatné košály
       const fl2 = 0.6 + 0.35 * Math.sin(t * 9 + py * 0.11);
+      // měkká teplá svatozář plamínku
+      const gh2 = ctx.createRadialGradient(F - 34, py - 4, 2, F - 34, py - 4, 26);
+      gh2.addColorStop(0, "rgba(251,146,60," + (fl2 * 0.38).toFixed(2) + ")");
+      gh2.addColorStop(1, "rgba(251,146,60,0)");
+      ctx.fillStyle = gh2;
+      ctx.fillRect(F - 60, py - 30, 52, 52);
       ctx.strokeStyle = "#57534e";
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(F - 34, py + 8);
       ctx.lineTo(F - 34, py);
       ctx.stroke();
-      ctx.fillStyle = `rgba(251,146,60,${fl2})`;
+      ctx.fillStyle = "rgba(251,146,60," + fl2.toFixed(2) + ")";
       ctx.beginPath();
       ctx.arc(F - 34, py - 5 + Math.sin(t * 11 + py) * 1.5, 4, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(254,240,138,${fl2 * 0.8})`;
+      ctx.fillStyle = "rgba(254,240,138," + (fl2 * 0.8).toFixed(2) + ")";
       ctx.beginPath();
       ctx.arc(F - 34, py - 6, 2, 0, Math.PI * 2);
       ctx.fill();
+      // jiskérky stoupající nad pochodně
+      for (let es = 0; es < 2; es++) {
+        const ey2 = py - 10 - ((t * 13 + py + es * 9) % 26);
+        ctx.fillStyle = "rgba(253,224,71," + (0.55 - ((t * 13 + es * 9) % 26) * 0.02).toFixed(2) + ")";
+        ctx.fillRect(F - 35 + Math.sin(t * 5 + es * 2 + py) * 4 + es * 2, ey2, 2, 2);
+      }
     }
     // košály po stranách brány
     for (const byy of [gy - 106, gy + 106]) {
+      const gh3 = ctx.createRadialGradient(F - 40, byy - 6, 3, F - 40, byy - 6, 34);
+      gh3.addColorStop(0, "rgba(249,115,22,0.42)");
+      gh3.addColorStop(1, "rgba(249,115,22,0)");
+      ctx.fillStyle = gh3;
+      ctx.fillRect(F - 74, byy - 40, 68, 68);
       ctx.fillStyle = "#3f3f46";
       ctx.beginPath();
       ctx.ellipse(F - 40, byy + 10, 8, 4, 0, 0, Math.PI * 2);
@@ -6179,74 +6433,102 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.fillStyle = "#57534e";
       ctx.fillRect(F - 43, byy, 6, 10);
       const fl3 = 0.65 + 0.3 * Math.sin(t * 8 + byy * 0.07);
-      ctx.fillStyle = `rgba(249,115,22,${fl3})`;
+      ctx.fillStyle = "rgba(249,115,22," + fl3.toFixed(2) + ")";
       ctx.beginPath();
       ctx.ellipse(F - 40, byy - 6 + Math.sin(t * 10 + byy) * 1.6, 6, 9, 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.fillStyle = `rgba(254,240,138,${fl3 * 0.85})`;
+      ctx.fillStyle = "rgba(254,240,138," + (fl3 * 0.85).toFixed(2) + ")";
       ctx.beginPath();
       ctx.ellipse(F - 40, byy - 5, 2.6, 4, 0, 0, Math.PI * 2);
       ctx.fill();
     }
   }
 
-  // --- 9) lučištníci na hradbě (střílny ze stromu dovedností) ---
+  // --- 9) lučištníci na hradbě (střílny ze stromu dovedností) - živí obránci s lukem
   if (c.bows > 0 && !dead) {
     for (let b = 0; b < c.bows; b++) {
       const ay = castleBowY(g, b);
       const ax = F + bw - 20;
       ctx.fillStyle = "#1c1917";
       ctx.fillRect(ax - 13, ay - 13, 26, 26); // tmavý výklenek arkýdy
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.fillRect(ax - 13, ay - 16, 26, 5); // stříška arkýdy
       ctx.fillStyle = "#bfdbfe"; // hlava v přilbě
       ctx.beginPath();
       ctx.arc(ax, ay - 5, 3.6, 0, Math.PI * 2);
       ctx.fill();
       ctx.fillStyle = "#2563eb"; // tělo v modrém plášti
       ctx.fillRect(ax - 4, ay - 1, 8, 10);
+      ctx.fillStyle = "rgba(147,197,253,0.5)";
+      ctx.fillRect(ax - 4, ay - 1, 8, 3);
       ctx.strokeStyle = "#92400e"; // luk
       ctx.lineWidth = 1.8;
       ctx.beginPath();
       ctx.arc(ax - 14, ay - 4, 7, -1.1, 1.1);
       ctx.stroke();
+      ctx.strokeStyle = "rgba(229,231,235,0.7)"; // tětiva
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(ax - 14 + Math.cos(-1.1) * 7, ay - 4 + Math.sin(-1.1) * 7);
+      ctx.lineTo(ax - 14 + Math.cos(1.1) * 7, ay - 4 + Math.sin(1.1) * 7);
+      ctx.stroke();
       if (c.cd < 0.12) {
         // záblesk výstřelu
-        ctx.fillStyle = "rgba(254,240,138,0.9)";
+        const sb = 1 - c.cd / 0.12;
+        ctx.fillStyle = "rgba(254,240,138," + (0.95 - sb * 0.5).toFixed(2) + ")";
         ctx.beginPath();
-        ctx.arc(ax - 18, ay - 4, 3, 0, Math.PI * 2);
+        ctx.arc(ax - 18, ay - 4, 3 + sb * 2, 0, Math.PI * 2);
         ctx.fill();
       }
     }
   }
 
-  // --- 10) poškození: praskliny, saze a popraskané zuby ---
+  // --- 10) poškození: praskliny, saze a popraskané zuby
   if (!dead && frac < 0.66) {
-    ctx.strokeStyle = "rgba(28,25,23,0.75)";
-    ctx.lineWidth = 2.2;
-    const cracks = frac < 0.33 ? [150, 360, 620, 830] : [220, 720];
+    const cracks = frac < 0.33 ? [130, 350, 600, 790] : [220, 700];
+    ctx.lineWidth = 2.4;
     for (let ci = 0; ci < cracks.length; ci++) {
       const cy0 = cracks[ci];
+      const crook = (hsh(ci, 3) - 0.5) * 14;
+      ctx.strokeStyle = "rgba(20,16,12,0.8)";
       ctx.beginPath();
       ctx.moveTo(F - 22, cy0);
-      ctx.lineTo(F + 8, cy0 + 10);
+      ctx.lineTo(F + 8, cy0 + 10 + crook);
       ctx.lineTo(F - 4, cy0 + 24);
-      ctx.lineTo(F + 20, cy0 + 30);
+      ctx.lineTo(F + 20, cy0 + 30 + crook * 0.5);
       ctx.stroke();
+      ctx.strokeStyle = "rgba(255,240,210,0.12)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(F - 20, cy0 - 2);
+      ctx.lineTo(F + 6, cy0 + 9 + crook);
+      ctx.stroke();
+      ctx.lineWidth = 2.4;
     }
-    // saze nad branou
-    ctx.fillStyle = "rgba(20,16,12,0.35)";
+    // saze a spálená výplň nad branou
+    const scorch = frac < 0.33 ? 0.5 : 0.32;
+    ctx.fillStyle = "rgba(20,16,12," + scorch.toFixed(2) + ")";
     ctx.beginPath();
-    ctx.ellipse(F + 2, gy - 40, 16, 30, 0, 0, Math.PI * 2);
+    ctx.ellipse(F + 2, gy - 44, 18, 32, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.ellipse(F + 2, gy + 40, 16, 30, 0, 0, Math.PI * 2);
+    ctx.ellipse(F + 2, gy + 44, 18, 32, 0, 0, Math.PI * 2);
     ctx.fill();
+    // vypadlé kvádry u paty zdi
+    if (frac < 0.33) {
+      for (let rb = 0; rb < 8; rb++) {
+        ctx.fillStyle = rb % 2 ? "#6d675d" : "#837a6c";
+        ctx.beginPath();
+        ctx.arc(F - 40 - hsh(rb, 8) * 26, 90 + hsh(rb, 4) * (H2 - 160), 4 + hsh(rb, 2) * 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
-  // --- 11) dobytý hrad: trosky, protržená brána, dým ---
+  // --- 11) dobytý hrad: trosky, protržená brána, dým a burnerství
   if (dead) {
-    ctx.fillStyle = "rgba(28,25,23,0.5)";
+    ctx.fillStyle = "rgba(28,25,23,0.55)";
     ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
-    // hromady kamení před hradbou
     for (let rI = 0; rI < 26; rI++) {
       const ry = 40 + ((rI * 383) % (H2 - 60));
       const rx2 = F - 24 - ((rI * 617) % 46);
@@ -6254,7 +6536,27 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.beginPath();
       ctx.arc(rx2, ry, 6 + (rI % 4) * 3.2, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath();
+      ctx.ellipse(rx2, ry + 4, 6 + (rI % 4) * 3.2, 2.4, 0, 0, Math.PI * 2);
+      ctx.fill();
     }
+    // rozbitá vratna visící v pantech
+    ctx.fillStyle = "#3a2712";
+    ctx.beginPath();
+    ctx.moveTo(F + 2, gy - gw2);
+    ctx.lineTo(F + 14, gy - gw2 + 8);
+    ctx.lineTo(F + 8, gy - 6);
+    ctx.lineTo(F + 2, gy - 4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = "#2c1c0e";
+    ctx.beginPath();
+    ctx.moveTo(F + 2, gy + gw2);
+    ctx.lineTo(F + 15, gy + gw2 - 10);
+    ctx.lineTo(F + 9, gy + 6);
+    ctx.closePath();
+    ctx.fill();
     // protržená brána - zbytky mříže vypadly ven
     ctx.strokeStyle = "#3f3527";
     ctx.lineWidth = 2;
@@ -6264,40 +6566,66 @@ function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {
       ctx.lineTo(F - 34, m + 6);
       ctx.stroke();
     }
-    // stoupající dým
+    // stoupající dým + dohořívající žhavé ohniska
     for (let sI = 0; sI < 5; sI++) {
       const sy = gy - 60 + Math.sin(t * 0.7 + sI * 1.7) * 30;
-      ctx.fillStyle = `rgba(120,113,108,${0.1 + 0.05 * Math.sin(t + sI)})`;
+      ctx.fillStyle = "rgba(120,113,108," + (0.1 + 0.05 * Math.sin(t + sI)).toFixed(2) + ")";
       ctx.beginPath();
       ctx.ellipse(F + bw + 30 + sI * 12, sy, 26 + sI * 8, 40, 0, 0, Math.PI * 2);
       ctx.fill();
     }
+    for (let em = 0; em < 6; em++) {
+      const eyy = H2 * 0.2 + hsh(em, 6) * H2 * 0.6;
+      const glowm = 0.25 + 0.2 * Math.sin(t * 3 + em * 2.1);
+      ctx.fillStyle = "rgba(249,115,22," + glowm.toFixed(2) + ")";
+      ctx.beginPath();
+      ctx.arc(F - 18 + hsh(em, 9) * 34, eyy, 2.2 + hsh(em, 1) * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  // --- 12) záblesk rány ---
+  // --- 12) záblesk rány
   if (c.flash > 0) {
-    ctx.fillStyle = `rgba(255,80,60,${Math.min(0.45, c.flash * 2.4)})`;
+    ctx.fillStyle = "rgba(255,90,60," + Math.min(0.45, c.flash * 2.4).toFixed(2) + ")";
     ctx.fillRect(F - 26, -20, bw + 26, H2 + 40);
   }
 
-  // --- 13) 🔰 HP hradu: svislý bar na koruně hradby u brány ---
+  // --- 13) 🔰 HP hradu: svislý bar na koruně hradby u brány
   const bhX = F + bw + 18;
   const bhY = gy - 176;
   const bhH = 352;
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillStyle = "rgba(0,0,0,0.58)";
+  ctx.fillRect(bhX - 2, bhY - 16, 18, bhH + 34);
+  ctx.strokeStyle = "rgba(250,204,21,0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(bhX - 2, bhY - 16, 18, bhH + 34);
+  ctx.fillStyle = "rgba(22,18,14,0.8)";
   ctx.fillRect(bhX, bhY - 14, 14, bhH + 30);
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
+  ctx.strokeStyle = "rgba(255,255,255,0.3)";
   ctx.lineWidth = 1;
   ctx.strokeRect(bhX, bhY - 14, 14, bhH + 30);
   const grad = frac > 0.5 ? "#fbbf24" : frac > 0.25 ? "#fb923c" : "#ef4444";
   ctx.fillStyle = grad;
   ctx.fillRect(bhX + 2, bhY + bhH - bhH * frac, 10, bhH * frac);
+  ctx.fillStyle = "rgba(255,255,255,0.25)";
+  ctx.fillRect(bhX + 2, bhY + bhH - bhH * frac, 10, Math.min(4, bhH * frac));
+  // díly odpovídají úrovni Hradeb - vidíš kolik zbývá
+  if (c.walls > 0) {
+    ctx.strokeStyle = "rgba(0,0,0,0.5)";
+    for (let pi = 1; pi <= c.walls; pi++) {
+      const pyy = bhY + bhH * pi / (c.walls + 1);
+      ctx.beginPath();
+      ctx.moveTo(bhX + 2, pyy);
+      ctx.lineTo(bhX + 12, pyy);
+      ctx.stroke();
+    }
+  }
   ctx.font = "bold 13px system-ui, sans-serif";
   ctx.textAlign = "left";
   ctx.fillStyle = "#fff7ed";
   ctx.fillText("🏰", bhX - 1, bhY - 2);
   if (c.hitT > 0 && c.hp > 0) {
-    ctx.fillStyle = `rgba(248,113,113,${0.6 + 0.4 * Math.sin(t * 8)})`;
+    ctx.fillStyle = "rgba(248,113,113," + (0.6 + 0.4 * Math.sin(t * 8)).toFixed(2) + ")";
     ctx.font = "bold 15px system-ui, sans-serif";
     ctx.textAlign = "center";
     ctx.fillText("⚔️ HRAD POD ÚTOKEM!", F + bw + 26, gy - 206);
@@ -10161,6 +10489,16 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.fillRect(0, 0, VW, VH);
   }
 
+  // 🌌 v1.19 vinjeta - jemné ztmavení rohu, louka vypadá filmověji
+  if (!vigCache || vigCache.w !== VW || vigCache.h !== VH) {
+    const vig = ctx.createRadialGradient(VW / 2, VH / 2, Math.min(VW, VH) * 0.44, VW / 2, VH / 2, Math.hypot(VW, VH) / 2);
+    vig.addColorStop(0, "rgba(0,0,0,0)");
+    vig.addColorStop(1, "rgba(5,10,7,0.42)");
+    vigCache = { g: vig, w: VW, h: VH };
+  }
+  ctx.fillStyle = vigCache.g;
+  ctx.fillRect(0, 0, VW, VH);
+
   // boss HP bar nahoře
   let boss: Enemy | null = null;
   for (const e of g.enemies) {
@@ -10170,42 +10508,58 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     }
   }
   if (boss) {
-    const bw = Math.min(300, VW * 0.5);
-    const bx = (VW - bw) / 2;
-    const by = MM_Y + 2;
-    ctx.fillStyle = "rgba(0,0,0,0.6)";
-    ctx.fillRect(bx - 3, by - 3, bw + 6, 20);
-    ctx.fillStyle = "#7f1d1d";
-    ctx.fillRect(bx, by, bw, 14);
-    ctx.fillStyle = hsla(boss.hue, 85, 58, 1);
-    ctx.fillRect(bx, by, bw * Math.max(0, boss.hp / boss.maxHp), 14);
-    ctx.strokeStyle = "rgba(255,255,255,0.5)";
+    const bcfg = HUD_LIVE.boss || {};
+    const bsc = bcfg.s || 1;
+    const bw = Math.min(300, VW * 0.5) * bsc;
+    const bx = bcfg.x != null ? bcfg.x * VW : (VW - bw) / 2;
+    const by = bcfg.y != null ? bcfg.y * VH : MM_Y + 2;
+    const bhh = 15 * bsc;
+    // 🖤 placka s tmavým hlubokým lemem (v1.19: pozici a velikost řídí editor HUD)
+    ctx.fillStyle = "rgba(6,10,16,0.78)";
+    ctx.fillRect(bx - 10 * bsc, by - 8 * bsc, bw + 20 * bsc, bhh + 22 * bsc);
+    ctx.strokeStyle = boss.final ? "rgba(248,113,113," + (0.4 + 0.3 * Math.sin(g.gtime * 6)).toFixed(2) + ")" : "rgba(250,204,21,0.5)";
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(bx - 10 * bsc, by - 8 * bsc, bw + 20 * bsc, bhh + 22 * bsc);
+    ctx.fillStyle = "#160f14";
+    ctx.fillRect(bx, by, bw, bhh);
+    const grB = ctx.createLinearGradient(0, by, 0, by + bhh);
+    grB.addColorStop(0, hsla(boss.hue, 92, 64, 1));
+    grB.addColorStop(1, hsla(boss.hue, 88, 40, 1));
+    ctx.fillStyle = grB;
+    ctx.fillRect(bx, by, bw * Math.max(0, boss.hp / boss.maxHp), bhh);
+    if (boss.hp > 0) {
+      ctx.fillStyle = "rgba(255,255,255,0.22)";
+      ctx.fillRect(bx, by + 1.5, bw * Math.max(0, boss.hp / boss.maxHp), Math.max(1.5, bhh * 0.2));
+    }
+    ctx.strokeStyle = "rgba(255,255,255,0.55)";
     ctx.lineWidth = 1.5;
-    ctx.strokeRect(bx, by, bw, 14);
+    ctx.strokeRect(bx, by, bw, bhh);
     // ⚔️ dělící čárky fází - vidíš, kde aktuální fáze končí
     const nph = boss.final ? 4 : 2;
-    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
     ctx.lineWidth = 1;
     for (let pi = 1; pi < nph; pi++) {
       const px = bx + bw * (1 - pi / nph);
       ctx.beginPath();
       ctx.moveTo(px, by);
-      ctx.lineTo(px, by + 14);
+      ctx.lineTo(px, by + bhh);
       ctx.stroke();
     }
-    ctx.fillStyle = "#fff";
-    ctx.font = "bold 10px system-ui, sans-serif";
+    ctx.font = "bold " + Math.max(9, 10 * bsc) + "px system-ui, sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : "💀 BOSS", VW / 2, by + 11);
+    ctx.fillStyle = "rgba(0,0,0,0.85)";
+    ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : "💀 BOSS", bx + bw / 2 + 0.8, by + bhh * 0.78);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(boss.final ? "☠️ FINÁLNÍ BOSS" : "💀 BOSS", bx + bw / 2, by + bhh * 0.72);
     // 🗼 kam boss táhne - indikátor směru na hrad (v1.16 už žádný časový limit)
-    ctx.font = "bold 12px system-ui, sans-serif";
+    ctx.font = "bold " + Math.max(10, 12 * bsc) + "px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("🏰", bx + 4, by + 11);
+    ctx.fillText("🏰", bx + 4 * bsc, by + bhh + 16 * bsc);
     // ⚔️ aktuální fáze
     ctx.textAlign = "right";
-    ctx.fillText(`FÁZE ${boss.phase}/${boss.final ? 4 : 2}`, bx + bw - 4, by + 11);
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillText("FÁZE " + boss.phase + "/" + (boss.final ? 4 : 2), bx + bw - 4 * bsc, by + bhh + 16 * bsc);
   }
-
   // virtuální joystick
   if (joy.id !== null && joy.active) {
     const jr = JOY_R;
@@ -10283,9 +10637,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   }
 
   // 🗺️ minimapa - vždy pod HUD lištou, při bossovi ještě pod boss barem, ať se nikdy nic nepřekrývá
-  const ms = Math.min(110, Math.round(VH * 0.17));
-  const mx = VW - ms - 14;
-  const my = MM_Y + (boss ? 28 : 2);
+  // 🗺️ v1.19: pozici a velikost minimapy řídí editor HUD, výchozí = podstatnější dřívější
+  const mcfg = HUD_LIVE.mini || {};
+  const ms = Math.min(110, Math.round(VH * 0.17)) * (mcfg.s || 1);
+  const mx = mcfg.x != null ? mcfg.x * VW : VW - ms - 14;
+  const my = mcfg.y != null ? mcfg.y * VH : MM_Y + (boss ? 28 : 2);
   ctx.fillStyle = "rgba(4,8,20,0.75)";
   ctx.fillRect(mx, my, ms, ms);
   ctx.strokeStyle = "rgba(148,163,255,0.35)";
@@ -10517,7 +10873,28 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
               <stop offset="0.45" stopColor="#1b3120" />
               <stop offset="1" stopColor="#0c1a11" />
             </radialGradient>
+            <linearGradient id="ltbSky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor="#0b1836" />
+              <stop offset="0.45" stopColor="#122a46" />
+              <stop offset="0.8" stopColor="#123329" />
+              <stop offset="1" stopColor="#1e3c2a" />
+            </linearGradient>
+            <radialGradient id="ltbSun" cx="0.5" cy="0.5" r="0.5">
+              <stop offset="0" stopColor="rgba(198,249,140,0.55)" />
+              <stop offset="1" stopColor="rgba(198,249,140,0)" />
+            </radialGradient>
           </defs>
+          {/* 🌌 v1.19 strom hodně dostal na krásu: noční obloha, hvězdy, hora v dáli, měsíční svit */}
+          <rect x="0" y="0" width="480" height="640" fill="url(#ltbSky)" />
+          <circle cx="372" cy="74" r="130" fill="url(#ltbSun)" opacity="0.55" />
+          <circle cx="372" cy="74" r="17" fill="rgba(230,255,190,0.92)" />
+          <circle cx="372" cy="74" r="26" fill="rgba(230,255,190,0.18)" />
+          {[[38,54,1.5],[92,110,1],[150,42,1.8],[210,88,1.2],[248,60,1.5],[296,126,1],[330,38,1.6],[58,168,1.1],[412,72,1.3],[438,150,1],[124,208,0.9],[376,210,1.1],[46,268,1.2],[22,364,1],[452,258,1.4],[26,130,1.3],[300,310,1.2]].map((s, si) => (
+            <circle key={"star_" + si} className="ltp-tstar" cx={s[0]} cy={s[1]} r={s[2]} style={{ animationDelay: ((si * 0.47) % 3.4).toFixed(2) + "s" }} />
+          ))}
+          <path d="M0 300 Q 90 216 190 284 Q 300 216 400 296 Q 452 260 480 292 L480 640 L0 640 Z" fill="#0f2417" opacity="0.72" />
+          <path d="M0 372 Q 120 320 240 366 Q 360 322 480 380 L480 640 L0 640 Z" fill="#16301f" opacity="0.85" />
+          <ellipse cx="240" cy="452" rx="300" ry="54" fill="rgba(148,197,164,0.10)" />
           {/* zem, tráva, kořeny, kmen */}
           <ellipse cx="240" cy="647" rx="320" ry="30" fill="url(#ltbDirt)" />
           <path d="M234 640 C226 646 213 649 198 648 C213 641 224 634 232 625 Z" fill="#4a3521" />
@@ -10531,6 +10908,8 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
           <ellipse cx="252" cy="630" rx="7" ry="4" fill="rgba(74,120,50,0.3)" />
           {/* svatozář za kořenem */}
           <circle cx="240" cy="512" r="66" fill="url(#ltbGlow)" />
+          <ellipse cx="240" cy="518" rx="54" ry="15" className="ltp-trune" />
+          <ellipse cx="240" cy="518" rx="78" ry="21" className="ltp-trune is-outer" />
           {/* koruna - velká listná hmota + polštáře u špiček výhonků */}
           <ellipse cx="240" cy="120" rx="225" ry="110" fill="url(#ltbLeafA)" opacity="0.55" />
           <ellipse cx="140" cy="88" rx="125" ry="64" fill="url(#ltbLeafB)" opacity="0.6" />
@@ -10554,6 +10933,9 @@ function SkillTree(props: { meta: Meta; onBuy: (id: string) => void }) {
             <circle key={"fly_" + i} className="ltp-tfly" cx={f[0]} cy={f[1]} r={2.1} style={{ animationDelay: (i * 0.55).toFixed(2) + "s" }} />
           ))}
         </svg>
+        <span className="ltp-tleaf" style={{ left: "14%", animationDelay: "0s" }}>🍃</span>
+        <span className="ltp-tleaf" style={{ left: "52%", animationDelay: "-3.6s" }}>🍂</span>
+        <span className="ltp-tleaf" style={{ left: "81%", animationDelay: "-7.2s" }}>🍃</span>
         {TREE_NODES.map((tn) => {
           const l = lvl(tn.id);
           const maxed = l >= tn.max;
@@ -10658,6 +11040,11 @@ function LoukaTisicePriser() {
     slowT: 0,
     poisT: 0,
   });
+  // 🎨 v1.19 EDITOR HUD - pozice a velikosti prvků rozhraní + samotný režim úprav
+  const [hudCfg, setHudCfg] = useState<Record<string, HudPos>>(() => loadHud());
+  const [hudEdit, setHudEdit] = useState(false);
+  const [hudSel, setHudSel] = useState("bars");
+  const hudDrag = useRef<{ id: string; sx: number; sy: number; bx: number; by: number } | null>(null);
   const [upgrades, setUpgrades] = useState<Upgrade[] | null>(null);
   const [crate, setCrate] = useState<Upgrade[] | null>(null);
   const [over, setOver] = useState<null | { level: number; kills: number; time: number; earned: number }>(null);
@@ -11350,6 +11737,103 @@ function LoukaTisicePriser() {
   const mm = Math.floor(ui.time / 60);
   const ss = Math.floor(ui.time % 60);
 
+  // ===== 🎨 v1.19 EDITOR HUD: přenosy prvků, velikosti, reset, hotovo =====
+  const wrapRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    HUD_LIVE = hudCfg; // kreslicí smyčka hned vidí nové pozice minimapy a boss baru
+  }, [hudCfg]);
+  const hudWrapStyle = (id: string): React.CSSProperties => {
+    const cfg = hudCfg[id] || {};
+    const st: React.CSSProperties = {};
+    if ((cfg.s || 1) !== 1) {
+      st.transform = "scale(" + (cfg.s || 1) + ")";
+      st.transformOrigin = "top left";
+    }
+    if (cfg.x != null && cfg.y != null && id !== "chips") {
+      st.position = "absolute";
+      st.left = cfg.x * 100 + "%";
+      st.top = cfg.y * 100 + "%";
+      st.bottom = "auto";
+      st.right = "auto";
+      st.zIndex = 25;
+    } else if (cfg.y != null && id === "chips") {
+      st.top = cfg.y * 100 + "%";
+    }
+    return st;
+  };
+  const hudDown = (id: string) => (e: React.PointerEvent) => {
+    if (!hudEdit) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setHudSel(id);
+    const cfgc = hudCfg[id];
+    if (!cfgc || cfgc.x == null || cfgc.y == null) {
+      // první dotyk: zmrazíme aktuální pozici do procent a odteď táhneme relativně
+      const R = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+      const er = e.currentTarget as HTMLElement;
+      const erR = er.getBoundingClientRect ? er.getBoundingClientRect() : null;
+      if (R && erR) {
+        const nx = Math.max(0, Math.min(0.98, (erR.left - R.left) / R.width));
+        const ny = Math.max(0, Math.min(0.96, (erR.top - R.top) / R.height));
+        setHudCfg((c) => ({ ...c, [id]: { x: id === "chips" ? 0 : nx, y: ny, s: c[id] ? c[id].s || 1 : 1 } }));
+        hudDrag.current = { id, sx: e.clientX, sy: e.clientY, bx: id === "chips" ? 0 : nx, by: ny };
+      }
+    } else {
+      hudDrag.current = { id, sx: e.clientX, sy: e.clientY, bx: cfgc.x || 0, by: cfgc.y || 0 };
+    }
+    try {
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    } catch {
+      // starý prohlížeč bez pointer capture - rádovo se táhne i bez něj
+    }
+  };
+  const hudMove = (e: React.PointerEvent) => {
+    const d = hudDrag.current;
+    if (!d || !hudEdit) return;
+    const R = wrapRef.current ? wrapRef.current.getBoundingClientRect() : null;
+    if (!R) return;
+    const nx = Math.max(0, Math.min(0.98, d.bx + (e.clientX - d.sx) / R.width));
+    const ny = Math.max(0, Math.min(0.96, d.by + (e.clientY - d.sy) / R.height));
+    setHudCfg((c) => ({ ...c, [d.id]: { x: d.id === "chips" ? c[d.id] ? c[d.id].x || 0 : 0 : nx, y: ny, s: c[d.id] ? c[d.id].s || 1 : 1 } }));
+  };
+  const hudUp = () => {
+    if (hudDrag.current) {
+      hudDrag.current = null;
+      setHudCfg((c) => {
+        saveHud(c); // uložíme až finální polohu, ne každý snímek tahu
+        return c;
+      });
+    }
+  };
+  const hudScale = (dir: number) => {
+    setHudCfg((c) => {
+      const ns = Math.max(0.6, Math.min(1.9, Math.round((c[hudSel] ? c[hudSel].s || 1 : 1) * 100 + dir * 15) / 100));
+      const nc = { ...c, [hudSel]: { x: c[hudSel] ? c[hudSel].x : undefined, y: c[hudSel] ? c[hudSel].y : undefined, s: ns } };
+      saveHud(nc);
+      return nc;
+    });
+  };
+  const hudResetSel = () => {
+    setHudCfg((c) => {
+      const nc = { ...c };
+      delete nc[hudSel];
+      saveHud(nc);
+      return nc;
+    });
+  };
+  const hudResetAll = () => {
+    const nc: Record<string, HudPos> = {};
+    saveHud(nc);
+    setHudCfg(nc);
+  };
+  const hudFinish = () => {
+    setHudCfg((c) => {
+      saveHud(c);
+      return c;
+    });
+    setHudEdit(false);
+  };
+
   return (
     <div className="fixed inset-0 overflow-hidden bg-[radial-gradient(circle_at_top,#2e5c33,#08150a)] text-white">
       {/* ✨ design systém hry - aurora pozadí, lesklé karty, glow tlačítka (Survivor.io / Brotato vibe) */}
@@ -11379,6 +11863,12 @@ function LoukaTisicePriser() {
         .ltp-sheen:hover::after { animation: ltpShine .7s ease; }
         .ltp-btn { position: relative; overflow: hidden; animation: ltpPulse 2.6s ease-in-out infinite; letter-spacing: .07em; text-transform: uppercase; }
         .ltp-gold { animation: ltpGold 3s ease-in-out infinite; }
+        /* 🎨 v1.19 editor HUD - obrysy, úchopy, proxy čtverce */
+        .ltp-hud-el { pointer-events: auto !important; cursor: grab; touch-action: none; outline: 1.5px dashed rgba(255,255,255,.45); outline-offset: 3px; border-radius: 12px; user-select: none; -webkit-user-select: none; }
+        .ltp-hud-el:active { cursor: grabbing; }
+        .ltp-hud-el.is-sel { outline: 2px dashed #fbbf24; }
+        .ltp-hud-proxy { position: absolute; z-index: 30; border: 1.5px dashed rgba(255,255,255,.45); background: rgba(251,191,36,.10); border-radius: 10px; cursor: grab; touch-action: none; }
+        .ltp-hud-proxy.is-sel { border-color: #fbbf24; background: rgba(251,191,36,.18); }
         .ltp-hud span { backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
         @keyframes ltpFloaty { 0%,100% { transform: translateY(0) rotate(-6deg); opacity: .5; } 50% { transform: translateY(-16px) rotate(9deg); opacity: .95; } }
         @keyframes ltpSbxRing { 0%,100% { box-shadow: 0 0 0 0 rgba(232,121,249,.55), 0 0 18px rgba(232,121,249,.5); } 70% { box-shadow: 0 0 0 13px rgba(232,121,249,0), 0 0 28px rgba(232,121,249,.85); } }
@@ -11463,14 +11953,23 @@ function LoukaTisicePriser() {
         .ltp-sper { font-size: 8.5px; color: rgba(255,255,255,.55); line-height: 1.15; margin: 0 0 2px; }
         .ltp-sbuy { font-size: 10px; font-weight: 800; padding: 3px 10px; border-radius: 10px; border: 1px solid rgba(253,224,71,.7); background: rgba(250,204,21,.2); color: #fef9c3; }
         .ltp-sbuy.is-off { border-color: rgba(255,255,255,.12); background: rgba(255,255,255,.05); color: rgba(255,255,255,.3); }
+        /* 🌌 v1.19 strom hodně dostal: hvězdy, padající listí, magická kružba pod kořenem */
+        @keyframes ltpTw { 0%,100% { opacity: .12; } 50% { opacity: .95; } }
+        .ltp-tstar { fill: #eaf9ff; animation: ltpTw 3.4s ease-in-out infinite; }
+        @keyframes ltpLeafFall { 0% { transform: translate(0,0) rotate(0deg); opacity: 0; } 10% { opacity: .95; } 85% { opacity: .7; } 100% { transform: translate(38px, 690px) rotate(310deg); opacity: 0; } }
+        .ltp-tleaf { position: absolute; top: -5%; font-size: 14px; pointer-events: none; opacity: 0; animation: ltpLeafFall 11s linear infinite; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+        @keyframes ltpRune { 0%,100% { opacity: .2; } 50% { opacity: .85; } }
+        .ltp-trune { fill: none; stroke: rgba(250,204,21,.5); stroke-width: 2; stroke-dasharray: 11 8; animation: ltpRune 5.5s ease-in-out infinite; }
+        .ltp-trune.is-outer { stroke: rgba(110,231,183,.35); stroke-dasharray: 3 9; animation-duration: 7.5s; }
       `}</style>
-      <div className="absolute inset-0">
+      <div ref={wrapRef} className="absolute inset-0">
         <canvas
           ref={canvasRef}
           className="absolute inset-0 h-full w-full touch-none select-none"
           onPointerMove={onPointerMove}
           onPointerDown={(e) => {
             e.preventDefault();
+            if (hudEdit) return; // 🎨 v editoru HUD se canvas netouchuje - táhne se prvky
             if (e.pointerType === "touch") {
               setIsTouch(true);
               const pos = toCanvasPos(e);
@@ -11492,7 +11991,14 @@ function LoukaTisicePriser() {
         />
 
         {/* 🧭 HUD - horní lišta přes celou šířku: vlevo statistiky (na mobilu se oříznou), vpravo čas + rekord + pauza */}
-        <div className="ltp-hud pointer-events-none absolute left-[calc(env(safe-area-inset-left,0px)+8px)] right-[calc(env(safe-area-inset-right,0px)+8px)] top-[calc(env(safe-area-inset-top,0px)+8px)] flex items-center gap-1.5 text-[10px] font-semibold sm:gap-2 sm:text-xs">
+        <div
+          className={"ltp-hud pointer-events-none absolute left-[calc(env(safe-area-inset-left,0px)+8px)] right-[calc(env(safe-area-inset-right,0px)+8px)] top-[calc(env(safe-area-inset-top,0px)+8px)] flex select-none items-center gap-1.5 text-[10px] font-semibold sm:gap-2 sm:text-xs" + (hudEdit ? " ltp-hud-el" + (hudSel === "chips" ? " is-sel" : "") : "")}
+          style={hudWrapStyle("chips")}
+          onPointerDown={hudDown("chips")}
+          onPointerMove={hudMove}
+          onPointerUp={hudUp}
+          onPointerCancel={hudUp}
+        >
           <div className="flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-hidden">
           <span className="hidden rounded-lg border border-white/15 bg-black/40 px-2 py-1 font-bold text-white/90 lg:inline-block sm:px-3">
             🌾 {trk("title")}
@@ -11570,6 +12076,7 @@ function LoukaTisicePriser() {
               aria-label="Pauza"
               className="pointer-events-auto flex h-9 w-9 touch-none select-none items-center justify-center rounded-full border border-white/25 bg-black/50 text-xs active:bg-white/25 sm:h-10 sm:w-10 sm:text-sm"
               onClick={() => {
+                if (hudEdit) return; // 🎨 v editoru HUD tlačítko nereaguje
                 const g = gameRef.current;
                 if (g.running && !g.paused && !g.over) g.userPaused = !g.userPaused;
               }}
@@ -11582,7 +12089,14 @@ function LoukaTisicePriser() {
         </div>
 
         {/* ❤️📊 LEVÝ DOLNÍ ROH - jeden sloupec: HP bar, pak cooldown bary (desktop) nebo tlačítka 💨⚡ (mobil) */}
-        <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-40 flex-col gap-2 sm:w-52">
+        <div
+          className={"absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] left-[calc(env(safe-area-inset-left,0px)+12px)] flex w-40 select-none flex-col gap-2 sm:w-52" + (hudEdit ? " ltp-hud-el" + (hudSel === "bars" ? " is-sel" : "") : "")}
+          style={hudWrapStyle("bars")}
+          onPointerDown={hudDown("bars")}
+          onPointerMove={hudMove}
+          onPointerUp={hudUp}
+          onPointerCancel={hudUp}
+        >
           <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
             <span>🏰</span>
             <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-2.5">
@@ -11632,8 +12146,15 @@ function LoukaTisicePriser() {
               </div>
             </div>
           )}
-          {isTouch && started && !over && !upgrades && !crate && !sbx && (
-            <div className="flex items-end gap-2">
+          {((isTouch && started && !over && !upgrades && !crate && !sbx) || hudEdit) && (
+            <div
+              className={"flex select-none items-end gap-2" + (!hudEdit ? "" : " ltp-hud-el" + (hudSel === "abils" ? " is-sel" : ""))}
+              style={hudWrapStyle("abils")}
+              onPointerDown={hudDown("abils")}
+              onPointerMove={hudMove}
+              onPointerUp={hudUp}
+              onPointerCancel={hudUp}
+            >
               <button
                 aria-label="Úhyb"
                 className="relative flex h-16 w-16 touch-none select-none items-center justify-center rounded-full border-2 border-sky-300/60 text-2xl transition active:scale-95 active:bg-sky-400/70 sm:h-20 sm:w-20 sm:text-3xl"
@@ -11643,10 +12164,10 @@ function LoukaTisicePriser() {
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
-                  dashRef.current = true;
+                  if (!hudEdit) dashRef.current = true;
                 }}
                 onTouchStart={() => {
-                  dashRef.current = true;
+                  if (!hudEdit) dashRef.current = true;
                 }}
                 onContextMenu={(e) => e.preventDefault()}
               >
@@ -11664,7 +12185,7 @@ function LoukaTisicePriser() {
                 }}
                 onPointerDown={(e) => {
                   e.preventDefault();
-                  castUlt(gameRef.current);
+                  if (!hudEdit) castUlt(gameRef.current);
                 }}
                 onContextMenu={(e) => e.preventDefault()}
               >
@@ -11678,12 +12199,19 @@ function LoukaTisicePriser() {
         </div>
 
         {/* 🧪📈 PRAVÝ DOLNÍ ROH - jeden sloupec: sandbox tlačítko nad XP barem */}
-        <div className="absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex w-[46%] max-w-[280px] flex-col items-end gap-2">
+        <div
+          className={"absolute bottom-[calc(env(safe-area-inset-bottom,0px)+12px)] right-[calc(env(safe-area-inset-right,0px)+12px)] flex w-[46%] max-w-[280px] select-none flex-col items-end gap-2" + (hudEdit ? " ltp-hud-el" + (hudSel === "xp" ? " is-sel" : "") : "")}
+          style={hudWrapStyle("xp")}
+          onPointerDown={hudDown("xp")}
+          onPointerMove={hudMove}
+          onPointerUp={hudUp}
+          onPointerCancel={hudUp}
+        >
           {started && !over && !upgrades && !crate && !sbx && gameRef.current.sandbox && (
             <button
               aria-label="Sandbox"
               className="ltp-sbxbtn pointer-events-auto flex h-11 w-11 touch-none select-none items-center justify-center rounded-full border-2 border-fuchsia-300/70 bg-fuchsia-500/35 text-xl transition active:scale-95"
-              onClick={sbxOpen}
+              onClick={hudEdit ? undefined : sbxOpen}
               onContextMenu={(e) => e.preventDefault()}
             >
               🧪
@@ -11703,7 +12231,50 @@ function LoukaTisicePriser() {
           </div>
         </div>
 
-        {!started && !over && (
+        {/* 🎨 v1.19 pánvek nástrojů editoru HUD */}
+        {hudEdit && (
+          <div className="pointer-events-auto absolute left-1/2 top-16 z-40 w-[92%] max-w-[340px] -translate-x-1/2 rounded-2xl border border-amber-300/40 bg-[#101d14]/90 p-2.5 text-center shadow-2xl backdrop-blur-lg">
+            <div className="text-xs font-black tracking-wide text-amber-200">{trk("hud_title")}</div>
+            <p className="mt-0.5 text-[9px] leading-snug text-white/60">{trk("hud_hint")}</p>
+            <div className="mt-1.5 text-[10px] font-bold text-emerald-200">{trk("hud_n_" + hudSel)}</div>
+            <div className="mt-1.5 flex flex-wrap items-center justify-center gap-1.5">
+              <button onClick={() => hudScale(-1)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold active:scale-90">➖</button>
+              <button onClick={() => hudScale(1)} className="rounded-lg border border-white/15 bg-white/10 px-3 py-1 text-xs font-bold active:scale-90">➕</button>
+              <button onClick={hudResetSel} className="rounded-lg border border-white/15 bg-white/10 px-2 py-1 text-[10px] font-bold active:scale-90">{trk("hud_reset")}</button>
+              <button onClick={hudResetAll} className="rounded-lg border border-red-300/30 bg-red-500/15 px-2 py-1 text-[10px] font-bold text-red-100 active:scale-90">{trk("hud_reset_all")}</button>
+              <button onClick={hudFinish} className="rounded-lg border border-emerald-300/50 bg-emerald-500/25 px-3 py-1 text-[10px] font-extrabold text-emerald-100 active:scale-90">✅ {trk("hud_done")}</button>
+            </div>
+          </div>
+        )}
+        {/* drag-proxy pro prvky kreslené na canvasu - minimapa a boss bar */}
+        {hudEdit &&
+          (() => {
+            const m = hudCfg.mini || {};
+            const msc = m.s || 1;
+            const ms2 = Math.min(110, Math.round(VH * 0.17)) * msc;
+            const mx2 = m.x != null ? m.x * VW : VW - ms2 - 14;
+            const my2 = m.y != null ? m.y * VH : MM_Y + 2;
+            const b = hudCfg.boss || {};
+            const bsc = b.s || 1;
+            const bw2 = Math.min(300, VW * 0.5) * bsc;
+            const bx2 = b.x != null ? b.x * VW : (VW - bw2) / 2;
+            const by2 = b.y != null ? b.y * VH : MM_Y + 2;
+            const proxyProps = (id: string) => ({
+              className: "ltp-hud-proxy" + (hudSel === id ? " is-sel" : ""),
+              onPointerDown: hudDown(id),
+              onPointerMove: hudMove,
+              onPointerUp: hudUp,
+              onPointerCancel: hudUp,
+            });
+            return (
+              <>
+                <div {...proxyProps("mini")} style={{ left: mx2, top: my2, width: ms2, height: ms2 }} />
+                <div {...proxyProps("boss")} style={{ left: bx2, top: by2, width: bw2, height: 22 * bsc }} />
+              </>
+            );
+          })()}
+
+        {!started && !over && !hudEdit && (
           <div className="ltp-menu absolute inset-0 flex flex-col items-center overflow-hidden text-center">
             {/* 🌌 aurora koule - plovoucí světla za menu (Survivor.io lobbystický vibe) */}
             <div className="ltp-orb" style={{ background: "#34d399", width: 340, height: 340, top: "-8%", left: "-6%" }} />
@@ -11745,6 +12316,16 @@ function LoukaTisicePriser() {
                 }`}
               >
                 {gameRef.current.opts.surp ? "🎺" : "🎁"}
+              </button>
+              {/* 🎨 v1.19 editor HUD - rozházej si minimapu, životy a abilitky po obrazovce dle libosti */}
+              <button
+                onClick={() => {
+                  setHudSel("bars");
+                  setHudEdit(true);
+                }}
+                className="rounded-xl border-2 border-sky-400/50 bg-sky-500/20 px-2.5 py-1 text-[10px] font-bold text-sky-100 transition active:scale-95 sm:text-xs"
+              >
+                🎨
               </button>
             </div>
             {/* taby: classa / trofeje / sandbox / semínka */}
@@ -12176,7 +12757,7 @@ function LoukaTisicePriser() {
           </div>
         )}
 
-        {ui.paused && !upgrades && !crate && !over && started && (
+        {ui.paused && !upgrades && !crate && !over && started && !hudEdit && (
           <div className="absolute inset-0 z-10 overflow-y-auto overscroll-contain bg-black/60 p-4 pb-[calc(env(safe-area-inset-bottom,0px)+12px)] text-center backdrop-blur-lg">
             <div className="mx-auto flex min-h-full w-full max-w-xl flex-col items-center justify-center gap-3">
             <h2 className="bg-gradient-to-r from-emerald-200 via-teal-200 to-emerald-200 bg-clip-text text-2xl font-black text-transparent drop-shadow-[0_0_14px_rgba(52,211,153,.5)] sm:text-3xl">
@@ -12251,6 +12832,13 @@ function LoukaTisicePriser() {
                 />
                 <span className="text-[11px] font-bold text-white/60">{meta.vol ?? 100} %</span>
               </div>
+              {/* 🎨 v1.19 editor HUD - otevře se přes pauzu, hra se mezitím nijak nehýbe */}
+              <button
+                onClick={() => setHudEdit(true)}
+                className="rounded-xl border-2 border-sky-400/50 bg-sky-500/20 px-3 py-1.5 text-[11px] font-bold text-sky-100 transition active:scale-95"
+              >
+                {trk("hud_edit")}
+              </button>
             </div>
             {/* 📊 rozpad poškození podle zdrojů (top 5) */}
             {(() => {

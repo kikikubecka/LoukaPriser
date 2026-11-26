@@ -14,7 +14,7 @@ const MEADOW_TOP = 330;
 const MEADOW_BOT = ARENA_H - 330;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.21.1";
+const GAME_VERSION = "1.22.0";
 const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -205,6 +205,8 @@ type Slash = { x: number; y: number; a: number; r: number; t: number; dur: numbe
 // ☄️ létající vrstva: meteor mága, bombardér a bomby vojákova náletku
 type Meteor = { sx: number; sy: number; x: number; y: number; tx: number; ty: number; t: number; dur: number; dmg: number };
 type Plane = { x: number; y: number; vx: number; t: number; dur: number };
+// 🤺 v1.22: nájemný voják za peníze - kopiník, který vyrazí od hradu a bije netvory
+type Soldier = { x: number; y: number; hp: number; maxHp: number; cd: number; flash: number; walkT: number; fa: number; swing: number };
 type Bomb = { sx: number; sy: number; x: number; y: number; tx: number; ty: number; t: number; dur: number };
 type Crate = { x: number; y: number; t: number };
 type Telegraph = { x: number; y: number; r: number; t: number; dur: number; dmg: number; dyn?: boolean; friendly?: boolean };
@@ -213,6 +215,8 @@ type Castle = { x: number; y: number; r: number; hp: number; maxHp: number; wall
 type Tower = { x: number; y: number; r: number; tier: number; hp: number; maxHp: number; cd: number; flash: number; hitT: number; rise: number };
 // 🗼 strážní věže: rozpadliny podél cesty na hrad - postavíš je za peníze přímo v runu
 const TOWER_BUILD_COST = 3; // 🪙 z rozpadliny na plnohodnotnou věž 1. úrovně
+const SOLDIER_COST = 5; // 🪙 cena jednoho nájemného vojáka
+const SOLDIER_MAX = 6; // max vojáků v poli najednou
 const TOWER_FIX_COST = 2; // 🪙 oprava zbořené nebo poškozené věže
 const TOWER_UP_COST: Record<number, number> = { 1: 5, 2: 8 }; // 🪙 upgrade na T2 / T3 (index = cílová úroveň - 1)
 const TOWER_MAX_TIER = 3;
@@ -429,6 +433,7 @@ type Game = {
   slashes: Slash[];
   meteors: Meteor[];
   planes: Plane[];
+  soldiers: Soldier[];
   bombs: Bomb[];
   crates: Crate[];
   telegraphs: Telegraph[];
@@ -2620,6 +2625,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     slashes: [],
     meteors: [],
     planes: [],
+    soldiers: [],
     bombs: [],
     crates: [],
     telegraphs: [],
@@ -3747,6 +3753,68 @@ function towerNear(g: Game): Tower | null {
     }
   }
   return best;
+}
+
+// 🤺 v1.22: najmi vojáka za 5 🪙 - vyběhne z brány hradu a jde hledat netvory
+function buySoldier(g: Game): void {
+  if (!g || !g.running || g.over || g.sandbox) return;
+  if (g.soldiers.length >= SOLDIER_MAX) { addText(g, g.hero.x, g.hero.y - 44, "max " + SOLDIER_MAX + " vojáků", 0, 13); return; }
+  if (g.coins < SOLDIER_COST) { addText(g, g.hero.x, g.hero.y - 44, "málo 🪙", 0, 13); return; }
+  g.coins -= SOLDIER_COST;
+  const shp = Math.round(90 + g.time * 0.3);
+  g.soldiers.push({ x: CASTLE_FRONT - 50, y: g.castle.y + (Math.random() - 0.5) * 160, hp: shp, maxHp: shp, cd: 0, flash: 0, walkT: Math.random() * 10, fa: Math.PI, swing: 0 });
+  addText(g, CASTLE_FRONT - 50, g.castle.y - 60, "🤺 Voják nastupuje!", 100, 15);
+  playSfx(g, "elite");
+}
+
+// 🤺 pohyb a boj vojáků: hledají nejbližšího netvora v dohledu, sekají kopím a dostávají protivúdery
+function updateSoldiers(g: Game, dt: number): void {
+  for (let i = g.soldiers.length - 1; i >= 0; i--) {
+    const so = g.soldiers[i];
+    so.cd -= dt;
+    so.walkT += dt;
+    so.flash = Math.max(0, so.flash - dt);
+    so.swing = Math.max(0, so.swing - dt * 4);
+    let tg: Enemy | null = null;
+    let bd = 1600 * 1600;
+    for (const e of g.enemies) {
+      if (e.dead) continue;
+      const dd = dist2(so.x, so.y, e.x, e.y);
+      if (dd < bd) { bd = dd; tg = e; }
+    }
+    if (tg) {
+      const dd = Math.sqrt(bd) || 1;
+      const ang = Math.atan2(tg.y - so.y, tg.x - so.x);
+      so.fa = ang;
+      if (dd > tg.r + 26) {
+        so.x += Math.cos(ang) * 92 * dt;
+        so.y += Math.sin(ang) * 92 * dt;
+      } else if (so.cd <= 0) {
+        so.cd = 0.9;
+        so.swing = 1;
+        const dmg = 16 + g.time * 0.2;
+        tg.hp -= dmg;
+        tg.flash = 0.09;
+        tg.kbx += Math.cos(ang) * 120;
+        tg.kby += Math.sin(ang) * 120;
+        dmgText(g, tg, dmg, false, "soldier");
+        if (tg.hp <= 0) killEnemy(g, tg);
+        // netvor se brání - voják u sekání dostává pořádné protivúdery
+        so.hp -= Math.max(3, tg.dmg * 0.3);
+        so.flash = 0.12;
+      }
+    } else {
+      // nikdo v dohledu - voják pochází pomalu na západ naproti hordě
+      so.fa = Math.PI;
+      if (so.x > 300) so.x -= 30 * dt;
+    }
+    so.y = Math.max(40, Math.min(ARENA_H - 40, so.y));
+    if (so.hp <= 0) {
+      burst(g, so.x, so.y, 14, 20, 140);
+      addText(g, so.x, so.y - 30, "💀 voják padl", 0, 13);
+      g.soldiers.splice(i, 1);
+    }
+  }
 }
 
 type TowerPlan = { kind: "build" | "fix" | "up"; cost: number; label: string };
@@ -5581,6 +5649,8 @@ function updateFx(g: Game, dt: number): void {
     sl.t += dt;
     if (sl.t >= sl.dur) g.slashes.splice(i, 1);
   }
+  // 🤺 v1.22: nájemní vojáci hledají netvory a sekají
+  updateSoldiers(g, dt);
   // ☄️ meteory - zrychlují k zemi, za sebou plápolají ohnivou stopu, dopad = velký výbuch
   for (let i = g.meteors.length - 1; i >= 0; i--) {
     const m = g.meteors[i];
@@ -5692,6 +5762,64 @@ function updateFx(g: Game, dt: number): void {
 // 🏰 hrad na východě louky - fiktivní 2.5D fasáda: roste s upgrady ze stromu
 // (Hradby 🧱 = vyšší a širší zdi, Střílny 🏹 = lučištníci, Královský donjon 🏰 = palác + příkop)
 // 🗼 strážní věž podél cesty na hrad - od rozpadliny zdiva po honosnou baštu s vlajkami
+// 🤺 v1.22: kreslení nájemného vojáka - kopiník v brigandině a hrncové helme
+function drawSoldier(ctx: CanvasRenderingContext2D, g: Game, so: Soldier): void {
+  ctx.save();
+  ctx.translate(so.x, so.y);
+  ctx.fillStyle = "rgba(0,0,0,0.3)";
+  ctx.beginPath();
+  ctx.ellipse(0, 10, 13, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.translate(0, Math.sin(so.walkT * 9) * 1.6);
+  // kopí ve směru pohledu, při seknutí švihne
+  const swA = so.fa + (so.swing > 0 ? Math.sin(so.swing * Math.PI) * 0.9 - 0.45 : 0);
+  ctx.strokeStyle = "#7a5a34";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-Math.cos(swA) * 8, -Math.sin(swA) * 8);
+  ctx.lineTo(Math.cos(swA) * 22, Math.sin(swA) * 22);
+  ctx.stroke();
+  ctx.fillStyle = "#d6d9de";
+  ctx.beginPath();
+  ctx.moveTo(Math.cos(swA) * 18, Math.sin(swA) * 18);
+  ctx.lineTo(Math.cos(swA + 0.35) * 27, Math.sin(swA + 0.35) * 27);
+  ctx.lineTo(Math.cos(swA - 0.35) * 27, Math.sin(swA - 0.35) * 27);
+  ctx.closePath();
+  ctx.fill();
+  // brigandina s opaskem
+  ctx.fillStyle = "#3f5d3a";
+  ctx.beginPath();
+  ctx.ellipse(0, 1, 10, 12, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#6b4a2a";
+  ctx.fillRect(-9, -2, 18, 4);
+  // hlava v hrncové helme
+  ctx.fillStyle = "#e8b98a";
+  ctx.beginPath();
+  ctx.arc(0, -11, 6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#8d99ae";
+  ctx.beginPath();
+  ctx.arc(0, -12, 6.5, Math.PI, 0);
+  ctx.fill();
+  ctx.fillRect(-6.5, -12, 13, 2.5);
+  // rána do vojáka
+  if (so.flash > 0) {
+    ctx.fillStyle = "rgba(255,80,80," + Math.min(0.6, so.flash * 4) + ")";
+    ctx.beginPath();
+    ctx.arc(0, -4, 14, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // HP bar nad vojákem, když je zraněný
+  if (so.hp < so.maxHp) {
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(-13, -24, 26, 4);
+    ctx.fillStyle = "#4ade80";
+    ctx.fillRect(-12, -23, 24 * Math.max(0, so.hp / so.maxHp), 2);
+  }
+  ctx.restore();
+}
+
 function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   const x = tw.x;
   const y = tw.y;
@@ -10336,6 +10464,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.restore();
   }
 
+  // 🤺 nájemní vojáci
+  for (const so of g.soldiers) {
+    if (inView(so.x, so.y, 80)) drawSoldier(ctx, g, so);
+  }
+
   // hrdina
   drawHero(ctx, g);
 
@@ -10768,6 +10901,11 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   ctx.fillStyle = "#7dd3fc";
   for (const tu of g.turrets) {
     ctx.fillRect(mx + tu.x * kx - 1.5, my + tu.y * ky - 1.5, 3, 3);
+  }
+  // 🤺 vojáci na minimapě - svěže zelené tečky
+  ctx.fillStyle = "#a3e635";
+  for (const so of g.soldiers) {
+    ctx.fillRect(mx + so.x * kx - 1.5, my + so.y * ky - 1.5, 3, 3);
   }
   ctx.fillStyle = "#34d399";
   ctx.beginPath();
@@ -11736,6 +11874,10 @@ function LoukaTisicePriser() {
       if (e.code === "KeyF") {
         towerAct(gameRef.current);
       }
+      // 🤺 V = najmout vojáka (5 🪙)
+      if (e.code === "KeyV") {
+        buySoldier(gameRef.current);
+      }
       if (e.code === "KeyP") {
         const g = gameRef.current;
         if (g.running && !g.paused && !g.over) g.userPaused = !g.userPaused;
@@ -11855,6 +11997,14 @@ function LoukaTisicePriser() {
     if (now - twLastTap.current < 350) return;
     twLastTap.current = now;
     towerAct(gameRef.current);
+  };
+  // 🤺 v1.22: nákup vojáka z tlačítka - stejný debounce proti dvojkliku na dotyku
+  const solLastTap = useRef(0);
+  const solBtnAct = () => {
+    const now = Date.now();
+    if (now - solLastTap.current < 350) return;
+    solLastTap.current = now;
+    buySoldier(gameRef.current);
   };
   const hudDown = (id: string) => (e: React.PointerEvent) => {
     if (!hudEdit) return;
@@ -13165,6 +13315,17 @@ function LoukaTisicePriser() {
           className="ltp-btn bottom-[calc(env(safe-area-inset-bottom,0px)+108px)] left-1/2 -translate-x-1/2 rounded-2xl border border-yellow-300/60 bg-gradient-to-r from-yellow-500 to-amber-400 px-5 py-2.5 text-sm font-extrabold text-yellow-950 shadow-lg shadow-amber-500/40 transition hover:brightness-110 active:scale-95"
         >
           {ui.twLabel} <span className="opacity-70">(F)</span>
+        </button>
+      )}
+      {/* 🤺 v1.22: nájem vojáka - 5 🪙, vyrazí od brány a bije netvory (skryté v sandboxu) */}
+      {started && !over && !(gameRef.current && gameRef.current.sandbox) && (
+        <button
+          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); solBtnAct(); }}
+          onClick={solBtnAct}
+          style={{ position: "absolute", zIndex: 40 }}
+          className={"ltp-btn bottom-[calc(env(safe-area-inset-bottom,0px)+108px)] left-4 rounded-2xl border px-4 py-2.5 text-sm font-extrabold shadow-lg transition hover:brightness-110 active:scale-95 " + (ui.coins >= 5 ? "border-emerald-300/60 bg-gradient-to-r from-emerald-500 to-teal-400 text-emerald-950" : "border-stone-400/40 bg-stone-700/70 text-stone-300")}
+        >
+          🤺 Voják · 5 🪙 <span className="opacity-70">(V)</span>
         </button>
       )}
       {/* 📌 Spustit run - vlastní vrstva mimo herní scénu, přilepená ke spodku fixního rootu:

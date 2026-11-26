@@ -14,7 +14,7 @@ const MEADOW_TOP = 330;
 const MEADOW_BOT = ARENA_H - 330;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.21.0";
+const GAME_VERSION = "1.21.1";
 const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -4289,14 +4289,15 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
 
   // 🏰 hrdina nechodí po hradě - zeď stojí po celé pravé straně, brání se před ní
   if (h.x > CASTLE_FRONT - 18) h.x = CASTLE_FRONT - 18;
-  // 🗼 hrdina se taky nevejde do zdiva strážních věží - vždycky se dá obejít
+  // 🗼 v1.21.1: přes žádnou věž se nepřejde - postavená blokuje celé zdivo (+ okap),
+  // rozvalina (nepostavená nebo zbořená) drží aspoň hromadu kvádrů; vždycky se dá obejít
   for (const tw of g.towers) {
-    if (tw.tier <= 0 || tw.hp <= 0) continue;
+    const blockR = tw.tier > 0 && tw.hp > 0 ? tw.r + 12 : tw.r * 0.5;
     const thd = Math.hypot(h.x - tw.x, h.y - tw.y);
-    if (thd < tw.r) {
+    if (thd < blockR) {
       const tAng = Math.atan2(h.y - tw.y, h.x - tw.x);
-      h.x = tw.x + Math.cos(tAng) * tw.r;
-      h.y = tw.y + Math.sin(tAng) * tw.r;
+      h.x = tw.x + Math.cos(tAng) * blockR;
+      h.y = tw.y + Math.sin(tAng) * blockR;
     }
   }
 
@@ -5697,6 +5698,9 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   const r = tw.r;
   const active = tw.tier > 0 && tw.hp > 0;
   const broken = !active;
+  // 🪨 deterministický šum per věž - kvádry ani praskliny nemizí mezi snímky
+  const tid = Math.round(x * 0.37 + y * 0.11);
+  const hsh = (i: number) => (((tid * 31 + i * 2654435761) % 997) + 997) % 997 / 997;
   ctx.save();
   // stín pod věží
   ctx.fillStyle = "rgba(0,0,0,0.28)";
@@ -5704,28 +5708,24 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   ctx.ellipse(x, y + r * 0.5, r * 1.2, r * 0.42, 0, 0, Math.PI * 2);
   ctx.fill();
   if (broken) {
-    // 🗿 rozpadlina: hromada zdiva, vyčnívající zlomky zdi a mech
-    ctx.fillStyle = "#57534a";
-    ctx.beginPath();
-    ctx.ellipse(x, y - 4, r * 0.92, r * 0.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#6b6558";
-    ctx.beginPath();
-    ctx.ellipse(x - r * 0.3, y - 12, r * 0.45, r * 0.3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#7c7565";
-    ctx.beginPath();
-    ctx.ellipse(x + r * 0.35, y - 8, r * 0.4, r * 0.26, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // dva čnějící zlomky zdi
+    // 🗿 rozvalina: hromada kvádrů se sesutou hranou, vyčnívající zlomky zdi a mech
+    for (let i = 0; i < 10; i++) {
+      const brx = x - r * 0.85 + hsh(i) * r * 1.5;
+      const bry = y - 1 - hsh(i + 20) * 15;
+      const brw = 13 + hsh(i + 40) * 15;
+      const brh = 9 + hsh(i + 60) * 9;
+      ctx.fillStyle = ["#6d675a", "#7c7565", "#5f5a4e"][i % 3];
+      ctx.fillRect(brx, bry, brw, brh);
+      ctx.fillStyle = "rgba(255,255,255,0.07)";
+      ctx.fillRect(brx, bry, brw, 3);
+    }
+    // dva čnějící zlomky zdi s vypálenými spárami
     ctx.fillStyle = "#8a8474";
     ctx.fillRect(x - r * 0.78, y - 46, 18, 46);
+    ctx.fillStyle = "rgba(40,36,28,0.4)";
+    for (let i = 0; i < 3; i++) ctx.fillRect(x - r * 0.78, y - 40 + i * 14, 18, 1.5);
     ctx.fillStyle = "#78725f";
-    ctx.fillRect(x - r * 0.78, y - 46, 18, 10);
-    ctx.fillStyle = "#8a8474";
     ctx.fillRect(x + r * 0.5, y - 30, 14, 30);
-    ctx.fillStyle = "#6d675a";
-    ctx.fillRect(x + r * 0.5, y - 30, 14, 8);
     // mech a tráva kolem
     ctx.fillStyle = "rgba(74,105,42,0.75)";
     ctx.beginPath();
@@ -5745,93 +5745,172 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
     const rise = Math.max(0.25, tw.rise >= 1 ? 1 : tw.rise);
     const hgt = (64 + tw.tier * 26) * rise;
     const top = y - hgt - r * 0.42;
-    // kruhová základna
-    ctx.fillStyle = "#57534a";
-    ctx.beginPath();
-    ctx.ellipse(x, y + r * 0.32, r, r * 0.42, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // tělo věže - kamenné zdivo s bloky
     const bodyW = r * 0.92;
+    // 🪨 základna z balvanů - věž nestojí ve vzduchu
+    for (let i = 0; i < 8; i++) {
+      const bx2 = x - r + (i / 7) * r * 2 + (hsh(i + 90) - 0.5) * 10;
+      const brw = 16 + hsh(i + 110) * 10;
+      ctx.fillStyle = i % 2 ? "#6b6558" : "#78725f";
+      ctx.beginPath();
+      ctx.ellipse(bx2, y + r * 0.18 + (hsh(i + 130) - 0.5) * 8, brw, brw * 0.55, hsh(i + 150) * 0.8 - 0.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // tělo - opukové zdivo: řady kvádrů s proměnnou šířkou, tmavé spáry
     const grad = ctx.createLinearGradient(x - bodyW, 0, x + bodyW, 0);
-    grad.addColorStop(0, "#8a8474");
-    grad.addColorStop(0.45, "#9a9483");
-    grad.addColorStop(1, "#6e685c");
+    grad.addColorStop(0, "#7d7768");
+    grad.addColorStop(0.45, "#938c7b");
+    grad.addColorStop(1, "#655f53");
     ctx.fillStyle = grad;
     ctx.fillRect(x - bodyW, top, bodyW * 2, hgt + r * 0.3);
-    // spáry mezi bloky
-    ctx.strokeStyle = "rgba(0,0,0,0.18)";
-    ctx.lineWidth = 2;
-    for (let by = top + 14; by < y + r * 0.2; by += 18) {
+    ctx.strokeStyle = "rgba(40,36,28,0.32)";
+    ctx.lineWidth = 1.6;
+    let rowY = top + 9;
+    let rowIdx = 0;
+    while (rowY < y + r * 0.2) {
       ctx.beginPath();
-      ctx.moveTo(x - bodyW, by);
-      ctx.lineTo(x + bodyW, by);
+      ctx.moveTo(x - bodyW, rowY);
+      ctx.lineTo(x + bodyW, rowY);
+      ctx.stroke();
+      let bx2 = x - bodyW + 8 + hsh(rowIdx * 7 + 200) * 16;
+      while (bx2 < x + bodyW - 6) {
+        ctx.beginPath();
+        ctx.moveTo(bx2, rowY);
+        ctx.lineTo(bx2, Math.min(rowY + 17, y + r * 0.2));
+        ctx.stroke();
+        bx2 += 22 + hsh(rowIdx * 13 + Math.round(bx2)) * 20;
+      }
+      rowY += 17;
+      rowIdx++;
+    }
+    // povětrnostní šmouhy pod cimbuřím
+    const wear = ctx.createLinearGradient(0, top, 0, top + 26);
+    wear.addColorStop(0, "rgba(30,26,20,0.35)");
+    wear.addColorStop(1, "rgba(30,26,20,0)");
+    ctx.fillStyle = wear;
+    ctx.fillRect(x - bodyW, top, bodyW * 2, 26);
+    // mech na severozápadní stěně (vlhko od lesa)
+    for (let i = 0; i < 6; i++) {
+      ctx.fillStyle = "rgba(74,105,42,0.5)";
+      ctx.beginPath();
+      ctx.ellipse(x - bodyW + 4 + hsh(i + 300) * 6, top + 18 + hsh(i + 320) * (hgt * 0.55), 3 + hsh(i + 340) * 4, 6 + hsh(i + 360) * 9, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // ⚔️ dřevěné podsebití (hoarding) na dřevěných konzolách - kulaté klády
+    ctx.fillStyle = "#5c3f22";
+    ctx.fillRect(x - bodyW - 7, top - 16, bodyW * 2 + 14, 18);
+    ctx.fillStyle = "rgba(0,0,0,0.22)";
+    ctx.fillRect(x - bodyW - 7, top - 16, bodyW * 2 + 14, 4);
+    ctx.strokeStyle = "#4a3018";
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 4; i++) {
+      const cx2 = x - bodyW + 2 + (i / 3) * (bodyW * 2 - 8);
+      ctx.beginPath();
+      ctx.moveTo(cx2, top + 4);
+      ctx.lineTo(cx2 - 7, top + 20);
       ctx.stroke();
     }
-    for (let bx = -1; bx <= 1; bx += 2) {
-      ctx.beginPath();
-      ctx.moveTo(x + bx * bodyW * 0.5, top);
-      ctx.lineTo(x + bx * bodyW * 0.5, y + r * 0.2);
-      ctx.stroke();
-    }
-    // cimbuří
-    ctx.fillStyle = "#7c7565";
-    const merlonW = 12;
-    const count = Math.max(4, Math.floor((bodyW * 2) / 22));
-    for (let i = 0; i < count; i++) {
-      const mx = x - bodyW + (i + 0.5) * ((bodyW * 2) / count) - merlonW / 2;
-      ctx.fillRect(mx, top - 12, merlonW, 14);
-    }
-    // tmavá střílna
+    // křížová střílna uprostřed podsebití
     ctx.fillStyle = "#14110c";
-    ctx.fillRect(x - 7, top + 12, 14, 20);
+    ctx.fillRect(x - 7, top + 14, 14, 22);
+    ctx.fillRect(x - 16, top + 21, 32, 7);
+    // dubová vrata dole - zaoblený oblouk, železné pásky a práh
+    ctx.fillStyle = "#5a3d20";
+    ctx.beginPath();
+    ctx.moveTo(x - 14, y + r * 0.24);
+    ctx.lineTo(x - 14, y - 26);
+    ctx.arc(x, y - 26, 14, Math.PI, 0);
+    ctx.lineTo(x + 14, y + r * 0.24);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = "#3a2814";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      ctx.beginPath();
+      ctx.moveTo(x - 14, y - 8 - i * 14);
+      ctx.lineTo(x + 14, y - 8 - i * 14);
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#2b2016";
+    ctx.fillRect(x - 16, y - 2, 32, 5);
     if (tw.tier >= 2) {
-      // kuželová střecha
-      const roofH = 30 + tw.tier * 8;
-      ctx.fillStyle = tw.tier >= 3 ? "#3450a0" : "#b03434";
+      // 🏠 kuželová střecha: T2 slaměný došek, T3 břidlicové šupiny (žádný neon)
+      const roofH = 34 + tw.tier * 8;
+      const slate = tw.tier >= 3;
+      const roofA = slate ? "#4c565f" : "#a8823f";
+      const roofB = slate ? "#38424b" : "#8a6a32";
+      const rg = ctx.createLinearGradient(x - bodyW, 0, x + bodyW, 0);
+      rg.addColorStop(0, roofB);
+      rg.addColorStop(0.5, roofA);
+      rg.addColorStop(1, roofB);
+      ctx.fillStyle = rg;
       ctx.beginPath();
-      ctx.moveTo(x - bodyW - 4, top - 10);
-      ctx.lineTo(x + bodyW + 4, top - 10);
-      ctx.lineTo(x, top - 10 - roofH);
+      ctx.moveTo(x - bodyW - 6, top - 14);
+      ctx.lineTo(x + bodyW + 6, top - 14);
+      ctx.lineTo(x, top - 14 - roofH);
       ctx.closePath();
       ctx.fill();
-      ctx.fillStyle = "rgba(255,255,255,0.12)";
-      ctx.beginPath();
-      ctx.moveTo(x - bodyW - 4, top - 10);
-      ctx.lineTo(x, top - 10 - roofH);
-      ctx.lineTo(x - 2, top - 10);
-      ctx.closePath();
-      ctx.fill();
-      // vlajka na hřesle (vlaje ve vlnách)
+      // řady šupin / svazků slámy
+      ctx.strokeStyle = slate ? "rgba(20,26,32,0.45)" : "rgba(90,64,26,0.45)";
+      ctx.lineWidth = 2;
+      for (let i = 1; i <= 3; i++) {
+        const fy = top - 14 - (roofH * i) / 4;
+        const fw = (bodyW + 6) * (1 - i / 4);
+        ctx.beginPath();
+        ctx.moveTo(x - fw, fy);
+        ctx.lineTo(x + fw, fy);
+        ctx.stroke();
+      }
+      // korouhev na hřebínku - rudé plátno vlaje ve vlnách
       const flagWave = Math.sin(g.gtime * 3 + x * 0.05) * 3;
       ctx.strokeStyle = "#4a3b28";
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(x, top - 10 - roofH);
-      ctx.lineTo(x, top - 10 - roofH - 24);
+      ctx.moveTo(x, top - 14 - roofH);
+      ctx.lineTo(x, top - 14 - roofH - 24);
       ctx.stroke();
-      ctx.fillStyle = tw.tier >= 3 ? "#d4af37" : "#e04545";
+      ctx.fillStyle = "#b8452f";
       ctx.beginPath();
-      ctx.moveTo(x, top - 10 - roofH - 24);
-      ctx.lineTo(x + 22 + flagWave, top - 10 - roofH - 19);
-      ctx.lineTo(x, top - 10 - roofH - 13);
+      ctx.moveTo(x, top - 14 - roofH - 24);
+      ctx.lineTo(x + 22 + flagWave, top - 14 - roofH - 19);
+      ctx.lineTo(x, top - 14 - roofH - 13);
       ctx.closePath();
       ctx.fill();
-      // okna ve staré zdi
-      ctx.fillStyle = "#14110c";
-      ctx.fillRect(x - 5, top + 44, 10, 16);
-      if (tw.tier >= 3) {
-        ctx.fillRect(x - 5, top + 74, 10, 16);
-        // zlatá lucerna na špici svítí do noci
-        const glow = 0.5 + 0.3 * Math.sin(g.gtime * 2.4);
-        ctx.fillStyle = `rgba(250,204,21,${glow})`;
+      if (slate) {
+        // 🏮 kovářský kotel s žhavým ohněm místo zářící lucerny - jiskřičky létají
+        const fx = x;
+        const fy = top - 14 - roofH - 30;
+        ctx.strokeStyle = "#3a2814";
+        ctx.lineWidth = 3;
         ctx.beginPath();
-        ctx.arc(x, top - 10 - roofH - 30, 6, 0, Math.PI * 2);
+        ctx.arc(fx, fy + 7, 7, 0, Math.PI * 2);
+        ctx.stroke();
+        const flick = Math.sin(g.gtime * 7 + x) * 2;
+        ctx.fillStyle = "rgba(251,146,60,0.9)";
+        ctx.beginPath();
+        ctx.moveTo(fx - 4, fy + 4);
+        ctx.quadraticCurveTo(fx + flick, fy - 8, fx, fy - 11);
+        ctx.quadraticCurveTo(fx - flick, fy - 4, fx + 4, fy + 4);
+        ctx.closePath();
         ctx.fill();
-        ctx.fillStyle = "rgba(250,204,21,0.12)";
+        ctx.fillStyle = "rgba(250,204,21,0.8)";
         ctx.beginPath();
-        ctx.arc(x, top - 10 - roofH - 30, 22, 0, Math.PI * 2);
+        ctx.arc(fx, fy + 1, 2.5, 0, Math.PI * 2);
         ctx.fill();
       }
+    }
+    // okénka ve staré zdi - štěrbinová, bez rámu
+    ctx.fillStyle = "#14110c";
+    ctx.fillRect(x - 5, top + 46, 10, 15);
+    if (tw.tier >= 3) ctx.fillRect(x - 5, top + 76, 10, 15);
+    // liány přerostlé z lesa
+    ctx.strokeStyle = "rgba(74,105,42,0.55)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 3; i++) {
+      const vx = x - bodyW + 6 + hsh(i + 400) * 10;
+      ctx.beginPath();
+      ctx.moveTo(vx, top + 30);
+      ctx.quadraticCurveTo(vx + 5 * Math.sin(g.gtime * 1.5 + i), top + 60 + hsh(i + 420) * 40, vx + 3, top + 90 + hsh(i + 440) * 50);
+      ctx.stroke();
     }
     // záblesk výstřelu ze střílny
     if (tw.cd < 0.12 && tw.flash > 0) {
@@ -5880,7 +5959,6 @@ function drawTower(ctx: CanvasRenderingContext2D, g: Game, tw: Tower): void {
   }
   ctx.restore();
 }
-
 // 🏰 hrad zakrývá celou pravou stranu mapy - zeď vede po celé výšce (sever-jih),
 // brána hledí na ZÁPAD, odkud valí netvoři, "výška" staveb se kreslí na východ
 function drawCastle(ctx: CanvasRenderingContext2D, g: Game): void {

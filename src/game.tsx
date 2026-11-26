@@ -1,20 +1,20 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-// 🗺️ louka je úzká stezka lesem: 8000 × 1000 - netvoři vyrážejí z lesa zcela zleva
-// a ze spáleniště u hradu, hrdina startuje před hradbou a brání příval ze západu
+// 🗺️ louka je široká stezka lesem: 8000 × 2000 - netvoři vyrážejí zcela zleva
+// ze spáleného západu, hrdina startuje před hradbou a brání příval ze západu
 const ARENA_W = 8000;
-const ARENA_H = 1000;
+const ARENA_H = 2000;
 // 🏰 hrad zakrývá celou pravou stranu mapy - zeď stojí u zadní východní hranice,
 // hlavní brána hledí na západ, odkud valí nepřátelé
 const CASTLE_FRONT = ARENA_W - 340;
-// 🌲 les roste do poloviny stezky, dál k hradu leží spálená oblast
+// 🔥 spáleniště leží na západním konci mapy - zelený les začíná až za polovinou
 const BURN_X = Math.round(ARENA_W * 0.5);
 // 🌳 v1.20: louka = jediné místo, kudy chodí hrdina; nad i pod ní je hustý les (bariéra)
 const MEADOW_TOP = 330;
 const MEADOW_BOT = ARENA_H - 330;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.20.0";
+const GAME_VERSION = "1.21.0";
 const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -1690,9 +1690,9 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
   if (forceKind >= 0) kind = forceKind;
   const d = ENEMY_DEFS[kind];
   // endgame křivka: po 5. minutách HP roste výrazně rychleji (obtížnost ji násobí)
-  // 💪 v1.12: nepřátel je na louce polovina, ale každý má 4× HP a 3× dmg
+  // 💪 v1.21: nepřátelé mají o 25 % míň HP než v1.20 (4,5× místo 6×) a 3× dmg
   const df = DIFFS[g.diff] || DIFFS[1];
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 3;
   // 🌟 elitní varianta: po minutě 6 % šance na korunku s náhodnou vlastností (3× HP, víc dropů)
   // korunky nedostanou podpůrné druhý (květomil by dvojitě léčil, dravec by byl nezabitelný) a na mapě je jich max 4
   let eliteCount = 0;
@@ -1701,8 +1701,8 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
   }
   const elite = !g.sandbox && t > 60 && kind !== 9 && kind !== 17 && kind !== 19 && eliteCount < 4 && Math.random() < 0.06 ? ["swift", "boom", "vamp", "shield"][Math.floor(Math.random() * 4)] : undefined;
   const eMul = elite ? 3 : 1;
-  // 🏰 pochod na hrad: netvoři vyrážejí ZCELA ZLEVA z hlubokého lesa NEBO
-  // ze spáleniště úplně vpravo, co nejvíc k hradbě - oba proudy valí na bránu;
+  // 🏰 pochod na hrad: netvoři vyrážejí VŽDY ZE ZÁPADU (les úplně vlevo NEBO
+  // hluboko ve spáleništi) - nikdy se nespawnou u hrdiny ani u hradby;
   // sandbox nucený druh se rodí na dohled od hrdiny
   const laneH = ARENA_H - 160;
   const a = Math.random() * Math.PI * 2;
@@ -1720,8 +1720,8 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
     ex = 30 + Math.random() * 90;
     ey = 80 + Math.random() * laneH;
   } else {
-    // 🔥 ze spáleniště úplně vpravo - co nejvíc k hradbě, co mapa dovolí
-    ex = CASTLE_FRONT - 60 - Math.random() * 320;
+    // 🔥 hluboko ve spáleništi na západě - daleko od hrdiny i od hradby
+    ex = 240 + Math.random() * 1400;
     ey = 80 + Math.random() * laneH;
   }
   g.enemies.push({
@@ -1765,8 +1765,8 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
 function spawnEliteWave(g: Game): void {
   const t = g.time;
   const df = DIFFS[g.diff] || DIFFS[1];
-  // 💪 v1.12: elitní vlna drží 4× HP
-  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 4;
+  // 💪 v1.21: elitní vlna drží 4,5× HP
+  const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 3;
   // 🏰 elitní vlna vytáhne z hlubiny lesa úplně vlevo a vydá se na dlouhý pochod na východ
   const cx = 40 + Math.random() * 110;
   const cy = Math.max(40, Math.min(ARENA_H - 40, 90 + Math.random() * (ARENA_H - 180)));
@@ -2626,10 +2626,10 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     arena: { x: 0, y: 0, r: 0, active: false },
     castle: { x: ARENA_W - 170, y: ARENA_H / 2, r: 150, hp: 900, maxHp: 900, walls: 0, bows: 0, keep: false, regen: 0, flash: 0, hitT: 0, cd: 0 },
     towers: [
-      { x: 2000, y: 400, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 2000, y: 600, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 6200, y: 400, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 6200, y: 600, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 2000, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 2000, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 6200, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 6200, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
     ],
     coins: 0,
     trees: [],
@@ -2721,7 +2721,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
   for (let i = 0; i < 480; i++) {
     const kr = Math.random();
     const k = kr < 0.46 ? 0 : kr < 0.72 ? 1 : kr < 0.86 ? 2 : 3;
-    const tx = 60 + Math.random() * (BURN_X - 120);
+    const tx = BURN_X + 60 + Math.random() * (CASTLE_FRONT - BURN_X - 420);
     // 🌳 v1.20: stromy jen v pásu lesa nad a pod loukou
     const ty = Math.random() < 0.5
       ? 24 + Math.random() * (MEADOW_TOP - 48)
@@ -8738,19 +8738,19 @@ function paintForestWalls(c: CanvasRenderingContext2D): void {
   }
 }
 
-// 🔥 spáleniště - od poloviny stezky k hradbám vyhořel les, zbylo doutnající popel
+// 🔥 spáleniště - celý západní konec stezky vyhořel, zbylo doutnající popel
 function paintBurn(c: CanvasRenderingContext2D): void {
-  const x0 = BURN_X - 700; // plynulý přechod od louky
-  // čím blíž k hradu, tím černější popel (průhledný nátěr pohltil i okrajové stromy)
-  const gr = c.createLinearGradient(x0, 0, CASTLE_FRONT, 0);
+  const x0 = BURN_X + 700; // plynulý přechod k louce
+  // čím blíž k západnímu okraji, tím černější popel (průhledný nátěr pohltil i okrajové stromy)
+  const gr = c.createLinearGradient(x0, 0, 0, 0);
   gr.addColorStop(0, "rgba(26,22,12,0)");
   gr.addColorStop(0.35, "rgba(24,20,12,0.5)");
   gr.addColorStop(1, "rgba(22,17,10,0.9)");
   c.fillStyle = gr;
-  c.fillRect(x0, 0, CASTLE_FRONT - x0 + 40, ARENA_H);
+  c.fillRect(0, 0, x0, ARENA_H);
   // vypálené placky a plochy popela
   for (let i = 0; i < 130; i++) {
-    const bx = BURN_X - 400 + bgHash(i * 3 + 301) * (CASTLE_FRONT - BURN_X + 300);
+    const bx = Math.max(0, BURN_X + 400 - bgHash(i * 3 + 301) * (BURN_X + 300));
     const by = bgHash(i * 5 + 307) * ARENA_H;
     const br = 30 + bgHash(i * 7 + 313) * 90;
     c.fillStyle = i % 3 === 0 ? "rgba(16,12,8,0.5)" : "rgba(52,44,36,0.4)";
@@ -8760,7 +8760,7 @@ function paintBurn(c: CanvasRenderingContext2D): void {
   }
   // spálené kmeny - některé stojí jako obelisky, jiné popadaly
   for (let i = 0; i < 46; i++) {
-    const bx = BURN_X - 250 + bgHash(i * 3 + 331) * (CASTLE_FRONT - BURN_X + 150);
+    const bx = Math.max(20, BURN_X + 250 - bgHash(i * 3 + 331) * (BURN_X + 150));
     const by = 60 + bgHash(i * 5 + 337) * (ARENA_H - 120);
     const hgt = 26 + bgHash(i * 7 + 341) * 46;
     const fallen = bgHash(i * 11 + 347) > 0.72;
@@ -8794,7 +8794,7 @@ function paintBurn(c: CanvasRenderingContext2D): void {
   }
   // pařezy po vypálených stromech - některá jádra ještě žhnou
   for (let i = 0; i < 40; i++) {
-    const bx = BURN_X - 200 + bgHash(i * 3 + 353) * (CASTLE_FRONT - BURN_X + 100);
+    const bx = Math.max(20, BURN_X + 200 - bgHash(i * 3 + 353) * (BURN_X + 100));
     const by = 40 + bgHash(i * 5 + 359) * (ARENA_H - 80);
     const sr = 5 + bgHash(i * 7 + 367) * 7;
     c.fillStyle = "#191310";
@@ -8817,7 +8817,7 @@ function paintBurn(c: CanvasRenderingContext2D): void {
   }
   // uhlíky a žhavé iskry po celém popelu
   for (let i = 0; i < 220; i++) {
-    const bx = BURN_X - 350 + bgHash(i * 3 + 383) * (CASTLE_FRONT - BURN_X + 250);
+    const bx = Math.max(0, BURN_X + 350 - bgHash(i * 3 + 383) * (BURN_X + 250));
     const by = bgHash(i * 5 + 389) * ARENA_H;
     if (bgHash(i * 7 + 397) > 0.4) {
       c.fillStyle = "rgba(20,16,12,0.8)";
@@ -8829,7 +8829,7 @@ function paintBurn(c: CanvasRenderingContext2D): void {
   }
   // jemné šmouhy dýmu nad spáleništěm
   for (let i = 0; i < 22; i++) {
-    const bx = BURN_X - 200 + bgHash(i * 3 + 401) * (CASTLE_FRONT - BURN_X + 150);
+    const bx = Math.max(0, BURN_X + 200 - bgHash(i * 3 + 401) * (BURN_X + 150));
     const by = 50 + bgHash(i * 5 + 409) * (ARENA_H - 100);
     c.fillStyle = "rgba(90,86,80,0.07)";
     c.beginPath();
@@ -11566,7 +11566,7 @@ function LoukaTisicePriser() {
         prevOver = true;
         // 🌱 semínka za run jsou VELMI vzácná (v1.14: ~4,5× méně než dřív) - zabití, čas i levely; ⚖️ obtížnost násobí výnos
         const seedMul = (DIFFS[g.diff] || DIFFS[1]).seed;
-        const earned = Math.floor((Math.floor(g.time * 0.12) + g.kills * 2 + g.level * 5) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
+        const earned = Math.floor((Math.floor(g.time * 0.18) + g.kills * 3 + g.level * 8) * (g.sandbox ? 0 : seedMul) * (g.seedBonus || 1));
         setOver({ level: g.level, kills: g.kills, time: g.time, earned });
         setBest((b) => Math.max(b, earned));
         // 🏆 když se skóre trefí mezi top 10, nabídne se zápis jména do žebříčku

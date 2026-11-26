@@ -1,20 +1,40 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-// 🗺️ louka je široká stezka lesem: 8000 × 2000 - netvoři vyrážejí zcela zleva
-// ze spáleného západu, hrdina startuje před hradbou a brání příval ze západu
-const ARENA_W = 8000;
-const ARENA_H = 2000;
+// 🗺️ 🏰 HRADOVÝ REŽIM (výchozí): louka je široká stezka lesem 8000 × 2000 -
+// netvoři vyrážejí zcela zleva ze spáleného západu, hrdina startuje před hradbou.
+// 🌾 KLASICKÝ REŽIM (v1.24): původní čtvercová louka 6000 × 6000 bez hradu,
+// věží a peněz - rozměry mapy se přepínají podle režimu, který vybereš v menu
+let ARENA_W = 8000;
+let ARENA_H = 2000;
 // 🏰 hrad zakrývá celou pravou stranu mapy - zeď stojí u zadní východní hranice,
 // hlavní brána hledí na západ, odkud valí nepřátelé
-const CASTLE_FRONT = ARENA_W - 340;
+let CASTLE_FRONT = ARENA_W - 340;
 // 🔥 spáleniště leží na západním konci mapy - zelený les začíná až za polovinou
-const BURN_X = Math.round(ARENA_W * 0.5);
+let BURN_X = Math.round(ARENA_W * 0.5);
 // 🌳 v1.20: louka = jediné místo, kudy chodí hrdina; nad i pod ní je hustý les (bariéra)
-const MEADOW_TOP = 330;
-const MEADOW_BOT = ARENA_H - 330;
+let MEADOW_TOP = 330;
+let MEADOW_BOT = ARENA_H - 330;
+// 🔄 v1.24: přepnutí rozměrů mapy podle režimu - 🏰 hrad (8000×2000) nebo 🌾 klasika (6000×6000)
+function setArenaMode(classic: boolean): void {
+  if (classic) {
+    ARENA_W = 6000;
+    ARENA_H = 6000;
+    CASTLE_FRONT = ARENA_W; // bez hradby - "hradba" je jen východní okraj mapy
+    BURN_X = ARENA_W; // spáleniště se v klasice nekreslí
+    MEADOW_TOP = 40;
+    MEADOW_BOT = ARENA_H - 40; // hrdina chodí po celé louce, žádný les-bariéra
+  } else {
+    ARENA_W = 8000;
+    ARENA_H = 2000;
+    CASTLE_FRONT = ARENA_W - 340;
+    BURN_X = Math.round(ARENA_W * 0.5);
+    MEADOW_TOP = 330;
+    MEADOW_BOT = ARENA_H - 330;
+  }
+}
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.23.0";
+const GAME_VERSION = "1.24.0";
 const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -441,6 +461,7 @@ type Game = {
   castle: Castle; // 🏰 hrad na východě mapy (tower-defense cíl nepřátel)
   towers: Tower[]; // 🗼 strážní věže podél cesty - staví se za peníze přímo v runu
   coins: number; // 🪙 peníze: 1 za každé druhé zabití - platí se jimi za stavbu a opravu věží
+  classic: boolean; // 🌾 v1.24: klasický režim bez hradu - původní čtvercová louka 6000 × 6000
   trees: TreeDeco[];
   orbs: Orb[];
   particles: Particle[];
@@ -1720,6 +1741,10 @@ function spawnEnemy(g: Game, forceKind = -1, px?: number, py?: number, noPack = 
   } else if (forceKind >= 0) {
     ex = Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd));
     ey = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd));
+  } else if (g.classic) {
+    // 🌾 klasika: netvoři se rodí v kruhu kolem hrdiny, těsně mimo obrazovku (jako dřív)
+    ex = Math.max(40, Math.min(ARENA_W - 40, g.hero.x + Math.cos(a) * dd));
+    ey = Math.max(40, Math.min(ARENA_H - 40, g.hero.y + Math.sin(a) * dd));
   } else if (Math.random() < 0.5) {
     // 🌲 z lesa úplně vlevo - vynoří se z podrostu na západním okraji mapy
     ex = 30 + Math.random() * 90;
@@ -1773,8 +1798,15 @@ function spawnEliteWave(g: Game): void {
   // 💪 v1.21: elitní vlna drží 4,5× HP
   const hpMul = (1 + t / 120 + Math.max(0, t - 300) / 60) * df.hp * 1.5 * 3;
   // 🏰 elitní vlna vytáhne z hlubiny lesa úplně vlevo a vydá se na dlouhý pochod na východ
-  const cx = 40 + Math.random() * 110;
-  const cy = Math.max(40, Math.min(ARENA_H - 40, 90 + Math.random() * (ARENA_H - 180)));
+  // 🌾 klasika: zrodí se v kruhu kolem hrdiny, těsně mimo obrazovku
+  const ea = Math.random() * Math.PI * 2;
+  const edd = (Math.hypot(VW, VH) / 2) * 1.1 + 60;
+  const cx = g.classic
+    ? Math.max(60, Math.min(ARENA_W - 60, g.hero.x + Math.cos(ea) * edd))
+    : 40 + Math.random() * 110;
+  const cy = g.classic
+    ? Math.max(60, Math.min(ARENA_H - 60, g.hero.y + Math.sin(ea) * edd))
+    : Math.max(40, Math.min(ARENA_H - 40, 90 + Math.random() * (ARENA_H - 180)));
   addText(g, cx, cy - 34, "⚠️ ELITNÍ VLNA!", 280, 20);
   const n = Math.min(5, 2 + Math.floor(t / 300));
   for (let i = 0; i < n; i++) {
@@ -1828,9 +1860,15 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   playSfx(g, "boss");
   playSfx(g, "riser");
   // 🌄 boss se zrodí západně od tebe, mimo obraz - a vydá se pochodem na hrad
+  // 🌾 klasika: zrodí se v kruhu kolem tebe, mimo obraz
   const dd = (Math.hypot(VW, VH) / 2) * 1.05 + 60;
-  const x = Math.max(80, Math.min(ARENA_W - 80, g.hero.x - dd));
-  const y = Math.max(80, Math.min(ARENA_H - 80, g.hero.y + (Math.random() - 0.5) * Math.min(ARENA_H - 160, 900)));
+  const ba = Math.random() * Math.PI * 2;
+  const x = g.classic
+    ? Math.max(80, Math.min(ARENA_W - 80, g.hero.x + Math.cos(ba) * dd))
+    : Math.max(80, Math.min(ARENA_W - 80, g.hero.x - dd));
+  const y = g.classic
+    ? Math.max(80, Math.min(ARENA_H - 80, g.hero.y + Math.sin(ba) * dd))
+    : Math.max(80, Math.min(ARENA_H - 80, g.hero.y + (Math.random() - 0.5) * Math.min(ARENA_H - 160, 900)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
   // 💪 v1.16: bossové o čtvrtinu slabší - 6× HP a 2.25× dmg, bez arény táhnou na hrad
   const hp = (260 + t * 3 + g.bossKills * 90) * 22.5 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
@@ -1861,7 +1899,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   });
   g.shake = isFinal ? 12 : 8;
   playSfx(g, "boss");
-  addText(g, g.hero.x, g.hero.y - 44, isFinal ? `☠️ FINÁLNÍ BOSS: ${bt.name}!` : `⚠️ BOSS: ${bt.name}! TÁHNE NA HRAD!`, 0, isFinal ? 26 : 24);
+  addText(g, g.hero.x, g.hero.y - 44, isFinal ? `☠️ FINÁLNÍ BOSS: ${bt.name}!` : g.classic ? `⚠️ BOSS: ${bt.name}!` : `⚠️ BOSS: ${bt.name}! TÁHNE NA HRAD!`, 0, isFinal ? 26 : 24);
   burst(g, x, y, isFinal ? 30 : 20, bt.hue, 220);
 }
 
@@ -1925,6 +1963,8 @@ type Meta = {
   // 🌳 strom dovedností: { id uzlu: úroveň } + 👑 koruny za finální bosse
   tree?: Record<string, number>;
   crowns?: number;
+  // 🔄 v1.24: režim mapy - true = 🌾 klasika (bez hradu), výchozí 🏰 hradový režim
+  classic?: boolean;
 };
 
 function loadMeta(): Meta {
@@ -1949,13 +1989,14 @@ function loadMeta(): Meta {
           lastName: p.lastName || "",
           tree: p.tree || {},
           crowns: p.crowns || 0,
+          classic: p.classic === true,
         };
       }
     }
   } catch {
     // localStorage nedostupný - hrajeme bez uložení
   }
-  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true, surp: false }, daily: { key: "", best: 0 }, board: [], lastName: "", tree: {}, crowns: 0 };
+  return { pts: 0, lvl: {}, ach: {}, best: {}, unlock: {}, opts: { snd: true, shk: true, nums: true, surp: false }, daily: { key: "", best: 0 }, board: [], lastName: "", tree: {}, crowns: 0, classic: false };
 }
 
 function saveMeta(m: Meta): void {
@@ -2151,9 +2192,8 @@ const TREE_NODES: TreeNode[] = [
   { id: "t_crd", emoji: "💥", name: "Krvavá rána", per: "+40 % crit dmg", max: 5, parent: "t_crit", base: 450, growth: 450, pos: [72, 44], apply: (g, l) => { g.stats.critMul += 0.4 * l; } },
   { id: "t_pierce", emoji: "🏹", name: "Průraznost", per: "+1 průraz", max: 3, parent: "t_crd", base: 600, growth: 600, pos: [72, 26], apply: (g, l) => { g.stats.pierce += 1 * l; } },
   { id: "t_multi", emoji: "🔱", name: "Dvojúder", per: "+1 projektil", max: 2, parent: "t_crd", base: 2500, growth: 2500, pos: [50, 8], apply: (g, l) => { g.stats.multishot += 1 * l; } },
-  // 🏰 hradní větev stromu - hrad na východě mapy dostane tvrdší hradby a vlastní lučištníky
-  { id: "t_cwall", emoji: "🧱", name: "Hradby", per: "+100 HP hradu", max: 5, parent: "t_arm", base: 300, growth: 300, pos: [50, 26], apply: (g, l) => { g.castle.walls = l; castleMaxHp(g); } },
-  { id: "t_cbow", emoji: "🏹", name: "Střílny", per: "+1 lučištník hradu", max: 3, parent: "t_cwall", base: 450, growth: 450, pos: [30, 8], apply: (g, l) => { g.castle.bows = l; } },
+  // 🏰 v1.24: hradní větev stromu (🧱 Hradby, 🏹 Střílny, 🏰 Královský donjon) odebrána -
+  // hrad si už nekupuješ ve stromu dovedností
 ];
 
 // ✨ speciální upgrady (jen 1×) - stojí 👑 korunu z finálních bossů, koupíš je ve stromu
@@ -2163,7 +2203,6 @@ const TREE_SPECIALS: TreeNode[] = [
   { id: "t_crown", emoji: "👑", name: "Koruna louky", per: "+15 % semínek za run", max: 1, special: true, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.seedBonus = (g.seedBonus || 1) * 1.15; } },
   { id: "t_allwpn", emoji: "🔓", name: "Všechny zbraně", per: "zruší třídní omezení zbraní (ne pro inženýra)", max: 1, special: true, crownCost: 3, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.allWeapons = true; } },
   { id: "t_titan", emoji: "❤️‍🔥", name: "Titánské srdce", per: "+30 max HP", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.hero.maxHp += 30; g.hero.hp = Math.min(g.hero.maxHp, g.hero.hp + 30); } },
-  { id: "t_keep", emoji: "🏰", name: "Královský donjon", per: "+200 HP hradu a hrad se sám opravuje", max: 1, special: true, crownCost: 2, base: 0, growth: 0, pos: [0, 0], apply: (g) => { g.castle.keep = true; castleMaxHp(g); g.castle.regen = g.castle.maxHp * 0.01; } },
 ];
 
 const TREE_ALL: TreeNode[] = [...TREE_NODES, ...TREE_SPECIALS];
@@ -2335,6 +2374,8 @@ const LANG: Record<string, Record<string, string>> = {
     legend: "📜 Legenda praví: louka kdysi patřila slepicím. Pak přišly příšery — a pak přišel ty. 🎒 1 zbraň do runu (další 2 sloty v 🌳 stromu) · ⭐ 5. tier = ULTIMÁTNÍ FORMA · ⚔️ fyzické classy neberou magii (a 🪄 naopak) · každých 90 s 💀 boss a 📦 bedna",
     records: "🏅 Rekordy za classy", daily_best: "📅 Nejlepší denní výzva:",
     daily_btn: "📅 Denní výzva", daily_on: "ZAP",
+    mode_castle: "🏰 Hrad", mode_classic: "🌾 Klasika",
+    mode_note: "🔄 Režim mapy: 🏰 Hrad = stezka lesem 8000 × 2000, netvoři míří na hrad, věže 🗼 a vojáci 🤺 za 🪙. 🌾 Klasika = původní čtvercová louka 6000 × 6000 bez hradu, věží a peněz - jen ty proti příšerám. Přepnutí platí od dalšího runu.",
     daily_note: "📅 Dnes {d} — obtížnost vylosovaná podle data, denní rekord se ukládá zvlášť. Kdo přístroj nepodvádí, ten má čistý měsíc!",
     sbx_on: "🧪 Sandbox ZAPNUTÝ", sbx_off: "🧪 Sandbox VYPNUTÝ",
     sbx_click_on: "Klikni pro vypnutí", sbx_click_off: "Klikni pro zapnutí",
@@ -2425,6 +2466,8 @@ const LANG: Record<string, Record<string, string>> = {
     legend: "📜 Legend says: the meadow once belonged to hens. Then the monsters came — and then you came. 🎒 1 weapon per run (2 more slots in the 🌳 tree) · ⭐ tier 5 = ULTIMATE FORM · ⚔️ physical classes take no magic (and 🪄 vice versa) · every 90 s a 💀 boss and a 📦 crate",
     records: "🏅 Records per class", daily_best: "📅 Best daily challenge:",
     daily_btn: "📅 Daily challenge", daily_on: "ON",
+    mode_castle: "🏰 Castle", mode_classic: "🌾 Classic",
+    mode_note: "🔄 Map mode: 🏰 Castle = forest trail 8000 × 2000, monsters march on the castle, towers 🗼 and soldiers 🤺 cost 🪙. 🌾 Classic = the original square meadow 6000 × 6000 with no castle, towers or coins - just you against the monsters. Applies from the next run.",
     daily_note: "📅 Today {d} — difficulty drawn from the date, the daily record is stored separately. Who doesn't cheat has a clean month!",
     sbx_on: "🧪 Sandbox ON", sbx_off: "🧪 Sandbox OFF",
     sbx_click_on: "Click to turn off", sbx_click_off: "Click to turn on",
@@ -2515,6 +2558,8 @@ const LANG: Record<string, Record<string, string>> = {
     legend: "📜 Legenda głosi: łąka niegdyś należała do kur. Potem przyszły potwory — a potem przyszedłeś ty. 🎒 1 broń na run (2 kolejne sloty w 🌳 drzewku) · ⭐ 5. poziom = FORMA OSTATECZNA · ⚔️ fizyczne klasy nie biorą magii (i 🪄 odwrotnie) · co 90 s 💀 boss i 📦 skrzynia",
     records: "🏅 Rekordy według klas", daily_best: "📅 Najlepsze dzienne wyzwanie:",
     daily_btn: "📅 Dzienne wyzwanie", daily_on: "WŁ.",
+    mode_castle: "🏰 Zamek", mode_classic: "🌾 Klasyka",
+    mode_note: "🔄 Tryb mapy: 🏰 Zamek = leśna ścieżka 8000 × 2000, potwory maszerują na zamek, wieże 🗼 i wojownicy 🤺 za 🪙. 🌾 Klasyka = pierwotna kwadratowa łąka 6000 × 6000 bez zamku, wież i monet - tylko ty kontra potwory. Obowiązuje od następnego runu.",
     daily_note: "📅 Dziś {d} — trudność losowana z daty, dzienny rekord zapisuje się osobno. Kto nie oszukuje, ma czysty miesiąc!",
     sbx_on: "🧪 Sandbox WŁĄCZONY", sbx_off: "🧪 Sandbox WYŁĄCZONY",
     sbx_click_on: "Kliknij, aby wyłączyć", sbx_click_off: "Kliknij, aby włączyć",
@@ -2599,9 +2644,15 @@ const DIFFS: { emoji: string; name: string; hp: number; dmg: number; seed: numbe
 
 function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, diff = 1, daily = false): Game {
   const cls = CLASSES.find((c) => c.id === clsId) || CLASSES[0];
+  // 🔄 v1.24: režim mapy z mety - 🏰 hrad (výchozí) nebo 🌾 klasika bez hradu.
+  // POZOR: initGame() bez mety (idle scéna za menu) se vyhodnocuje při KAŽDÉM renderu
+  // komponenty - rozměry mapy přepínáme jen když přichází meta (skutečný start runu),
+  // aby za běhu klasického runu žádný render nepřehodil mapu zpět na hrad
+  const classic = !!(meta && meta.classic);
+  if (meta) setArenaMode(classic);
   const g: Game = {
     hero: {
-      x: ARENA_W - 640,
+      x: classic ? ARENA_W / 2 : ARENA_W - 640,
       y: ARENA_H / 2,
       hp: cls.hp,
       maxHp: cls.hp,
@@ -2631,13 +2682,16 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     telegraphs: [],
     arena: { x: 0, y: 0, r: 0, active: false },
     castle: { x: ARENA_W - 170, y: ARENA_H / 2, r: 150, hp: 900, maxHp: 900, walls: 0, bows: 0, keep: false, regen: 0, flash: 0, hitT: 0, cd: 0 },
-    towers: [
-      { x: 2000, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 2000, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 6200, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 6200, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-    ],
+    towers: classic
+      ? []
+      : [
+          { x: 2000, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+          { x: 2000, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+          { x: 6200, y: 800, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+          { x: 6200, y: 1200, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+        ],
     coins: 0,
+    classic,
     trees: [],
     orbs: [],
     particles: [],
@@ -2724,16 +2778,26 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
   }
   // 🌲 jehličnaté stromy, keře, houby a kameny po louce - na spáleništi už nic nezelená
   // stezka k bráně a okolí hradby zůstanou volné
-  for (let i = 0; i < 480; i++) {
+  // 🌾 klasika: stromy rozeseté po celé čtvercové louce (jen ne na startu), jako vždycky
+  const treeN = classic ? 740 : 480;
+  for (let i = 0; i < treeN; i++) {
     const kr = Math.random();
     const k = kr < 0.46 ? 0 : kr < 0.72 ? 1 : kr < 0.86 ? 2 : 3;
-    const tx = BURN_X + 60 + Math.random() * (CASTLE_FRONT - BURN_X - 420);
+    const tx = classic
+      ? 50 + Math.random() * (ARENA_W - 100)
+      : BURN_X + 60 + Math.random() * (CASTLE_FRONT - BURN_X - 420);
     // 🌳 v1.20: stromy jen v pásu lesa nad a pod loukou
-    const ty = Math.random() < 0.5
-      ? 24 + Math.random() * (MEADOW_TOP - 48)
-      : MEADOW_BOT + 24 + Math.random() * (ARENA_H - MEADOW_BOT - 48);
-    // 🏰 volno před hradbami
-    if (tx > CASTLE_FRONT - 260) continue;
+    const ty = classic
+      ? 50 + Math.random() * (ARENA_H - 100)
+      : Math.random() < 0.5
+        ? 24 + Math.random() * (MEADOW_TOP - 48)
+        : MEADOW_BOT + 24 + Math.random() * (ARENA_H - MEADOW_BOT - 48);
+    // 🏰 volno před hradbami / 🌾 volno kolem startu hrdiny
+    if (classic) {
+      const cdx = tx - ARENA_W / 2;
+      const cdy = ty - ARENA_H / 2;
+      if (cdx * cdx + cdy * cdy < 150 * 150) continue;
+    } else if (tx > CASTLE_FRONT - 260) continue;
     g.trees.push({
       x: tx,
       y: ty,
@@ -3452,8 +3516,8 @@ function killEnemy(g: Game, e: Enemy): void {
   }
   e.dead = true;
   g.kills += 1;
-  // 🪙 peníze za hlídku: každé druhé zabití vysype jeden peníz
-  if (g.kills % 2 === 0) {
+  // 🪙 peníze za hlídku: každé druhé zabití vysype jeden peníz (jen v hradovém režimu)
+  if (!g.classic && g.kills % 2 === 0) {
     g.coins += 1;
     addText(g, e.x, e.y - e.r - 26, "🪙 +1", 40, 14);
   }
@@ -3757,7 +3821,7 @@ function towerNear(g: Game): Tower | null {
 
 // 🤺 v1.22: najmi vojáka za 5 🪙 - vyběhne z brány hradu a jde hledat netvory
 function buySoldier(g: Game): void {
-  if (!g || !g.running || g.over || g.sandbox) return;
+  if (!g || !g.running || g.over || g.sandbox || g.classic) return;
   if (g.soldiers.length >= SOLDIER_MAX) { addText(g, g.hero.x, g.hero.y - 44, "max " + SOLDIER_MAX + " vojáků", 0, 13); return; }
   if (g.coins < SOLDIER_COST) { addText(g, g.hero.x, g.hero.y - 44, "málo 🪙", 0, 13); return; }
   g.coins -= SOLDIER_COST;
@@ -4668,7 +4732,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
   }
 
   // 🏰 střílny ze stromu dovedností: lučištníci na hradbách střílí na netvory pod hradbami
-  if (g.castle.bows > 0 && !g.over) {
+  if (!g.classic && g.castle.bows > 0 && !g.over) {
     g.castle.cd -= dt;
     if (g.castle.cd <= 0) {
       g.castle.cd = 1.15;
@@ -4718,7 +4782,7 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     const cdx = g.castle.x - e.x;
     const cdy = g.castle.y - e.y;
     const cd = Math.sqrt(cdx * cdx + cdy * cdy) || 1;
-    const marches = !g.sandbox && !e.minib && e.kind !== 8 && e.kind !== 13 && e.kind !== 19; // v1.16: bossové taky táhnou na hrad
+    const marches = !g.classic && !g.sandbox && !e.minib && e.kind !== 8 && e.kind !== 13 && e.kind !== 19; // v1.16: bossové taky táhnou na hrad; 🌾 v1.24: v klasice jdou po tobě
     let attackingCastle = false;
     let attackingTower: Tower | null = null;
     if (marches) {
@@ -5361,9 +5425,9 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
       burst(g, b.x, b.y, 8, 195, 150);
       remove = true;
     }
-    // 🏰 koule, které přeletí hrdinu, naráz do hradby
+    // 🏰 koule, které přeletí hrdinu, naráz do hradby (🌾 v klasice jen zmizí na okraji mapy)
     if (!remove && b.x + 10 > CASTLE_FRONT) {
-      damageCastle(g, Math.max(2, Math.round(b.dmg * 0.5)));
+      if (!g.classic) damageCastle(g, Math.max(2, Math.round(b.dmg * 0.5)));
       burst(g, b.x, b.y, 6, 30, 130);
       remove = true;
     }
@@ -9101,9 +9165,12 @@ function getWorldBg(g: Game): HTMLCanvasElement | null {
     }
   }
   // 🛣️ stezka k hradu, 🌲 zdi lesa místo plotu a 🔥 spáleniště - vše předrenderované jednou
-  paintTrail(c);
-  paintForestWalls(c);
-  paintBurn(c);
+  // 🌾 v klasice je louka čistá: bez stezky, lesů-zdí i spáleniště
+  if (!g.classic) {
+    paintTrail(c);
+    paintForestWalls(c);
+    paintBurn(c);
+  }
   worldBg = { cv, stars: g.stars };
   return cv;
 }
@@ -9499,7 +9566,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
   }
 
   // 🏰 hrdinův hrad zakrývá celou pravou stranu - zeď se kreslí, když je na dohled
-  if (h.x + halfW > CASTLE_FRONT - 160) drawCastle(ctx, g);
+  if (!g.classic && h.x + halfW > CASTLE_FRONT - 160) drawCastle(ctx, g);
   // 🗼 strážní věže podél cesty - od rozpadliny zdiva po honosnou baštu s vlajkami
   for (const tw of g.towers) {
     if (inView(tw.x, tw.y, 260)) drawTower(ctx, g, tw);
@@ -10776,7 +10843,7 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     // 🗼 kam boss táhne - indikátor směru na hrad (v1.16 už žádný časový limit)
     ctx.font = "bold " + Math.max(10, 12 * bsc) + "px system-ui, sans-serif";
     ctx.textAlign = "left";
-    ctx.fillText("🏰", bx + 4 * bsc, by + bhh + 16 * bsc);
+    ctx.fillText(g.classic ? "🌾" : "🏰", bx + 4 * bsc, by + bhh + 16 * bsc);
     // ⚔️ aktuální fáze
     ctx.textAlign = "right";
     ctx.fillStyle = "rgba(255,255,255,0.85)";
@@ -10878,8 +10945,10 @@ function render(ctx: CanvasRenderingContext2D, g: Game, joy: Joy): void {
     ctx.fill();
   }
   // 🏰 hrad na minimapě - zlatý pás přes celou pravou stranu, brána hledí na západ
-  ctx.fillStyle = "#fcd34d";
-  ctx.fillRect(mx + CASTLE_FRONT * kx, my + 1, ARENA_W * kx - CASTLE_FRONT * kx, ms - 2);
+  if (!g.classic) {
+    ctx.fillStyle = "#fcd34d";
+    ctx.fillRect(mx + CASTLE_FRONT * kx, my + 1, ARENA_W * kx - CASTLE_FRONT * kx, ms - 2);
+  }
   // 🗼 strážní věže na minimapě - plná oranžová tečka, rozpadlina jen tenký obrys
   for (const tw of g.towers) {
     const tx = mx + tw.x * kx;
@@ -11243,6 +11312,7 @@ function LoukaTisicePriser() {
     maxHp: 100,
     chp: 900,
     cmax: 900,
+    classic: false,
     coins: 0,
     twLabel: "",
     dash: 0,
@@ -11602,7 +11672,9 @@ function LoukaTisicePriser() {
       ? "📅 DENNÍ VÝZVA! Dnešní louka je zlá…"
       : sandboxSel
         ? "🧪 Sandbox — jen si hraj!"
-        : "🌾 Louka příšer — přežij ten dlouhý den!";
+        : g0.classic
+          ? "🌾 Louka příšer — původní louka bez hradu!"
+          : "🌾 Louka příšer — přežij ten dlouhý den!";
     addText(g0, g0.hero.x, g0.hero.y - 60, intro, 120, 18);
     if (dailyRun) addText(g0, g0.hero.x, g0.hero.y - 84, `🎭 ${CLASSES.find((c) => c.id === clsSel)?.name ?? "?"} · ${(DIFFS[dd] || DIFFS[1]).name}`, 200, 13);
   };
@@ -11828,6 +11900,7 @@ function LoukaTisicePriser() {
           maxHp: g.hero.maxHp,
           chp: Math.max(0, Math.ceil(g.castle.hp)),
           cmax: g.castle.maxHp,
+          classic: g.classic,
           coins: g.coins,
           twLabel: (() => { const tg0 = towerNear(g); if (!tg0) return ""; const p0 = towerPlan(tg0); return p0 ? p0.label : ""; })(),
           dash: 1 - g.hero.dashCd / (HERO.dashCd * g.stats.dashMul),
@@ -12256,16 +12329,20 @@ function LoukaTisicePriser() {
           <span className="rounded-lg border border-red-400/30 bg-red-500/25 px-2 py-1 text-red-300 sm:px-3">
             💀 {ui.kills}
           </span>
-          <span
-            className={`rounded-lg border px-2 py-1 sm:px-3 ${
-              ui.chp / ui.cmax > 0.35 ? "border-amber-400/30 bg-amber-500/25 text-amber-200" : "border-red-300/70 bg-red-500/45 text-red-100 animate-pulse"
-            }`}
-          >
-            🏰 {ui.chp}
-          </span>
-          <span className="rounded-lg border border-yellow-300/40 bg-yellow-500/25 px-2 py-1 text-yellow-100 sm:px-3">
-            🪙 {ui.coins}
-          </span>
+          {!ui.classic && (
+            <>
+              <span
+                className={`rounded-lg border px-2 py-1 sm:px-3 ${
+                  ui.chp / ui.cmax > 0.35 ? "border-amber-400/30 bg-amber-500/25 text-amber-200" : "border-red-300/70 bg-red-500/45 text-red-100 animate-pulse"
+                }`}
+              >
+                🏰 {ui.chp}
+              </span>
+              <span className="rounded-lg border border-yellow-300/40 bg-yellow-500/25 px-2 py-1 text-yellow-100 sm:px-3">
+                🪙 {ui.coins}
+              </span>
+            </>
+          )}
           <span
             className={`rounded-lg border px-2 py-1 sm:px-3 ${
               ui.night ? "border-indigo-300/50 bg-indigo-900/60 text-indigo-100" : "border-amber-400/30 bg-amber-500/25 text-amber-200"
@@ -12344,18 +12421,20 @@ function LoukaTisicePriser() {
           onPointerUp={hudUp}
           onPointerCancel={hudUp}
         >
-          <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
-            <span>🏰</span>
-            <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-2.5">
-              <div
-                className="h-full rounded-full transition-all"
-                style={{
-                  width: `${(ui.chp / ui.cmax) * 100}%`,
-                  background: ui.chp / ui.cmax > 0.35 ? "linear-gradient(90deg,#fbbf24,#d97706)" : "linear-gradient(90deg,#f87171,#dc2626)",
-                }}
-              />
+          {!ui.classic && (
+            <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
+              <span>🏰</span>
+              <div className="h-2 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-2.5">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${(ui.chp / ui.cmax) * 100}%`,
+                    background: ui.chp / ui.cmax > 0.35 ? "linear-gradient(90deg,#fbbf24,#d97706)" : "linear-gradient(90deg,#f87171,#dc2626)",
+                  }}
+                />
+              </div>
             </div>
-          </div>
+          )}
           <div className="pointer-events-none flex items-center gap-2 text-[10px] font-semibold text-white/80 sm:text-xs">
             <span>❤️</span>
             <div className="h-2.5 flex-1 overflow-hidden rounded-full border border-white/15 bg-black/60 sm:h-3">
@@ -12690,7 +12769,27 @@ function LoukaTisicePriser() {
                     >
                       {trk("daily_btn")} {dailyRun ? trk("daily_on") : ""}
                     </button>
+                    {/* 🔄 v1.24: přepínač režimu mapy - 🏰 hrad nebo 🌾 klasika bez hradu */}
+                    <button
+                      onClick={() => {
+                        setMeta((m) => {
+                          const nm = { ...m, classic: !m.classic };
+                          saveMeta(nm);
+                          return nm;
+                        });
+                      }}
+                      className={`ltp-card rounded-xl border-2 px-3 py-1.5 text-[11px] font-bold active:scale-95 ${
+                        meta.classic
+                          ? "border-lime-300/80 bg-gradient-to-b from-lime-400/30 to-emerald-500/20 text-lime-100 shadow-[0_0_16px_rgba(163,230,53,.45)]"
+                          : "border-amber-300/80 bg-gradient-to-b from-amber-400/30 to-orange-500/20 text-amber-100 shadow-[0_0_16px_rgba(251,191,36,.4)]"
+                      }`}
+                    >
+                      {meta.classic ? trk("mode_classic") : trk("mode_castle")}
+                    </button>
                   </div>
+                  <p className="max-w-md rounded-xl border border-white/15 bg-white/5 p-2 text-[10px] leading-relaxed text-white/70">
+                    {trk("mode_note")}
+                  </p>
                   {dailyRun && (() => {
                     const dd = (new Date().getDate() + new Date().getMonth()) % 3;
                     const d = DIFFS[dd] || DIFFS[1];
@@ -13320,7 +13419,7 @@ function LoukaTisicePriser() {
         </button>
       )}
       {/* 🤺 v1.22: nájem vojáka - 5 🪙, vyrazí od brány a bije netvory (skryté v sandboxu) */}
-      {started && !over && !(gameRef.current && gameRef.current.sandbox) && (
+      {started && !over && !ui.classic && !(gameRef.current && gameRef.current.sandbox) && (
         <button
           onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); solBtnAct(); }}
           onClick={solBtnAct}

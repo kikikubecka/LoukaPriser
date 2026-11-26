@@ -14,7 +14,7 @@ const MEADOW_TOP = 330;
 const MEADOW_BOT = ARENA_H - 330;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.22.0";
+const GAME_VERSION = "1.23.0";
 const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
@@ -1833,7 +1833,7 @@ function spawnBoss(g: Game, forceType = -1, forceFinal = false): void {
   const y = Math.max(80, Math.min(ARENA_H - 80, g.hero.y + (Math.random() - 0.5) * Math.min(ARENA_H - 160, 900)));
   // ☠️ finální (ultimátní) podoba = 2.3× HP a roste s časem jako u všech bossů
   // 💪 v1.16: bossové o čtvrtinu slabší - 6× HP a 2.25× dmg, bez arény táhnou na hrad
-  const hp = (260 + t * 3 + g.bossKills * 90) * 30 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
+  const hp = (260 + t * 3 + g.bossKills * 90) * 22.5 * bt.hpMul * (isFinal ? 2.3 : 1) * (DIFFS[g.diff] || DIFFS[1]).hp * g.bossHpMul;
   g.enemies.push({
     id: g.nextId++,
     x,
@@ -2668,7 +2668,7 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     crownsEarned: 0,
     weaponBonus: 0,
     allWeapons: false,
-    nextBoss: 90,
+    nextBoss: 180,
     bossWarned: false,
     minibKills: 0,
     nextMini: 40,
@@ -3543,7 +3543,7 @@ function killEnemy(g: Game, e: Enemy): void {
     }
     addText(g, e.x, e.y - 44, e.final ? "☠️ FINÁLNÍ BOSS PADL! 2× 📦" : "📦 BEDNA!", 48, e.final ? 24 : 20);
     for (let i = 0; i < (e.final ? 12 : 8); i++) {
-      spawnOrb(g, e.x + (Math.random() - 0.5) * 70, e.y + (Math.random() - 0.5) * 70, 3 + Math.floor(e.maxHp / 500));
+      spawnOrb(g, e.x + (Math.random() - 0.5) * 70, e.y + (Math.random() - 0.5) * 70, Math.round((3 + Math.floor(e.maxHp / 500)) * 1.25));
     }
     spawnOrb(g, e.x, e.y, 0, 1);
     // bossové občas upustí i bombu či magnet
@@ -3605,7 +3605,7 @@ function killEnemy(g: Game, e: Enemy): void {
     playSfx(g, "kill");
     addText(g, e.x, e.y - 40, "✨ MINI-BOSS!", 48, 18);
     for (let i = 0; i < 6; i++) {
-      spawnOrb(g, e.x + (Math.random() - 0.5) * 60, e.y + (Math.random() - 0.5) * 60, 2 + Math.floor(e.maxHp / 40));
+      spawnOrb(g, e.x + (Math.random() - 0.5) * 60, e.y + (Math.random() - 0.5) * 60, Math.round((2 + Math.floor(e.maxHp / 40)) * 1.25));
     }
     spawnOrb(g, e.x, e.y, 0, 1);
     // mini-boss občas upustí bombu či magnet
@@ -3652,7 +3652,7 @@ function killEnemy(g: Game, e: Enemy): void {
   }
   const drops = e.big ? 4 : 1 + (Math.random() < 0.5 ? 1 : 0);
   // 💡 silnější nepřítel = víc XP (POZOR: maxHp roste s časem, takže pozdější vlny vydělávají víc)
-  const orbXp = 1 + Math.floor(e.maxHp / 20);
+  const orbXp = Math.round((1 + Math.floor(e.maxHp / 20)) * 1.25); // v1.23: +25 % XP
   for (let i = 0; i < drops; i++) {
     spawnOrb(g, e.x + (Math.random() - 0.5) * 24, e.y + (Math.random() - 0.5) * 24, orbXp);
   }
@@ -4407,6 +4407,8 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
     // postava se dívá a míří tam, kam střílí
     if (target) h.angle = Math.atan2(target.y - h.y, target.x - h.x);
+    // v1.23 fix: bez cile cooldown zamrzne na 0 - driv padal do zapornych hodnot a animace mireni (krystal maga, natzeny luk...) rostla donekonecna
+    if (!target && w.cd < 0) w.cd = 0;
     if (target && w.cd <= 0) {
       w.cd = 1 / (weaponRate(def, w.lvl) * (1 + g.stats.fireMul));
       fireWeapon(g, w, target);
@@ -5543,10 +5545,10 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     }
   }
 
-  // boss každých 90 s (v1.13: zpět z 100 s) - vždy, i když žije starý boss
+  // boss každých 3 minuty (v1.23: dřív 90 s) - vždy, i když žije starý boss
   // (každý nový boss odročí kill-timer zase na 100 s)
   if (g.time >= g.nextBoss) {
-    g.nextBoss += 90;
+    g.nextBoss += 180;
     g.bossWarned = false;
     spawnBoss(g);
   }

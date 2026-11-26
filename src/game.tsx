@@ -1,18 +1,21 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 
-// 🗺️ louka je úzká stezka lesem: 10000 × 1000 - netvoři vyrážejí z lesa zcela zleva
+// 🗺️ louka je úzká stezka lesem: 8000 × 1000 - netvoři vyrážejí z lesa zcela zleva
 // a ze spáleniště u hradu, hrdina startuje před hradbou a brání příval ze západu
-const ARENA_W = 10000;
+const ARENA_W = 8000;
 const ARENA_H = 1000;
 // 🏰 hrad zakrývá celou pravou stranu mapy - zeď stojí u zadní východní hranice,
 // hlavní brána hledí na západ, odkud valí nepřátelé
 const CASTLE_FRONT = ARENA_W - 340;
-// 🌲 les roste ve 3/4 stezky, dál k hradu leží spálená oblast
-const BURN_X = Math.round(ARENA_W * 0.75);
+// 🌲 les roste do poloviny stezky, dál k hradu leží spálená oblast
+const BURN_X = Math.round(ARENA_W * 0.5);
+// 🌳 v1.20: louka = jediné místo, kudy chodí hrdina; nad i pod ní je hustý les (bariéra)
+const MEADOW_TOP = 330;
+const MEADOW_BOT = ARENA_H - 330;
 
 // 🏷️ verze hry - ukazuje se v menu (řádek pod titulkem) a v konzoli
-const GAME_VERSION = "1.19.0";
-const GAME_BUILD = "24. 11. 2026";
+const GAME_VERSION = "1.20.0";
+const GAME_BUILD = "26. 11. 2026";
 
 // dynamické rozměry herního okna (plná obrazovka)
 let VW = 960;
@@ -2623,10 +2626,10 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     arena: { x: 0, y: 0, r: 0, active: false },
     castle: { x: ARENA_W - 170, y: ARENA_H / 2, r: 150, hp: 900, maxHp: 900, walls: 0, bows: 0, keep: false, regen: 0, flash: 0, hitT: 0, cd: 0 },
     towers: [
-      { x: 3400, y: 310, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 3400, y: 690, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 8300, y: 310, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
-      { x: 8300, y: 690, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 2000, y: 400, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 2000, y: 600, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 6200, y: 400, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
+      { x: 6200, y: 600, r: 74, tier: 0, hp: 0, maxHp: 0, cd: 0, flash: 0, hitT: 0, rise: 1 },
     ],
     coins: 0,
     trees: [],
@@ -2719,11 +2722,12 @@ function initGame(clsId = "archer", sandbox = false, meta: Meta | null = null, d
     const kr = Math.random();
     const k = kr < 0.46 ? 0 : kr < 0.72 ? 1 : kr < 0.86 ? 2 : 3;
     const tx = 60 + Math.random() * (BURN_X - 120);
-    const ty = 46 + Math.random() * (ARENA_H - 92);
+    // 🌳 v1.20: stromy jen v pásu lesa nad a pod loukou
+    const ty = Math.random() < 0.5
+      ? 24 + Math.random() * (MEADOW_TOP - 48)
+      : MEADOW_BOT + 24 + Math.random() * (ARENA_H - MEADOW_BOT - 48);
     // 🏰 volno před hradbami
     if (tx > CASTLE_FRONT - 260) continue;
-    // 🛣️ stezka k bráně zůstane průchodná
-    if (Math.abs(ty - ARENA_H / 2) < 64) continue;
     g.trees.push({
       x: tx,
       y: ty,
@@ -3734,7 +3738,7 @@ function damageTower(g: Game, tw: Tower, dmg: number): void {
 // 🗼 věž nejblíž hrdinovi (na dosah ruky)
 function towerNear(g: Game): Tower | null {
   let best: Tower | null = null;
-  let bds = 160 * 160;
+  let bds = 220 * 220;
   for (const tw of g.towers) {
     const d2 = dist2(g.hero.x, g.hero.y, tw.x, tw.y);
     if (d2 < bds) {
@@ -4275,11 +4279,11 @@ function updateGame(g: Game, dt: number, move: Vec, wantDash: boolean): void {
     vy = move.y * sp;
   }
   h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + vx * dt));
-  h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + vy * dt));
+  h.y = Math.max(MEADOW_TOP, Math.min(MEADOW_BOT, h.y + vy * dt)); // 🌳 v1.20: jen po louce
   // 🌬️ silný vítr postrkuje i tebe
   if (g.weather === "wind") {
     h.x = Math.max(20, Math.min(ARENA_W - 20, h.x + Math.cos(g.windA) * 16 * dt));
-    h.y = Math.max(20, Math.min(ARENA_H - 20, h.y + Math.sin(g.windA) * 16 * dt));
+    h.y = Math.max(MEADOW_TOP, Math.min(MEADOW_BOT, h.y + Math.sin(g.windA) * 16 * dt));
   }
   // 🏟️ boss aréna - hrdina nemůže ven
 
@@ -8683,43 +8687,48 @@ function paintTrail(c: CanvasRenderingContext2D): void {
 
 // 🌲 hučatý jehličnatý les místo plotu - zeď smrků podél celého okraje stezky
 function paintForestWalls(c: CanvasRenderingContext2D): void {
-  const bandSH = 92; // hloubka pásu lesa od okraje
-  // tmavý podrost podél horního okraje (nejtmavší u kraje)
-  let gr = c.createLinearGradient(0, 0, 0, bandSH);
+  // 🌳 v1.20: hustý les VŠUDE mimo louku - od horního i dolního okraje až k louce
+  // tmavý podrost přes celou horní půlku (nejtmavší u kraje, u louky řídnou)
+  let gr = c.createLinearGradient(0, 0, 0, MEADOW_TOP + 16);
   gr.addColorStop(0, "rgba(10,32,16,0.95)");
+  gr.addColorStop(0.72, "rgba(10,32,16,0.5)");
   gr.addColorStop(1, "rgba(10,32,16,0)");
   c.fillStyle = gr;
-  c.fillRect(0, 0, CASTLE_FRONT, bandSH);
-  // dolní okraj
-  gr = c.createLinearGradient(0, ARENA_H, 0, ARENA_H - bandSH);
+  c.fillRect(0, 0, CASTLE_FRONT, MEADOW_TOP + 16);
+  // dolní půlka zrcadlově
+  gr = c.createLinearGradient(0, ARENA_H, 0, MEADOW_BOT - 16);
   gr.addColorStop(0, "rgba(10,32,16,0.95)");
+  gr.addColorStop(0.72, "rgba(10,32,16,0.5)");
   gr.addColorStop(1, "rgba(10,32,16,0)");
   c.fillStyle = gr;
-  c.fillRect(0, ARENA_H - bandSH, CASTLE_FRONT, bandSH);
-  // západní hlubina lesa - odtud vyrážejí netvoři
+  c.fillRect(0, MEADOW_BOT - 16, CASTLE_FRONT, ARENA_H - MEADOW_BOT + 16);
+  // západní hlubina lesa - odtud vyrážejí netvoři (nad loukou i pod ní)
   gr = c.createLinearGradient(0, 0, 216, 0);
   gr.addColorStop(0, "rgba(8,26,14,0.95)");
   gr.addColorStop(1, "rgba(8,26,14,0)");
   c.fillStyle = gr;
   c.fillRect(0, 0, 216, ARENA_H);
-  // dvě prosázené řady smrků na každém okraji (zadní menší, přední větší)
-  const row = (yEdge: number, dir: number, seed: number, big: boolean) => {
+  // prosázené řady smrků od okraje mapy až k okraji louky (u louky menší)
+  const fill = (yFrom: number, yTo: number, dir: number, seed: number) => {
     let i = 0;
-    for (let x = -40; x < CASTLE_FRONT + 40; x += big ? 64 : 44) {
-      const jx = (bgHash(seed * 31 + i * 3) - 0.5) * 28;
-      const jy = (bgHash(seed * 37 + i * 7 + 1) - 0.5) * 16;
-      const r = (big ? 34 : 24) + bgHash(seed * 41 + i * 11 + 2) * (big ? 22 : 14);
-      paintTree(c, { x: x + jx, y: yEdge + dir * (big ? 13 : 36) + jy, r, k: 0, rn: bgHash(seed * 43 + i * 13 + 3) });
-      i++;
+    const span = Math.max(1, Math.abs(yTo - yFrom));
+    for (let y = yFrom; dir > 0 ? y < yTo : y > yTo; y += dir * 50) {
+      const depth = Math.abs(y - yFrom) / span; // 0 = u kraje, 1 = u louky
+      for (let x = -40; x < CASTLE_FRONT + 40; x += 56) {
+        const jx = (bgHash(seed * 31 + i * 3) - 0.5) * 30;
+        const jy = (bgHash(seed * 37 + i * 7 + 1) - 0.5) * 22;
+        const r = 46 - depth * 16 + bgHash(seed * 41 + i * 11 + 2) * (22 - depth * 8);
+        paintTree(c, { x: x + jx, y: y + jy, r, k: 0, rn: bgHash(seed * 43 + i * 13 + 3) });
+        i++;
+      }
     }
   };
-  row(8, 1, 11, false); // horní zadní řada
-  row(22, 1, 23, true); // horní přední řada
-  row(ARENA_H - 8, -1, 37, false); // dolní zadní řada
-  row(ARENA_H - 22, -1, 53, true); // dolní přední řada
-  // hustý háj na západním okraji mapy
+  fill(10, MEADOW_TOP + 6, 1, 11); // horní půlka
+  fill(ARENA_H - 10, MEADOW_BOT - 6, -1, 37); // dolní půlka
+  // hustý háj na západním okraji mapy - louka ale zůstává průchodná
   let i2 = 0;
   for (let y = -30; y < ARENA_H + 30; y += 50) {
+    if (y > MEADOW_TOP - 26 && y < MEADOW_BOT + 26) continue; // 🛣️ louka volná
     for (let d = 0; d < 3; d++) {
       const jy = (bgHash(701 + i2 * 5) - 0.5) * 28;
       const r = 30 + bgHash(703 + i2 * 9 + d) * 20;
@@ -8729,7 +8738,7 @@ function paintForestWalls(c: CanvasRenderingContext2D): void {
   }
 }
 
-// 🔥 spáleniště - od 3/4 stezky k hradbám vyhořel les, zbylo doutnající popel
+// 🔥 spáleniště - od poloviny stezky k hradbám vyhořel les, zbylo doutnající popel
 function paintBurn(c: CanvasRenderingContext2D): void {
   const x0 = BURN_X - 700; // plynulý přechod od louky
   // čím blíž k hradu, tím černější popel (průhledný nátěr pohltil i okrajové stromy)
@@ -11761,6 +11770,14 @@ function LoukaTisicePriser() {
     }
     return st;
   };
+  // 🗼 v1.20: nákup věže z tlačítka - pointer i click s debounce (na mobilu klik sám o sobě nezabral)
+  const twLastTap = useRef(0);
+  const twBtnAct = () => {
+    const now = Date.now();
+    if (now - twLastTap.current < 350) return;
+    twLastTap.current = now;
+    towerAct(gameRef.current);
+  };
   const hudDown = (id: string) => (e: React.PointerEvent) => {
     if (!hudEdit) return;
     e.preventDefault();
@@ -13064,8 +13081,10 @@ function LoukaTisicePriser() {
       {/* 🗼 akce se strážní věží - tlačítko se objeví, jen když stojíš u rozpadliny nebo věže */}
       {started && !over && ui.twLabel && (
         <button
-          onClick={() => towerAct(gameRef.current)}
-          className="ltp-btn absolute bottom-[calc(env(safe-area-inset-bottom,0px)+108px)] left-1/2 z-20 -translate-x-1/2 rounded-2xl border border-yellow-300/60 bg-gradient-to-r from-yellow-500 to-amber-400 px-5 py-2.5 text-sm font-extrabold text-yellow-950 shadow-lg shadow-amber-500/40 transition hover:brightness-110 active:scale-95"
+          onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); twBtnAct(); }}
+          onClick={twBtnAct}
+          style={{ position: "absolute", zIndex: 40 }}
+          className="ltp-btn bottom-[calc(env(safe-area-inset-bottom,0px)+108px)] left-1/2 -translate-x-1/2 rounded-2xl border border-yellow-300/60 bg-gradient-to-r from-yellow-500 to-amber-400 px-5 py-2.5 text-sm font-extrabold text-yellow-950 shadow-lg shadow-amber-500/40 transition hover:brightness-110 active:scale-95"
         >
           {ui.twLabel} <span className="opacity-70">(F)</span>
         </button>
